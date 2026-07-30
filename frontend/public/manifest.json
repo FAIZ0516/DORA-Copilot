@@ -1,0 +1,10 @@
+{
+  "name": "DORA Intelligence",
+  "short_name": "DORA",
+  "description": "Governed conversational software delivery intelligence.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eff9fc",
+  "theme_color": "#58bfe1",
+  "orientation": "any"
+}

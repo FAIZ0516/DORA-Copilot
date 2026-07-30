@@ -1,0 +1,215 @@
+"""Authoritative DoraDB query catalogue and agent steering definitions.
+
+The cloud model sees this metadata, never executable SQL. Python maps a
+validated query ID to a static, parameterized statement in :mod:`backend.doradb`.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+DEFAULT_PROJECT_KEY = "DCPM"
+APPROVED_QUERY_IDS = {
+    "dora_metrics_by_year",
+    "dora_metrics_by_squad",
+    "dora_metrics_release_detail",
+    "feature_vs_release_frequency",
+    "feature_vs_user_story",
+    "story_to_feature_ratio",
+}
+DETAIL_QUERY_IDS = {
+    "dora_metrics_release_detail",
+    "feature_vs_release_frequency",
+    "feature_vs_user_story",
+    "story_to_feature_ratio",
+}
+LARGE_QUERY_IDS = {"feature_vs_release_frequency", "feature_vs_user_story"}
+LARGE_QUERY_REQUIRED_FILTERS = {
+    "release_year",
+    "fixversion",
+    "release_name",
+    "issuetype",
+    "jira_key",
+}
+ALLOWED_FILTERS = {
+    "release_year",
+    "release_date",
+    "fixversion",
+    "release_name",
+    "issuetype",
+    "jira_key",
+    "status",
+    "project_key",
+    "dcpsquad",
+}
+
+QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
+    "dora_metrics_by_year": {
+        "purpose": (
+            "Yearly release frequency, change failure rate, lead time for change, "
+            "delivery cycle time, release counts, and multi-year trends."
+        ),
+        "default_limit": 10,
+        "allowed_filters": ["release_year", "project_key"],
+        "expected_columns": [
+            "release_year",
+            "release_count",
+            "release_frequency_months",
+            "change_failure_rate_pct",
+            "lead_time_for_change_months",
+            "delivery_cycle_time_months",
+            "user_story_count",
+            "feature_reference_count",
+            "feature_reference_release_count",
+        ],
+    },
+    "dora_metrics_by_squad": {
+        "purpose": (
+            "Yearly DORA release metrics for releases associated with Jira "
+            "issues owned by a DCPM squad such as TITAN or JAEGER."
+        ),
+        "default_limit": 10,
+        "allowed_filters": ["release_year", "dcpsquad", "project_key"],
+        "expected_columns": [
+            "dcpsquad",
+            "release_year",
+            "release_count",
+            "release_frequency_months",
+            "change_failure_rate_pct",
+            "lead_time_for_change_months",
+            "delivery_cycle_time_months",
+            "user_story_count",
+            "feature_reference_count",
+            "feature_reference_release_count",
+        ],
+    },
+    "dora_metrics_release_detail": {
+        "purpose": (
+            "Release-level dates, outcomes, timelines, and drill-down evidence "
+            "for explaining why a yearly metric changed."
+        ),
+        "default_limit": 50,
+        "allowed_filters": [
+            "release_year",
+            "release_date",
+            "fixversion",
+            "release_name",
+            "project_key",
+        ],
+        "expected_columns": [
+            "fixversion",
+            "release_year",
+            "release_date",
+            "release_frequency",
+            "outcome_rating",
+            "delivery_cycle_time",
+            "ltc",
+        ],
+    },
+    "feature_vs_release_frequency": {
+        "purpose": (
+            "Relate Features, User Stories, Bugs, Tasks, or Tests to major "
+            "release frequency and outcomes."
+        ),
+        "default_limit": 50,
+        "allowed_filters": sorted(ALLOWED_FILTERS),
+        "requires_narrowing_filter": True,
+        "expected_columns": [
+            "fixversion",
+            "release_year",
+            "issuetype",
+            "jira_key",
+            "summary",
+            "status",
+            "outcome_rating",
+            "release_date",
+            "release_frequency_months",
+        ],
+    },
+    "feature_vs_user_story": {
+        "purpose": (
+            "List Features, User Stories, Bugs, Tasks, or Tests belonging to a "
+            "specific release and provide Feature Reference details."
+        ),
+        "default_limit": 50,
+        "allowed_filters": sorted(ALLOWED_FILTERS),
+        "requires_narrowing_filter": True,
+        "expected_columns": [
+            "release_year",
+            "fixversion",
+            "release_name",
+            "jira_key",
+            "issuetype",
+            "summary",
+            "status",
+            "release_date",
+        ],
+    },
+    "story_to_feature_ratio": {
+        "purpose": (
+            "User Story reference count divided by Feature reference count, "
+            "grouped by release."
+        ),
+        "default_limit": 100,
+        "allowed_filters": ["release_year", "fixversion", "release_name", "project_key"],
+        "expected_columns": [
+            "release_year",
+            "fixversion",
+            "user_story_to_feature_ratio",
+            "user_story_count",
+            "feature_count",
+        ],
+    },
+}
+
+METRIC_DEFINITIONS = {
+    "release_frequency": (
+        "Average number of months between releases in DoraDB. Lower means "
+        "releases occur more frequently."
+    ),
+    "change_failure_rate": "Average outcome_rating multiplied by 100.",
+    "lead_time_for_change": (
+        "Elapsed time from release_actual_start to release_actual_end, in "
+        "30-day months. 'Load Time' is interpreted as Lead Time."
+    ),
+    "delivery_cycle_time": (
+        "Elapsed time from dev_insprint_actual_start to release_actual_end, in "
+        "30-day months."
+    ),
+    "feature_reference_count": (
+        "Number of Feature rows associated with releases; not necessarily "
+        "globally distinct Jira Feature IDs."
+    ),
+    "story_to_feature_ratio": (
+        "User Story reference count divided by Feature reference count for a release."
+    ),
+}
+
+
+def planner_context() -> str:
+    """Return a compact steering prompt derived from the approved catalogue."""
+
+    routes = "\n".join(
+        f"- {query_id}: {definition['purpose']} Allowed filters: "
+        f"{', '.join(definition['allowed_filters'])}."
+        for query_id, definition in QUERY_CATALOGUE.items()
+    )
+    metrics = "\n".join(f"- {name}: {definition}" for name, definition in METRIC_DEFINITIONS.items())
+    return f"""Approved DoraDB query tools:
+{routes}
+
+DoraDB metric definitions:
+{metrics}
+
+Rules:
+- Default project_key to DCPM.
+- Use dora_metrics_by_year first for general DORA questions and comparisons.
+- Use dora_metrics_by_squad when dcpsquad is present. A squad is a dimension
+  inside DCPM and must never replace project_key.
+- Use dora_metrics_release_detail only for release drill-down or explanations.
+- feature_vs_release_frequency and feature_vs_user_story require at least one
+  narrowing filter: release_year, fixversion/release_name, issuetype, or jira_key.
+- Use at most two query actions: one primary query and one justified drill-down.
+- A chart request is read-only and safe.
+- Never produce SQL. Return only approved query IDs and structured filters."""

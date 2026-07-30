@@ -1,0 +1,9 @@
+{
+  "approved_relationships": [
+    "release_frequency.r_id = release_success.r_id",
+    "release_frequency.r_id = release_info.r_id",
+    "jira_fuslist.key = jira_issues.key",
+    "jira_fuslist.release_name = releases.release_name"
+  ],
+  "arbitrary_joins_allowed": false
+}

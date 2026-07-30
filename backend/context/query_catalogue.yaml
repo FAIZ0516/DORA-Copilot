@@ -1,0 +1,12 @@
+{
+  "approved": [
+    "dora_metrics_by_year",
+    "dora_metrics_release_detail",
+    "feature_vs_release_frequency",
+    "feature_vs_user_story",
+    "story_to_feature_ratio"
+  ],
+  "maximum_actions": 2,
+  "maximum_rows": 1000,
+  "detail_maximum_rows": 200
+}

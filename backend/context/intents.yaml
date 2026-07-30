@@ -1,0 +1,9 @@
+{
+  "intents": [
+    "metric_lookup", "comparison", "trend", "anomaly", "explanation",
+    "release_drilldown", "issue_listing", "ratio", "visualization",
+    "help", "clarification", "out_of_scope"
+  ],
+  "free_form": true,
+  "template_questions_required": false
+}

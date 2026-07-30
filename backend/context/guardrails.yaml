@@ -1,0 +1,6 @@
+{
+  "database": ["read_only", "approved_query_ids", "bound_parameters", "hard_limits", "statement_timeout"],
+  "privacy": ["no_credentials", "no_sensitive_configuration", "no_raw_database_dump"],
+  "response": ["evidence_grounded", "no_fabricated_numbers", "inferences_labeled", "warnings_preserved"],
+  "prohibited": ["writes", "DDL", "arbitrary_SQL", "credential_disclosure"]
+}

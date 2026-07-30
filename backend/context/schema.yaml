@@ -1,0 +1,10 @@
+{
+  "tables": {
+    "vw_gdt_dte_release_frequency": ["release_year", "fixversion", "release_date", "major_release_freq", "ltc", "overall_actual_diff"],
+    "vw_gdt_dte_release_success": ["r_id", "success_rel_freq", "delivery_cycle_time"],
+    "tbl_gdt_dte_release_info": ["r_id", "release_name_sorted", "release_category", "outcome_rating"],
+    "mvw_gdt_dte_jira_fuslist": ["release_year", "release_name", "release_name_sorted", "key", "issuetype", "summary", "status", "major_flag", "hide_flag"],
+    "tbl_gdt_dte_jira_issues": ["key", "project_key"]
+  },
+  "access": "SELECT only through approved query catalogue"
+}

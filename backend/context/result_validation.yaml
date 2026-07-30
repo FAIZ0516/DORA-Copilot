@@ -1,0 +1,9 @@
+{
+  "checks": [
+    "expected_columns", "empty_results", "null_density", "duplicate_rows",
+    "date_parseability", "numeric_ranges", "business_rules",
+    "comparison_denominators", "freshness_warnings"
+  ],
+  "repair_attempts": 1,
+  "answer_checks": ["numbers_in_evidence", "warnings_not_suppressed"]
+}

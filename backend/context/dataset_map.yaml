@@ -1,0 +1,8 @@
+{
+  "project": "DCPM",
+  "datasets": {
+    "release_metrics": ["dora_metrics_by_year", "dora_metrics_release_detail"],
+    "release_issue_references": ["feature_vs_release_frequency", "feature_vs_user_story"],
+    "release_ratios": ["story_to_feature_ratio"]
+  }
+}

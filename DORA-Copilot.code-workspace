@@ -1,0 +1,147 @@
+{
+  "folders": [
+    {
+      "name": "DORA Copilot",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": [
+      "backend/tests"
+    ],
+    "terminal.integrated.cwd": "${workspaceFolder}",
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "frontend/dist": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.vscode-pylance",
+      "dbaeumer.vscode-eslint"
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "DORA: Backend",
+        "type": "process",
+        "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+        "args": [
+          "-m",
+          "uvicorn",
+          "backend.main:app",
+          "--reload",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          "8000"
+        ],
+        "isBackground": true,
+        "problemMatcher": {
+          "owner": "python",
+          "pattern": {
+            "regexp": "^(.*)$",
+            "message": 1
+          },
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "Started reloader process|Uvicorn running",
+            "endsPattern": "Application startup complete"
+          }
+        },
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated"
+        }
+      },
+      {
+        "label": "DORA: Frontend",
+        "type": "process",
+        "command": "npm.cmd",
+        "args": [
+          "run",
+          "dev"
+        ],
+        "options": {
+          "cwd": "${workspaceFolder}\\frontend"
+        },
+        "isBackground": true,
+        "problemMatcher": {
+          "owner": "vite",
+          "pattern": {
+            "regexp": "^(.*)$",
+            "message": 1
+          },
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "VITE",
+            "endsPattern": "Local:"
+          }
+        },
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated"
+        }
+      },
+      {
+        "label": "DORA: Start All",
+        "dependsOrder": "parallel",
+        "dependsOn": [
+          "DORA: Backend",
+          "DORA: Frontend"
+        ],
+        "problemMatcher": []
+      },
+      {
+        "label": "DORA: Backend Tests",
+        "type": "process",
+        "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+        "args": [
+          "-m",
+          "pytest",
+          "backend/tests",
+          "-q"
+        ],
+        "problemMatcher": []
+      },
+      {
+        "label": "DORA: Frontend Build",
+        "type": "process",
+        "command": "npm.cmd",
+        "args": [
+          "run",
+          "build"
+        ],
+        "options": {
+          "cwd": "${workspaceFolder}\\frontend"
+        },
+        "problemMatcher": []
+      }
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Debug FastAPI",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "uvicorn",
+        "args": [
+          "backend.main:app",
+          "--reload",
+          "--port",
+          "8000"
+        ],
+        "cwd": "${workspaceFolder}",
+        "console": "integratedTerminal"
+      }
+    ]
+  }
+}

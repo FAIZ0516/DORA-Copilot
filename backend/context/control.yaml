@@ -1,0 +1,7 @@
+{
+  "max_tool_calls": 2,
+  "max_retries": 1,
+  "minimum_planner_confidence": 0.6,
+  "repair_loop": "one validation-driven retry",
+  "answer_regeneration": "one consistency-driven retry"
+}

@@ -1,0 +1,8 @@
+{
+  "release_frequency": {"field": "release_frequency_months", "unit": "months", "direction": "lower_is_better"},
+  "change_failure_rate": {"field": "change_failure_rate_pct", "unit": "%", "direction": "lower_is_better"},
+  "lead_time_for_change": {"field": "lead_time_for_change_months", "unit": "months", "direction": "lower_is_better"},
+  "delivery_cycle_time": {"field": "delivery_cycle_time_months", "unit": "months", "direction": "lower_is_better"},
+  "release_count": {"field": "release_count", "unit": "releases", "direction": "contextual"},
+  "story_to_feature_ratio": {"field": "user_story_to_feature_ratio", "unit": "ratio", "direction": "contextual"}
+}

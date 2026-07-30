@@ -1,0 +1,8 @@
+{
+  "short_term": {
+    "enabled": true,
+    "stores": ["recent turns", "intent", "metric", "filters", "query IDs", "warnings"],
+    "does_not_store": ["database credentials", "full raw result sets"]
+  },
+  "long_term": {"enabled": false}
+}

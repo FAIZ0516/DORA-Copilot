@@ -1,0 +1,7 @@
+{
+  "include": ["backend"],
+  "exclude": ["frontend", ".venv"],
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none"
+}

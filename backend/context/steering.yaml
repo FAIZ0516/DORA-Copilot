@@ -1,0 +1,10 @@
+{
+  "rules": [
+    {"when": "general DORA metric, comparison, trend, anomaly, visualization", "query": "dora_metrics_by_year"},
+    {"when": "why or release drill-down", "query": "dora_metrics_release_detail"},
+    {"when": "release issue impact", "query": "feature_vs_release_frequency"},
+    {"when": "list issue references", "query": "feature_vs_user_story"},
+    {"when": "User Story to Feature ratio", "query": "story_to_feature_ratio"}
+  ],
+  "large_query_requires_narrowing_filter": true
+}
