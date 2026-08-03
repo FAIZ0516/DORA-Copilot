@@ -229,7 +229,7 @@ def create_plan(
     browser_history: list[dict[str, str]],
     llm: GenerativeAIClient,
 ) -> tuple[AgentPlan, str]:
-    """Let Gemini interpret the request, then validate its proposed actions.
+    """Let the configured LLM interpret the request, then validate its actions.
 
     The deterministic plan is deliberately a fallback, not the primary router.
     It still blocks unsafe/out-of-domain requests before a cloud call and keeps
@@ -290,7 +290,7 @@ Planning principles:
             f"Request: {message}"
         ),
         json_mode=True,
-        temperature=settings.gemini_planner_temperature,
+        temperature=settings.llm_planner_temperature,
     )
     parsed = _parse_json(raw) if raw else None
     if not parsed:
@@ -360,7 +360,7 @@ Planning principles:
         planner_source = getattr(
             llm,
             "source",
-            f"google-ai-studio:{settings.gemini_model}",
+            settings.llm_source,
         )
         if (
             fallback["mode"] == "data"

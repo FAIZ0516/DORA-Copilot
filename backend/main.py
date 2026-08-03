@@ -25,6 +25,7 @@ from .doradb import (
 )
 from .doradb_agent import DoraDbAgent
 from .doradb_catalog import METRIC_DEFINITIONS, QUERY_CATALOGUE
+from .llm import GenerativeAIClient
 from .schemas import (
     ChatRequest,
     ChatResponse,
@@ -52,7 +53,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description=(
-        "Google AI Studio-powered conversational DORA intelligence over the real, "
+        "Configured-LLM conversational DORA intelligence over the real, "
         "read-only PostgreSQL DoraDB dataset."
     ),
     version="0.4.0",
@@ -88,17 +89,25 @@ def health() -> HealthResponse:
             status = "degraded"
             detail = "DoraDB is configured but not reachable."
 
-    if not settings.gemini_configured:
+    llm = GenerativeAIClient(settings)
+    try:
+        llm_status = llm.check_availability()
+    finally:
+        llm.close()
+    if not llm_status.available:
         status = "degraded"
-        detail = "GEMINI_API_KEY is required for generative responses."
+        if llm_status.detail:
+            detail = f"{detail} {llm_status.detail}" if detail else llm_status.detail
 
     return HealthResponse(
         status=status,
         database=database,
         data_source="doradb",
         database_connected=database_connected,
-        llm_provider=f"google-ai-studio:{settings.gemini_model}",
-        llm_configured=settings.gemini_configured,
+        llm_provider=settings.llm_source,
+        llm_model=settings.llm_model,
+        llm_configured=llm_status.configured,
+        llm_available=llm_status.available,
         tts_configured=bool(settings.elevenlabs_api_key),
         detail=detail,
     )
@@ -121,7 +130,7 @@ def projects() -> dict[str, list[dict[str, Any]]]:
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
-    """Run Gemini planning and real DoraDB tools when data is required."""
+    """Run configured-LLM planning and real DoraDB tools when data is required."""
 
     history = [item.model_dump() for item in request.history]
     try:
@@ -133,7 +142,7 @@ def chat(request: ChatRequest) -> ChatResponse:
                     history=history,
                 )
         else:
-            # Safe conversation can still run through Gemini. Any plan that
+            # Safe conversation can still run through the configured LLM. Any plan that
             # requires dataset evidence is rejected before query execution.
             result = DoraDbAgent(None).chat(
                 request.message,

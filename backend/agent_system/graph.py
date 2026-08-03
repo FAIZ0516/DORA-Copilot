@@ -122,7 +122,7 @@ _ANALYTICAL_METRICS = {
 
 
 class AdvancedDoraDbAgent:
-    """A Gemini agent with deterministic controls around every data action."""
+    """A generative agent with deterministic controls around every data action."""
 
     def __init__(self, session: Session | None) -> None:
         self.session = session
@@ -342,11 +342,15 @@ class AdvancedDoraDbAgent:
                     "I cannot modify data, run arbitrary SQL, or expose credentials."
                 )
         elif plan["mode"] == "clarification":
-            if state.get("planner_source", "").startswith("google-ai-studio:"):
+            if state.get("planner_source", "") == getattr(self.llm, "source", ""):
                 answer = plan["clarification"]
                 answer_source = self.llm.source
             else:
-                answer = AI_UNAVAILABLE_MESSAGE
+                answer = getattr(
+                    self.llm,
+                    "unavailable_message",
+                    AI_UNAVAILABLE_MESSAGE,
+                )
                 answer_source = "ai-provider-unavailable"
         elif plan["mode"] == "conversation":
             prompt = (
@@ -359,7 +363,11 @@ class AdvancedDoraDbAgent:
                 "query ran and do not discuss unrelated topics."
             )
             generated = self.llm.complete(prompt, state["message"])
-            answer = generated or AI_UNAVAILABLE_MESSAGE
+            answer = generated or getattr(
+                self.llm,
+                "unavailable_message",
+                AI_UNAVAILABLE_MESSAGE,
+            )
             answer_source = (
                 self.llm.source
                 if generated
@@ -372,7 +380,11 @@ class AdvancedDoraDbAgent:
                 "rows": [],
                 "filters": {},
             }
-            answer = AI_UNAVAILABLE_MESSAGE
+            answer = getattr(
+                self.llm,
+                "unavailable_message",
+                AI_UNAVAILABLE_MESSAGE,
+            )
             answer_source = "ai-provider-unavailable"
             if self.llm.enabled and state["validation"]["valid"]:
                 conversation = "\n".join(
@@ -434,11 +446,17 @@ Metric definitions: {json.dumps(METRIC_DEFINITIONS)}"""
                 generated = self.llm.complete(
                     prompt,
                     evidence,
-                    temperature=settings.gemini_response_temperature,
+                    temperature=settings.llm_response_temperature,
                 )
                 if generated:
                     answer = _strip_markdown_fence(generated)
                     answer_source = self.llm.source
+                else:
+                    answer = getattr(
+                        self.llm,
+                        "unavailable_message",
+                        AI_UNAVAILABLE_MESSAGE,
+                    )
         return {"answer": answer, "answer_source": answer_source}
 
     def _validate_answer(self, state: AgentState) -> dict[str, Any]:
@@ -466,7 +484,7 @@ Metric definitions: {json.dumps(METRIC_DEFINITIONS)}"""
         return "save"
 
     def _regenerate(self, state: AgentState) -> dict[str, Any]:
-        """Ask the cloud model to repair an answer against the same evidence."""
+        """Ask the configured model to repair an answer against the same evidence."""
 
         results = state.get("results", [])
         evidence = json.dumps(
@@ -491,9 +509,17 @@ Never mention JSON, query IDs, field names, deterministic analysis, or
 validation internals. If the question asks what years exist, count and list
 those years. Keep under 350 words.""",
             evidence,
-            temperature=min(settings.gemini_response_temperature, 0.2),
+            temperature=min(settings.llm_response_temperature, 0.2),
         )
-        answer = _strip_markdown_fence(repaired) if repaired else AI_UNAVAILABLE_MESSAGE
+        answer = (
+            _strip_markdown_fence(repaired)
+            if repaired
+            else getattr(
+                self.llm,
+                "unavailable_message",
+                AI_UNAVAILABLE_MESSAGE,
+            )
+        )
         return {
             "answer": answer,
             "answer_source": (

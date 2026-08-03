@@ -108,6 +108,8 @@ class HealthResponse(BaseModel):
     data_source: Literal["doradb"]
     database_connected: bool
     llm_provider: str
+    llm_model: str
     llm_configured: bool
+    llm_available: bool
     tts_configured: bool
     detail: str | None = None

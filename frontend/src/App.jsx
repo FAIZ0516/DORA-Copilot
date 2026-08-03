@@ -1,19 +1,72 @@
 import { useEffect, useState } from "react";
 import {
+  Activity,
+  ArrowLeft,
+  ArrowRight,
   BarChart3,
   BookOpen,
   Bot,
+  BriefcaseBusiness,
+  ChartNoAxesCombined,
+  Code2,
   Database,
+  Gauge,
+  GitBranch,
   Headphones,
+  Lightbulb,
   Search,
   ShieldCheck,
+  TrendingUp,
 } from "lucide-react";
 import Chat from "./components/Chat";
+import Grainient from "./components/Grainient";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const fallbackProjects = [{ key: "DCPM", label: "DCPM", detail: "DoraDB" }];
+const ROLE_STORAGE_KEY = "echo-selected-role";
+const ROLE_EXPERIENCES = [
+  {
+    role: "technical",
+    title: "Technical",
+    eyebrow: "Engineering Intelligence",
+    shortDescription: "Engineering insights and advanced delivery analytics.",
+    expandedDescription:
+      "Explore DORA metrics, sprint performance, delivery bottlenecks, deployment trends, and AI-generated engineering recommendations.",
+    icon: Code2,
+    buttonLabel: "Enter Technical Workspace",
+    features: [
+      { label: "DORA Metrics", icon: Code2 },
+      { label: "Sprint Analysis", icon: GitBranch },
+      { label: "Bottleneck Detection", icon: Activity },
+      { label: "AI Recommendations", icon: Gauge },
+    ],
+  },
+  {
+    role: "business",
+    title: "Business",
+    eyebrow: "Executive Intelligence",
+    shortDescription: "Executive summaries and business-focused insights.",
+    expandedDescription:
+      "View high-level delivery performance, productivity trends, executive summaries, KPI highlights, and clear business recommendations.",
+    icon: BriefcaseBusiness,
+    buttonLabel: "Enter Business Workspace",
+    features: [
+      { label: "Executive Summary", icon: BriefcaseBusiness },
+      { label: "Productivity Trends", icon: TrendingUp },
+      { label: "KPI Highlights", icon: ChartNoAxesCombined },
+      { label: "Business Recommendations", icon: Lightbulb },
+    ],
+  },
+];
 
 export default function App() {
+  const [screen, setScreen] = useState("splash");
+  const [expandedRole, setExpandedRole] = useState(null);
+  const [selectedRole, setSelectedRole] = useState(() =>
+    typeof window !== "undefined" && window.localStorage.getItem(ROLE_STORAGE_KEY) === "business"
+      ? "business"
+      : "technical",
+  );
   const [projects, setProjects] = useState(fallbackProjects);
   const [system, setSystem] = useState({
     dataSource: "connecting",
@@ -21,6 +74,12 @@ export default function App() {
     databaseConnected: false,
     llm: "Google AI Studio",
   });
+
+  useEffect(() => {
+    if (screen !== "splash") return undefined;
+    const timer = window.setTimeout(() => setScreen("role-selection"), 2000);
+    return () => window.clearTimeout(timer);
+  }, [screen]);
 
   useEffect(() => {
     let active = true;
@@ -72,6 +131,155 @@ export default function App() {
         : system.dataSource === "doradb"
           ? "DoraDB setup required"
           : "Connecting";
+
+  function selectRole(role) {
+    window.localStorage.setItem(ROLE_STORAGE_KEY, role);
+    setSelectedRole(role);
+    setScreen("welcome");
+  }
+
+  if (screen === "splash") {
+    return (
+      <main className="echo-screen echo-splash" aria-label="Echo loading screen">
+        <EchoGrainientBackground />
+        <div className="echo-splash-content">
+          <EchoLogo />
+          <h1>Turn Engineering Data into Decisions</h1>
+        </div>
+      </main>
+    );
+  }
+
+  if (screen === "role-selection") {
+    return (
+      <main className="echo-screen echo-role-screen">
+        <EchoGrainientBackground />
+        <section className="echo-role-content" aria-labelledby="role-heading">
+          <header className="echo-role-heading">
+            <h1 id="role-heading">Choose Your Experience</h1>
+            <p>Select the workspace that best fits your role.</p>
+          </header>
+
+          <div
+            className={`echo-role-grid ${expandedRole ? `has-active active-${expandedRole}` : ""}`}
+          >
+            {ROLE_EXPERIENCES.map((experience) => (
+              <RoleExperiencePanel
+                key={experience.role}
+                experience={experience}
+                isActive={expandedRole === experience.role}
+                isMuted={Boolean(expandedRole && expandedRole !== experience.role)}
+                onExpand={setExpandedRole}
+                onCollapse={(role) => {
+                  setExpandedRole((current) => (current === role ? null : current));
+                }}
+                onSelect={selectRole}
+              />
+            ))}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (screen === "welcome") {
+    return (
+      <main
+        className="echo-welcome-screen"
+        onPointerMove={trackWelcomeSpotlight}
+        onPointerLeave={resetWelcomeSpotlight}
+      >
+        <div className="echo-welcome-atmosphere" aria-hidden="true">
+          <span className="welcome-orb orb-cyan" />
+          <span className="welcome-orb orb-violet" />
+          <span className="welcome-light-beam" />
+        </div>
+        <div className="echo-welcome-cursor-light" aria-hidden="true" />
+
+        <header className="echo-welcome-nav">
+          <a className="echo-welcome-brand" href="#echo-welcome-home" aria-label="Echo home">
+            <EchoLogo />
+          </a>
+          <nav aria-label="Welcome navigation">
+            <a href="#echo-welcome-home">Home</a>
+            <a href="#echo-welcome-about">About</a>
+          </nav>
+        </header>
+
+        <section className="echo-welcome-hero" id="echo-welcome-home">
+          <div className="echo-welcome-hero-logo">
+            <EchoLogo />
+          </div>
+          <p className="echo-welcome-eyebrow">
+            <span aria-hidden="true" />
+            AI Engineering Performance Advisor
+          </p>
+          <h1>
+            <span>Stop searching dashboards.</span>
+            <span>Start asking questions.</span>
+          </h1>
+          <p className="echo-welcome-subheading">
+            Transform Jira and DORA engineering data into clear engineering
+            intelligence using conversational AI.
+          </p>
+
+          <div className="echo-welcome-actions">
+            <button type="button" onClick={() => setScreen("chat")}>
+              Get Started
+              <ArrowRight aria-hidden="true" />
+            </button>
+            <a href="#echo-welcome-about">Learn More</a>
+          </div>
+
+          <div className="echo-welcome-features" id="echo-welcome-about" aria-label="Echo capabilities">
+            {["DORA Metrics", "Sprint Intelligence", "AI Recommendations", "Executive Summary"].map(
+              (feature, index) => (
+                <span key={feature} style={{ "--chip-index": index }}>
+                  <i aria-hidden="true" />
+                  {feature}
+                </span>
+              ),
+            )}
+          </div>
+        </section>
+
+        <p className="echo-welcome-footnote">
+          Governed intelligence for modern delivery teams
+        </p>
+      </main>
+    );
+  }
+
+  if (screen === "chat") {
+    return (
+      <main className="echo-chat-app">
+        <header className="echo-chat-app-header">
+          <button type="button" onClick={() => setScreen("welcome")}>
+            <ArrowLeft aria-hidden="true" />
+            <span>Back</span>
+          </button>
+
+          <div className="echo-chat-app-brand" aria-label="Echo chat workspace">
+            <EchoLogo />
+          </div>
+
+          <div className="echo-chat-app-meta">
+            <span className="echo-chat-workspace-label">
+              {selectedRole === "business" ? "Business Workspace" : "Technical Workspace"}
+            </span>
+            <span className={`echo-chat-status ${system.dataSource}`}>
+              <i aria-hidden="true" />
+              {statusLabel}
+            </span>
+          </div>
+        </header>
+
+        <section className="echo-chat-app-body" aria-label="Echo chat workspace">
+          <Chat projects={projects} databaseConnected={system.databaseConnected} />
+        </section>
+      </main>
+    );
+  }
 
   return (
     <div className="site-shell">
@@ -210,6 +418,161 @@ export default function App() {
           </div>
         </section>
       </main>
+    </div>
+  );
+}
+
+function trackWelcomeSpotlight(event) {
+  if (event.pointerType !== "mouse") return;
+  const bounds = event.currentTarget.getBoundingClientRect();
+  event.currentTarget.style.setProperty(
+    "--welcome-pointer-x",
+    `${event.clientX - bounds.left}px`,
+  );
+  event.currentTarget.style.setProperty(
+    "--welcome-pointer-y",
+    `${event.clientY - bounds.top}px`,
+  );
+}
+
+function resetWelcomeSpotlight(event) {
+  event.currentTarget.style.setProperty("--welcome-pointer-x", "50%");
+  event.currentTarget.style.setProperty("--welcome-pointer-y", "43%");
+}
+
+function RoleExperiencePanel({
+  experience,
+  isActive,
+  isMuted,
+  onExpand,
+  onCollapse,
+  onSelect,
+}) {
+  const ExperienceIcon = experience.icon;
+  const descriptionId = `${experience.role}-experience-description`;
+
+  function revealPanel(event) {
+    if (!event.target.closest("button")) onExpand(experience.role);
+  }
+
+  function handlePanelKeyDown(event) {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onExpand(experience.role);
+    }
+  }
+
+  function collapseWhenUnfocused(event) {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      onCollapse(experience.role);
+    }
+  }
+
+  function collapseAfterPointerLeaves(event) {
+    if (!event.currentTarget.contains(document.activeElement)) {
+      onCollapse(experience.role);
+    }
+  }
+
+  return (
+    <article
+      className={`role-experience-panel role-${experience.role} ${isActive ? "is-active" : ""} ${isMuted ? "is-muted" : ""}`}
+      tabIndex="0"
+      role="group"
+      aria-expanded={isActive}
+      aria-labelledby={`${experience.role}-experience-title`}
+      aria-describedby={descriptionId}
+      onMouseEnter={() => onExpand(experience.role)}
+      onMouseLeave={collapseAfterPointerLeaves}
+      onFocus={() => onExpand(experience.role)}
+      onBlur={collapseWhenUnfocused}
+      onClick={revealPanel}
+      onKeyDown={handlePanelKeyDown}
+    >
+      <div className="role-panel-glow" aria-hidden="true" />
+      <div className="role-panel-summary">
+        <div className="role-panel-topline">
+          <span>{experience.eyebrow}</span>
+          <span className="role-panel-index">
+            {experience.role === "technical" ? "01" : "02"}
+          </span>
+        </div>
+        <span className="role-panel-icon" aria-hidden="true">
+          <ExperienceIcon />
+        </span>
+        <h2 id={`${experience.role}-experience-title`}>{experience.title}</h2>
+        <p className="role-panel-short" id={descriptionId}>
+          {experience.shortDescription}
+        </p>
+      </div>
+
+      <div className="role-panel-expanded" aria-hidden={!isActive}>
+        <p>{experience.expandedDescription}</p>
+        <ul>
+          {experience.features.map((feature) => {
+            const FeatureIcon = feature.icon;
+            return (
+              <li key={feature.label}>
+                <FeatureIcon aria-hidden="true" />
+                <span>{feature.label}</span>
+              </li>
+            );
+          })}
+        </ul>
+        <button
+          className="role-enter-button"
+          type="button"
+          tabIndex={isActive ? 0 : -1}
+          onClick={() => onSelect(experience.role)}
+        >
+          <span>{experience.buttonLabel}</span>
+          <ArrowRight aria-hidden="true" />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function EchoGrainientBackground() {
+  return (
+    <div className="echo-grainient-background" aria-hidden="true">
+      <Grainient
+        color1="#ffffff"
+        color2="#06B6D4"
+        color3="#f35d5d"
+        timeSpeed={1.35}
+        colorBalance={0}
+        warpStrength={1}
+        warpFrequency={5}
+        warpSpeed={2}
+        warpAmplitude={50}
+        blendAngle={0}
+        blendSoftness={0.05}
+        rotationAmount={500}
+        noiseScale={2}
+        grainAmount={0.1}
+        grainScale={2}
+        grainAnimated={false}
+        contrast={1.5}
+        gamma={1}
+        saturation={1}
+        centerX={0}
+        centerY={0}
+        zoom={0.9}
+      />
+    </div>
+  );
+}
+
+function EchoLogo() {
+  return (
+    <div className="echo-logo" aria-label="Echo">
+      <span className="echo-logo-mark" aria-hidden="true">
+        <span className="echo-logo-letter">E</span>
+        <span className="echo-logo-bars"><i /><i /><i /></span>
+      </span>
+      <span className="echo-logo-word">ECHO</span>
     </div>
   );
 }

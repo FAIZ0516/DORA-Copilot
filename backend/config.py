@@ -2,6 +2,8 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
@@ -39,11 +41,19 @@ class Settings(BaseSettings):
     agent_memory_max_turns: int = Field(default=12, ge=2, le=30)
     agent_audit_max_records: int = Field(default=500, ge=10, le=10000)
 
+    llm_provider: Literal["google-ai-studio", "ollama"] = "google-ai-studio"
+
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"
     gemini_timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
     gemini_planner_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     gemini_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
+
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3:4b"
+    ollama_timeout_seconds: float = Field(default=90.0, ge=1.0, le=300.0)
+    ollama_planner_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+    ollama_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
 
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
@@ -73,6 +83,38 @@ class Settings(BaseSettings):
     @property
     def gemini_configured(self) -> bool:
         return bool(self.gemini_api_key)
+
+    @property
+    def ollama_configured(self) -> bool:
+        return bool(self.ollama_base_url.strip() and self.ollama_model.strip())
+
+    @property
+    def llm_configured(self) -> bool:
+        if self.llm_provider == "ollama":
+            return self.ollama_configured
+        return self.gemini_configured
+
+    @property
+    def llm_model(self) -> str:
+        if self.llm_provider == "ollama":
+            return self.ollama_model
+        return self.gemini_model
+
+    @property
+    def llm_source(self) -> str:
+        return f"{self.llm_provider}:{self.llm_model}"
+
+    @property
+    def llm_planner_temperature(self) -> float:
+        if self.llm_provider == "ollama":
+            return self.ollama_planner_temperature
+        return self.gemini_planner_temperature
+
+    @property
+    def llm_response_temperature(self) -> float:
+        if self.llm_provider == "ollama":
+            return self.ollama_response_temperature
+        return self.gemini_response_temperature
 
     @property
     def doradb_url(self) -> URL:

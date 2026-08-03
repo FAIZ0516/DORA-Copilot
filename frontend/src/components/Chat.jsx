@@ -17,6 +17,45 @@ import MetricChart from "./MetricChart";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const SESSION_KEY = "dora-copilot-session";
+const ROLE_STORAGE_KEY = "echo-selected-role";
+const ROLE_SUGGESTIONS = {
+  technical: [
+    { icon: "📊", title: "Sprint Health", question: "Why did Sprint 18 delivery slow down?" },
+    {
+      icon: "🚀",
+      title: "Deployment Trends",
+      question: "Analyse deployment frequency over the last 30 days.",
+    },
+    {
+      icon: "⚠️",
+      title: "Engineering Bottlenecks",
+      question: "Identify the biggest delivery bottlenecks this sprint.",
+    },
+    {
+      icon: "🤖",
+      title: "AI Recommendations",
+      question: "Recommend actions to improve engineering performance.",
+    },
+  ],
+  business: [
+    {
+      icon: "📈",
+      title: "Executive Summary",
+      question: "Summarise engineering performance this month.",
+    },
+    {
+      icon: "💰",
+      title: "Productivity",
+      question: "Which engineering team delivered the highest business value?",
+    },
+    { icon: "⚠️", title: "Delivery Risks", question: "Highlight the biggest delivery risks." },
+    {
+      icon: "💡",
+      title: "Management Recommendations",
+      question: "What should leadership focus on next?",
+    },
+  ],
+};
 
 const welcomeMessage = {
   id: "welcome",
@@ -43,9 +82,17 @@ function makeMessage(role, text, extras = {}) {
   };
 }
 
+function readSelectedRole() {
+  if (typeof window === "undefined") return "technical";
+  return window.localStorage.getItem(ROLE_STORAGE_KEY) === "business"
+    ? "business"
+    : "technical";
+}
+
 export default function Chat({ projects, databaseConnected }) {
   const [messages, setMessages] = useState([welcomeMessage]);
   const [input, setInput] = useState("");
+  const [selectedRole] = useState(readSelectedRole);
   const [project, setProject] = useState("");
   const [sessionId, setSessionId] = useState(createSessionId);
   const [isSending, setIsSending] = useState(false);
@@ -53,6 +100,7 @@ export default function Chat({ projects, databaseConnected }) {
   const [speechError, setSpeechError] = useState("");
   const [speakingId, setSpeakingId] = useState(null);
   const endRef = useRef(null);
+  const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const audioRef = useRef(null);
   const audioRequestControllerRef = useRef(null);
@@ -248,8 +296,38 @@ export default function Chat({ projects, databaseConnected }) {
     }
   }
 
+  const isEmpty = !messages.some((message) => message.role === "user");
+  const suggestions = ROLE_SUGGESTIONS[selectedRole];
+  const emptyQuestion =
+    selectedRole === "business"
+      ? "What business insight are you looking for today?"
+      : "What would you like to analyse today?";
+  const inputPlaceholder =
+    selectedRole === "business"
+      ? "Ask about executive summaries, KPIs or engineering performance..."
+      : "Ask about DORA metrics, sprint performance, deployment trends...";
+
+  function chooseSuggestion(question) {
+    setInput(question);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
   return (
-    <div className="chat-panel">
+    <div className={`chat-panel chat-panel-workspace ${isEmpty ? "chat-panel-empty" : ""}`}>
+      <aside className="empty-chat-sidebar" aria-label="Recent conversations">
+        <div>
+          <p>Workspace</p>
+          <h3>Recent Conversations</h3>
+        </div>
+        <div className="empty-chat-sidebar-note">
+          <Sparkles size={16} aria-hidden="true" />
+          <div>
+            <strong>New conversation</strong>
+            <span>Your recent chats will appear here.</span>
+          </div>
+        </div>
+        <span className="empty-chat-role-label">{selectedRole} workspace</span>
+      </aside>
       <div className="chat-toolbar">
         <div className="project-picker">
           <label htmlFor="project-select">Project scope</label>
@@ -280,7 +358,38 @@ export default function Chat({ projects, databaseConnected }) {
       </div>
 
       <div className="message-list" aria-live="polite">
-        <div className="conversation-intro">
+        <section
+          className={`empty-chat-state ${isEmpty ? "" : "is-hidden"}`}
+          aria-hidden={!isEmpty}
+        >
+          <header className="empty-chat-greeting">
+            <p>Hello, Aisyah <span aria-hidden="true">👋</span></p>
+            <h3>{emptyQuestion}</h3>
+          </header>
+          <div className="empty-chat-suggestions">
+            <p>Suggested Questions</p>
+            <div className="suggestion-card-grid">
+              {suggestions.map((suggestion, index) => (
+                <button
+                  key={suggestion.title}
+                  type="button"
+                  style={{ "--suggestion-index": index }}
+                  onClick={() => chooseSuggestion(suggestion.question)}
+                >
+                  <span className="suggestion-icon" aria-hidden="true">
+                    {suggestion.icon}
+                  </span>
+                  <span className="suggestion-copy">
+                    <strong>{suggestion.title}</strong>
+                    <span>{suggestion.question}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <div className={`conversation-intro ${isEmpty ? "empty-chat-existing-hidden" : ""}`}>
           <span className="intro-icon"><Sparkles size={25} /></span>
           <div>
             <h3>Your delivery intelligence agent</h3>
@@ -290,7 +399,7 @@ export default function Chat({ projects, databaseConnected }) {
 
         {messages.map((message) => (
           <article
-            className={`message ${message.role} ${message.error ? "message-error" : ""}`}
+            className={`message ${message.role} ${message.error ? "message-error" : ""} ${isEmpty ? "empty-chat-existing-hidden" : ""}`}
             key={message.id}
           >
             <div className="message-avatar" aria-hidden="true">
@@ -354,8 +463,9 @@ export default function Chat({ projects, databaseConnected }) {
           sendMessage(input);
         }}>
           <textarea
+            ref={inputRef}
             aria-label="Ask about your delivery metrics"
-            placeholder="Ask about DoraDB, DORA, software delivery, or anything else…"
+            placeholder={inputPlaceholder}
             rows="1"
             value={input}
             maxLength={2000}
