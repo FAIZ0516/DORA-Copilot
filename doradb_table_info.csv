@@ -1,0 +1,40 @@
+table_name,object_type,column_name,description,source_reference
+vw_gdt_dte_release_frequency,view,r_id,Release ID; primary join key to release_success and release_info,doradb.py
+vw_gdt_dte_release_frequency,view,release_year,Year of the release,schema.yaml / doradb.py
+vw_gdt_dte_release_frequency,view,fixversion,Jira fix version string identifying the release,schema.yaml / doradb.py
+vw_gdt_dte_release_frequency,view,release_date,Date the release shipped,schema.yaml / doradb.py
+vw_gdt_dte_release_frequency,view,release_category,"1 = major release; used to filter most queries to majors only",doradb.py
+vw_gdt_dte_release_frequency,view,major_release_freq,Months between major releases -> Release Frequency metric,schema.yaml / doradb.py
+vw_gdt_dte_release_frequency,view,ltc,Lead Time for Change in months,schema.yaml / doradb.py
+vw_gdt_dte_release_frequency,view,overall_actual_diff,Days between cycle start and release end; /30.0 -> Delivery Cycle Time in months,schema.yaml / doradb.py
+vw_gdt_dte_release_frequency,view,outcome_rating,Failure indicator; AVG*100 -> Change Failure Rate %,doradb.py
+vw_gdt_dte_release_frequency,view,dev_insprint_actual_start,Start of in-sprint dev work; Delivery Cycle Time start boundary,doradb.py
+vw_gdt_dte_release_frequency,view,release_actual_start,Actual release start date; Lead Time start boundary,doradb.py
+vw_gdt_dte_release_frequency,view,release_actual_end,Actual release end date; Lead Time end boundary,doradb.py
+vw_gdt_dte_release_success,view,r_id,Release ID; join key back to release_frequency,schema.yaml / doradb.py
+vw_gdt_dte_release_success,view,success_rel_freq,Release frequency computed over successful releases only,schema.yaml / doradb.py
+vw_gdt_dte_release_success,view,delivery_cycle_time,Precomputed delivery cycle time for successful releases,schema.yaml / doradb.py
+tbl_gdt_dte_release_info,table,r_id,Release ID; join key to release_frequency,schema.yaml / doradb.py
+tbl_gdt_dte_release_info,table,release_name_sorted,"Display-friendly, sortable release/version name",schema.yaml / doradb.py
+tbl_gdt_dte_release_info,table,release_category,1 = major release,schema.yaml / doradb.py
+tbl_gdt_dte_release_info,table,outcome_rating,Release outcome/failure rating,schema.yaml / doradb.py
+tbl_gdt_dte_release_info,table,release_date,Date the release shipped,doradb.py
+tbl_gdt_dte_release_info,table,fixversion,Jira fix version string,doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,release_year,Year of the associated release,schema.yaml / doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,release_major,Major release flag/number for the row's release,doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,release_name,Jira release/fix version name,schema.yaml / doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,release_name_sorted,"Display-friendly, sortable release name",schema.yaml / doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,id,Internal row/issue identifier,doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,key,Jira issue key; join key to jira_issues.key,schema.yaml / joins.yaml
+mvw_gdt_dte_jira_fuslist,materialized view,issuetype,"Feature, User Story, Bug, Task, or Test",schema.yaml / doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,summary,Jira issue summary/title text,schema.yaml / doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,status,Jira issue workflow status,schema.yaml / doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,major_flag,True if row belongs to a major release,schema.yaml / doradb.py
+mvw_gdt_dte_jira_fuslist,materialized view,hide_flag,True if row should be excluded from results,schema.yaml / doradb.py
+tbl_gdt_dte_jira_issues,table,key,Jira issue key; join key to jira_fuslist.key,schema.yaml / joins.yaml
+tbl_gdt_dte_jira_issues,table,project_key,Jira project key; hard-filtered to DCPM by application code,schema.yaml / doradb.py
+tbl_gdt_dte_jira_issues,table,issuetype,"Feature, User Story, Bug, Task, or Test (referenced as filter column)",doradb.py
+tbl_gdt_dte_jira_issues,table,dcpsquad,"Squad name (e.g. TITAN, JAEGER); nullable, matched case-insensitively",doradb.py
+tbl_gdt_dte_jira_issues,table,fixversions,"JSONB {""fixversions"": [...]}; unnested to attribute issues to release versions",doradb.py
+tbl_gdt_dte_releases,table,release_name,Jira release/fix version name; join key to jira_fuslist.release_name,joins.yaml / doradb.py
+tbl_gdt_dte_releases,table,release_date,Date the release shipped,doradb.py
