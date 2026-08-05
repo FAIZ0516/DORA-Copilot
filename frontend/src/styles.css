@@ -2684,6 +2684,7 @@ a {
 }
 
 .empty-chat-sidebar-note {
+  width: 100%;
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -2692,8 +2693,85 @@ a {
   color: rgba(219, 234, 250, 0.7);
   background: rgba(181, 217, 255, 0.045);
   border: 1px solid rgba(181, 217, 255, 0.08);
-  border-radius: 13px;
+  border-radius: 8px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   transition: background-color 250ms ease-out, border-color 250ms ease-out;
+}
+
+.recent-conversation-list {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  overflow-y: auto;
+}
+
+.recent-conversation-list > p,
+.recent-conversation-error {
+  margin: 8px 2px;
+  color: rgba(197, 218, 241, 0.58);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.recent-conversation-list > button {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  color: rgba(222, 235, 250, 0.72);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recent-conversation-list > button:hover,
+.recent-conversation-list > button.active {
+  background: rgba(181, 217, 255, 0.07);
+  border-color: rgba(122, 208, 239, 0.17);
+}
+
+.recent-conversation-list > button:focus-visible,
+.recent-conversation-error button:focus-visible {
+  outline: 2px solid #74dff4;
+  outline-offset: 2px;
+}
+
+.recent-conversation-list strong,
+.recent-conversation-list span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-conversation-list strong {
+  color: rgba(241, 248, 255, 0.88);
+  font-size: 0.7rem;
+  font-weight: 570;
+}
+
+.recent-conversation-list span {
+  margin-top: 4px;
+  color: rgba(166, 194, 225, 0.5);
+  font-size: 0.59rem;
+  text-transform: capitalize;
+}
+
+.recent-conversation-error button {
+  margin-top: 8px;
+  padding: 5px 8px;
+  color: #dff7ff;
+  background: rgba(116, 223, 244, 0.08);
+  border: 1px solid rgba(116, 223, 244, 0.25);
+  border-radius: 5px;
+  cursor: pointer;
 }
 
 .empty-chat-sidebar-note:hover {
@@ -2779,8 +2857,8 @@ a {
 }
 
 .empty-chat-state {
-  width: min(850px, 100%);
-  max-height: 590px;
+  width: min(1040px, 100%);
+  max-height: 1800px;
   margin: 0 auto;
   padding: clamp(42px, 6vh, 68px) clamp(28px, 5vw, 62px) 38px;
   overflow: hidden;
@@ -2788,6 +2866,307 @@ a {
   transform: translateY(0);
   transition: opacity 300ms ease-out, transform 300ms ease-out, max-height 350ms ease-out, padding 350ms ease-out;
 }
+
+.jira-delivery-overview {
+  margin-top: 26px;
+  padding: 18px 0;
+  border-top: 1px solid rgba(167, 207, 245, 0.14);
+  border-bottom: 1px solid rgba(167, 207, 245, 0.14);
+}
+
+.jira-overview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.jira-overview-header h3,
+.jira-breakdown h4,
+.jira-quality-panel h4 {
+  margin: 0;
+  color: #f3f8ff;
+  font-size: 0.9rem;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.jira-overview-header p {
+  margin: 5px 0 0;
+  color: rgba(190, 215, 240, 0.6);
+  font-size: 0.69rem;
+}
+
+.jira-overview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.jira-overview-actions > span {
+  color: rgba(166, 194, 225, 0.48);
+  font-size: 0.59rem;
+  white-space: nowrap;
+}
+
+.jira-overview-actions button,
+.jira-dashboard-error button {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  color: rgba(225, 240, 253, 0.82);
+  background: rgba(181, 217, 255, 0.055);
+  border: 1px solid rgba(153, 205, 242, 0.16);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.63rem;
+  cursor: pointer;
+}
+
+.jira-overview-actions button:first-of-type {
+  width: 30px;
+  padding: 0;
+}
+
+.jira-overview-actions button:hover,
+.jira-dashboard-error button:hover {
+  background: rgba(121, 202, 233, 0.12);
+  border-color: rgba(109, 218, 241, 0.35);
+}
+
+.jira-overview-actions button:focus-visible,
+.jira-kpi-grid button:focus-visible,
+.jira-breakdown-bars button:focus-visible,
+.jira-dashboard-error button:focus-visible {
+  outline: 2px solid #74dff4;
+  outline-offset: 2px;
+}
+
+.jira-overview-actions button:disabled,
+.jira-kpi-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.is-spinning {
+  animation: jira-refresh-spin 800ms linear infinite;
+}
+
+.jira-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.jira-kpi-grid > button,
+.jira-kpi-skeleton {
+  min-width: 0;
+  min-height: 104px;
+  padding: 12px;
+  background: rgba(10, 25, 53, 0.6);
+  border: 1px solid rgba(159, 203, 239, 0.14);
+  border-radius: 8px;
+}
+
+.jira-kpi-grid > button {
+  position: relative;
+  color: #f5f9ff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.jira-kpi-grid > button:nth-child(1) { border-top-color: #55c2dc; }
+.jira-kpi-grid > button:nth-child(2) { border-top-color: #e7a83f; }
+.jira-kpi-grid > button:nth-child(3) { border-top-color: #e6606b; }
+.jira-kpi-grid > button:nth-child(4) { border-top-color: #66bf8c; }
+
+.jira-kpi-grid > button:hover {
+  transform: translateY(-2px);
+  background: rgba(25, 47, 82, 0.72);
+  border-color: rgba(117, 214, 239, 0.35);
+}
+
+.jira-kpi-grid button > span,
+.jira-kpi-grid button > small,
+.jira-kpi-grid button > em,
+.jira-kpi-grid button > b {
+  display: block;
+}
+
+.jira-kpi-grid button > span {
+  color: rgba(198, 218, 239, 0.72);
+  font-size: 0.64rem;
+  font-weight: 600;
+}
+
+.jira-kpi-grid button > strong {
+  display: inline-block;
+  margin-top: 7px;
+  color: #fff;
+  font-size: 1.38rem;
+  font-weight: 650;
+}
+
+.jira-kpi-grid button > b {
+  margin-top: 2px;
+  color: #75d6a0;
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
+.jira-kpi-grid button > small {
+  margin-top: 6px;
+  padding-right: 56px;
+  color: rgba(184, 206, 229, 0.5);
+  font-size: 0.57rem;
+  line-height: 1.35;
+}
+
+.jira-kpi-grid button > em {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  color: rgba(104, 214, 239, 0.72);
+  font-size: 0.55rem;
+  font-style: normal;
+}
+
+.jira-kpi-skeleton {
+  background: linear-gradient(90deg, rgba(31, 56, 91, 0.42), rgba(67, 97, 133, 0.35), rgba(31, 56, 91, 0.42));
+  background-size: 200% 100%;
+  animation: jira-skeleton 1.2s ease-in-out infinite;
+}
+
+.jira-dashboard-error,
+.jira-dashboard-empty {
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 14px;
+  color: rgba(218, 232, 247, 0.72);
+  background: rgba(26, 39, 61, 0.42);
+  border: 1px dashed rgba(169, 205, 239, 0.17);
+  border-radius: 8px;
+  font-size: 0.67rem;
+}
+
+.jira-dashboard-expanded {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.jira-breakdown,
+.jira-quality-panel {
+  min-width: 0;
+  padding: 14px;
+  background: rgba(7, 18, 41, 0.5);
+  border: 1px solid rgba(159, 203, 239, 0.12);
+  border-radius: 8px;
+}
+
+.jira-breakdown-bars {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.jira-breakdown-bars button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(90px, 0.9fr) minmax(80px, 1.6fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 3px 2px;
+  color: rgba(217, 233, 249, 0.76);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.61rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jira-breakdown-bars button:hover {
+  color: #fff;
+  background: rgba(123, 202, 232, 0.06);
+}
+
+.jira-bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jira-bar-track {
+  height: 6px;
+  overflow: hidden;
+  background: rgba(180, 212, 241, 0.08);
+  border-radius: 3px;
+}
+
+.jira-bar-track i {
+  height: 100%;
+  display: block;
+  background: #55bad5;
+  border-radius: 3px;
+}
+
+.jira-breakdown > p,
+.jira-quality-panel > p {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 11px 0 0;
+  color: rgba(174, 200, 225, 0.5);
+  font-size: 0.57rem;
+  line-height: 1.45;
+}
+
+.jira-breakdown > p svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.jira-quality-panel dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.jira-quality-panel dl > div {
+  padding: 9px;
+  background: rgba(188, 215, 241, 0.04);
+  border-left: 2px solid rgba(230, 169, 63, 0.7);
+}
+
+.jira-quality-panel dt {
+  color: rgba(188, 210, 232, 0.58);
+  font-size: 0.58rem;
+}
+
+.jira-quality-panel dd {
+  margin: 4px 0 0;
+  color: #f5f9ff;
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+@keyframes jira-refresh-spin { to { transform: rotate(360deg); } }
+@keyframes jira-skeleton { 50% { background-position: -100% 0; } }
 
 .empty-chat-state.is-hidden {
   max-height: 0;
@@ -2824,7 +3203,7 @@ a {
 }
 
 .empty-chat-suggestions {
-  margin-top: clamp(38px, 5.5vh, 52px);
+  margin-top: 26px;
 }
 
 .empty-chat-suggestions > p {
@@ -2842,7 +3221,7 @@ a {
   gap: 13px;
 }
 
-.suggestion-card-grid > .suggestion-card {
+.suggestion-card-grid > button {
   min-width: 0;
   min-height: 112px;
   display: flex;
@@ -2854,11 +3233,26 @@ a {
     linear-gradient(140deg, rgba(199, 224, 255, 0.085), rgba(126, 162, 218, 0.028)),
     rgba(9, 24, 54, 0.42);
   border: 1px solid rgba(176, 211, 249, 0.14);
-  border-radius: 18px;
+  border-radius: 8px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055), 0 10px 30px rgba(2, 10, 25, 0.08);
   text-align: left;
+  cursor: pointer;
   backdrop-filter: blur(18px) saturate(116%);
   animation: suggestion-card-in 340ms calc(120ms + var(--suggestion-index) * 45ms) ease-out both;
+  transition: transform 250ms ease-out, border-color 250ms ease-out, background-color 250ms ease-out, box-shadow 250ms ease-out;
+}
+
+.suggestion-card-grid > button:hover {
+  transform: translateY(-6px) scale(1.02);
+  background: rgba(117, 157, 220, 0.11);
+  border-color: rgba(111, 215, 245, 0.42);
+  box-shadow: 0 18px 38px rgba(3, 13, 33, 0.24), 0 0 24px rgba(98, 198, 240, 0.08);
+}
+
+.suggestion-card-grid > button:focus-visible {
+  outline: 3px solid rgba(111, 222, 248, 0.9);
+  outline-offset: 3px;
+  border-color: rgba(111, 215, 245, 0.5);
 }
 
 .suggestion-icon {
@@ -2869,7 +3263,7 @@ a {
   place-items: center;
   background: rgba(152, 203, 255, 0.08);
   border: 1px solid rgba(168, 213, 255, 0.12);
-  border-radius: 11px;
+  border-radius: 7px;
   font-size: 1rem;
 }
 
@@ -2961,6 +3355,10 @@ a {
   .empty-chat-state {
     padding-inline: 28px;
   }
+
+  .jira-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -2986,6 +3384,24 @@ a {
     display: none;
   }
 
+  .recent-conversation-list {
+    flex: 1;
+    flex-direction: row;
+    margin-top: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .recent-conversation-list > button {
+    width: 170px;
+    flex: 0 0 170px;
+  }
+
+  .recent-conversation-list > p,
+  .recent-conversation-error {
+    min-width: 150px;
+  }
+
   .empty-chat-role-label {
     margin-top: 0;
   }
@@ -3008,6 +3424,21 @@ a {
   .empty-chat-state {
     padding-top: 38px;
   }
+
+  .jira-overview-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .jira-overview-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .jira-dashboard-expanded {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 560px) {
@@ -3027,8 +3458,29 @@ a {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .suggestion-card-grid > .suggestion-card {
+  .suggestion-card-grid > button {
     min-height: 96px;
+  }
+
+  .jira-kpi-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .jira-kpi-grid > button,
+  .jira-kpi-skeleton {
+    min-height: 94px;
+  }
+
+  .jira-overview-actions > span {
+    width: 100%;
+  }
+
+  .jira-breakdown-bars button {
+    grid-template-columns: minmax(86px, 1fr) minmax(70px, 1.2fr) auto;
+  }
+
+  .jira-quality-panel dl {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .empty-chat-state {

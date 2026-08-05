@@ -1,77 +1,47 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
+  AlertTriangle,
+  BriefcaseBusiness,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
+  Database,
+  Focus,
+  Gauge,
   Mic,
   MicOff,
+  Plus,
   RotateCcw,
   Sparkles,
   Square,
+  Table2,
+  Users,
   Volume2,
+  Workflow,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import DataTable from "./DataTable";
 import MetricChart from "./MetricChart";
+import JiraDeliveryOverview from "./JiraDeliveryOverview";
+import { WORKSPACE_PLACEHOLDERS, WORKSPACE_SUGGESTIONS } from "../workspaceSuggestions";
+import {
+  ACTIVE_CONVERSATION_KEY,
+  archiveConversation,
+  getConversation,
+  listConversations,
+  messagesFromConversation,
+  sendChat,
+} from "../services/conversations";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-const SESSION_KEY = "dora-copilot-session";
-const ROLE_STORAGE_KEY = "echo-selected-role";
-const ROLE_CAPABILITIES = {
-  technical: [
-    { icon: "📊", title: "Sprint Health", description: "Investigate delivery flow and sprint-level signals." },
-    {
-      icon: "🚀",
-      title: "Deployment Trends",
-      description: "Explore release cadence and changes over time.",
-    },
-    {
-      icon: "⚠️",
-      title: "Engineering Bottlenecks",
-      description: "Surface bottlenecks and evidence-backed delivery risks.",
-    },
-    {
-      icon: "🤖",
-      title: "AI Recommendations",
-      description: "Generate prioritized actions from validated metrics.",
-    },
-  ],
-  business: [
-    {
-      icon: "📈",
-      title: "Executive Summary",
-      description: "Translate delivery evidence into decision-ready summaries.",
-    },
-    {
-      icon: "💰",
-      title: "Productivity",
-      description: "Understand delivery trends and team-level performance.",
-    },
-    { icon: "⚠️", title: "Delivery Risks", description: "Identify material delivery risks and supporting evidence." },
-    {
-      icon: "💡",
-      title: "Management Recommendations",
-      description: "Turn findings into clear management priorities.",
-    },
-  ],
-};
 
 const welcomeMessage = {
   id: "welcome",
   role: "assistant",
   text:
-    "Hello — I’m your **DeepSeek-powered DoraDB agent**. Ask about your delivery data in your own words. I retrieve and validate read-only evidence, then the AI interprets it for your exact question.",
+    "Hello. I’m your **ECHO DORA Copilot**. Ask about delivery data, Jira reporting, or DORA definitions in your own words.",
 };
-
-function createSessionId() {
-  if (typeof window === "undefined") return `session-${Date.now()}`;
-  const existing = window.localStorage.getItem(SESSION_KEY);
-  if (existing) return existing;
-  const id = window.crypto?.randomUUID?.() || `session-${Date.now()}-${Math.random()}`;
-  window.localStorage.setItem(SESSION_KEY, id);
-  return id;
-}
 
 function makeMessage(role, text, extras = {}) {
   return {
@@ -82,19 +52,30 @@ function makeMessage(role, text, extras = {}) {
   };
 }
 
-function readSelectedRole() {
-  if (typeof window === "undefined") return "technical";
-  return window.localStorage.getItem(ROLE_STORAGE_KEY) === "business"
-    ? "business"
-    : "technical";
-}
+const SUGGESTION_ICONS = {
+  alert: AlertTriangle,
+  briefcase: BriefcaseBusiness,
+  database: Database,
+  focus: Focus,
+  gauge: Gauge,
+  table: Table2,
+  users: Users,
+  workflow: Workflow,
+};
 
-export default function Chat({ projects, databaseConnected }) {
+export default function Chat({
+  projects = [],
+  databaseConnected = false,
+  selectedRole = "technical",
+  onWorkspaceChange,
+}) {
   const [messages, setMessages] = useState([welcomeMessage]);
   const [input, setInput] = useState("");
-  const [selectedRole] = useState(readSelectedRole);
   const [project, setProject] = useState("");
-  const [sessionId, setSessionId] = useState(createSessionId);
+  const [activeConversationId, setActiveConversationId] = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [conversationStatus, setConversationStatus] = useState("loading");
+  const [conversationError, setConversationError] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState("");
@@ -119,6 +100,59 @@ export default function Chat({ projects, databaseConnected }) {
       setProject(projects[0].key);
     }
   }, [project, projects]);
+
+  useEffect(() => {
+    let active = true;
+    async function restore() {
+      setConversationStatus("loading");
+      try {
+        const payload = await listConversations();
+        if (!active) return;
+        const recent = payload.conversations || [];
+        setConversations(recent);
+        setConversationStatus("ready");
+        const savedId = window.localStorage.getItem(ACTIVE_CONVERSATION_KEY);
+        if (savedId && recent.some((item) => item.id === savedId)) {
+          await openConversation(savedId);
+        }
+      } catch (error) {
+        if (!active) return;
+        setConversationError(error.message);
+        setConversationStatus("error");
+      }
+    }
+    restore();
+    return () => { active = false; };
+  }, []);
+
+  async function loadRecent() {
+    try {
+      const payload = await listConversations();
+      setConversations(payload.conversations || []);
+      setConversationStatus("ready");
+      setConversationError("");
+    } catch (error) {
+      setConversationError(error.message);
+      setConversationStatus("error");
+    }
+  }
+
+  async function openConversation(id) {
+    setConversationStatus("loading");
+    try {
+      const conversation = await getConversation(id);
+      setActiveConversationId(conversation.id);
+      window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversation.id);
+      setMessages(messagesFromConversation(conversation));
+      setProject(conversation.project_scope?.project_key || "");
+      onWorkspaceChange?.(conversation.workspace);
+      setConversationStatus("ready");
+      setConversationError("");
+    } catch (error) {
+      setConversationError(error.message);
+      setConversationStatus("error");
+    }
+  }
 
   useEffect(
     () => () => {
@@ -145,21 +179,18 @@ export default function Chat({ projects, databaseConnected }) {
     setIsSending(true);
 
     try {
-      const response = await fetch(`${API_BASE}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          session_id: sessionId,
-          project_key: project || null,
-          history,
-        }),
+      const payload = await sendChat({
+        message: text,
+        conversation_id: activeConversationId,
+        workspace: selectedRole,
+        project_key: project || null,
+        history,
       });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.detail || `Request failed with status ${response.status}`);
+      const conversationId = payload.metadata?.conversation_id;
+      if (conversationId && conversationId !== activeConversationId) {
+        setActiveConversationId(conversationId);
+        window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversationId);
       }
-      const payload = await response.json();
       setMessages((current) => [
         ...current,
         makeMessage("assistant", payload.answer, {
@@ -170,6 +201,7 @@ export default function Chat({ projects, databaseConnected }) {
           metadata: payload.metadata,
         }),
       ]);
+      await loadRecent();
     } catch (error) {
       setMessages((current) => [
         ...current,
@@ -186,18 +218,25 @@ export default function Chat({ projects, databaseConnected }) {
 
   async function clearConversation() {
     stopAudio();
-    try {
-      await fetch(`${API_BASE}/api/reset-session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId }),
-      });
-    } catch {
-      // Clearing local history remains useful even when the backend is offline.
+    if (activeConversationId) {
+      const confirmed = window.confirm("Archive this conversation? Other recent conversations will remain available.");
+      if (!confirmed) return;
+      try {
+        await archiveConversation(activeConversationId);
+        await loadRecent();
+      } catch (error) {
+        setConversationError(error.message);
+        setConversationStatus("error");
+        return;
+      }
     }
-    const nextId = window.crypto?.randomUUID?.() || `session-${Date.now()}`;
-    window.localStorage.setItem(SESSION_KEY, nextId);
-    setSessionId(nextId);
+    startNewConversation();
+  }
+
+  function startNewConversation() {
+    stopAudio();
+    window.localStorage.removeItem(ACTIVE_CONVERSATION_KEY);
+    setActiveConversationId(null);
     setMessages([welcomeMessage]);
     setInput("");
     setSpeechError("");
@@ -297,15 +336,8 @@ export default function Chat({ projects, databaseConnected }) {
   }
 
   const isEmpty = !messages.some((message) => message.role === "user");
-  const capabilities = ROLE_CAPABILITIES[selectedRole];
-  const emptyQuestion =
-    selectedRole === "business"
-      ? "What business insight are you looking for today?"
-      : "What would you like to analyse today?";
-  const inputPlaceholder =
-    selectedRole === "business"
-      ? "Ask about executive summaries, KPIs or engineering performance..."
-      : "Ask about DORA metrics, sprint performance, deployment trends...";
+  const suggestions = WORKSPACE_SUGGESTIONS[selectedRole] || WORKSPACE_SUGGESTIONS.technical;
+  const inputPlaceholder = WORKSPACE_PLACEHOLDERS[selectedRole] || WORKSPACE_PLACEHOLDERS.technical;
 
   return (
     <div className={`chat-panel chat-panel-workspace ${isEmpty ? "chat-panel-empty" : ""}`}>
@@ -314,12 +346,33 @@ export default function Chat({ projects, databaseConnected }) {
           <p>Workspace</p>
           <h3>Recent Conversations</h3>
         </div>
-        <div className="empty-chat-sidebar-note">
-          <Sparkles size={16} aria-hidden="true" />
-          <div>
-            <strong>New conversation</strong>
-            <span>Your recent chats will appear here.</span>
-          </div>
+        <button className="empty-chat-sidebar-note" type="button" onClick={startNewConversation}>
+          <Plus size={16} aria-hidden="true" />
+          <div><strong>New conversation</strong><span>Start with a clean context.</span></div>
+        </button>
+        <div className="recent-conversation-list">
+          {conversationStatus === "loading" && <p role="status">Loading conversations...</p>}
+          {conversationStatus === "error" && (
+            <div className="recent-conversation-error" role="alert">
+              <span>{conversationError}</span>
+              <button type="button" onClick={loadRecent}>Retry</button>
+            </div>
+          )}
+          {conversationStatus === "ready" && conversations.length === 0 && (
+            <p>No saved conversations yet.</p>
+          )}
+          {conversations.map((conversation) => (
+            <button
+              className={conversation.id === activeConversationId ? "active" : ""}
+              key={conversation.id}
+              type="button"
+              onClick={() => openConversation(conversation.id)}
+              aria-current={conversation.id === activeConversationId ? "page" : undefined}
+            >
+              <strong>{conversation.title}</strong>
+              <span>{conversation.workspace} workspace</span>
+            </button>
+          ))}
         </div>
         <span className="empty-chat-role-label">{selectedRole} workspace</span>
       </aside>
@@ -358,26 +411,37 @@ export default function Chat({ projects, databaseConnected }) {
           aria-hidden={!isEmpty}
         >
           <header className="empty-chat-greeting">
-            <p>Hello <span aria-hidden="true">👋</span></p>
-            <h3>{emptyQuestion}</h3>
+            <p>Hello, Aisyah</p>
+            <h3>What are you looking for today?</h3>
           </header>
+          <JiraDeliveryOverview
+            projectKey={project}
+            onPrompt={sendMessage}
+            disabled={isSending}
+          />
           <div className="empty-chat-suggestions">
-            <p>Workspace capabilities</p>
+            <p>Suggested Questions</p>
             <div className="suggestion-card-grid">
-              {capabilities.map((capability, index) => (
-                <article
-                  className="suggestion-card"
-                  key={capability.title}
+              {suggestions.map((suggestion, index) => (
+                (() => {
+                  const SuggestionIcon = SUGGESTION_ICONS[suggestion.icon];
+                  return <button
+                  key={suggestion.title}
+                  type="button"
                   style={{ "--suggestion-index": index }}
+                  onClick={() => sendMessage(suggestion.prompt)}
+                  disabled={isSending}
+                  aria-label={`${suggestion.title}: ${suggestion.description}`}
                 >
                   <span className="suggestion-icon" aria-hidden="true">
-                    {capability.icon}
+                    <SuggestionIcon size={20} />
                   </span>
                   <span className="suggestion-copy">
-                    <strong>{capability.title}</strong>
-                    <span>{capability.description}</span>
+                    <strong>{suggestion.title}</strong>
+                    <span>{suggestion.description}</span>
                   </span>
-                </article>
+                </button>;
+                })()
               ))}
             </div>
           </div>
@@ -432,7 +496,7 @@ export default function Chat({ projects, databaseConnected }) {
                   <ShieldCheckIcon />
                   <span>
                     {message.metadata.answer_source === "ai-provider-unavailable"
-                      ? "DeepSeek unavailable · no template substituted"
+                      ? "Google AI Studio unavailable · no template substituted"
                       : "Analyzed from DoraDB · AI answer checked"}
                   </span>
                 </div>
@@ -444,7 +508,7 @@ export default function Chat({ projects, databaseConnected }) {
         {isSending && (
           <div className="thinking" role="status">
             <span /><span /><span />
-            <p>DeepSeek is reasoning, querying when needed, and validating the answer…</p>
+            <p>ECHO is reasoning, querying when needed, and validating the answer...</p>
           </div>
         )}
         <div ref={endRef} />

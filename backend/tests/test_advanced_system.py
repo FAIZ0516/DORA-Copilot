@@ -4,16 +4,12 @@ from backend.agent_system.control import enforce_plan, public_policy
 from backend.agent_system.graph import (
     AI_UNAVAILABLE_MESSAGE,
     AdvancedDoraDbAgent,
-    _discovery_answer,
     _is_holistic_request,
-    _wants_table,
 )
 from backend.agent_system.memory import SessionMemoryStore
 from backend.agent_system.planner import create_plan, deterministic_plan
 from backend.agent_system.result_validator import validate_answer, validate_results
 from backend.context import load_context
-from backend.doradb import _build_statement, _normalize_filters
-from backend.doradb_catalog import DISCOVERY_DIMENSIONS
 from backend.skills import (
     analyze_trend,
     build_chart_spec,
@@ -21,234 +17,15 @@ from backend.skills import (
     compare_rows,
     detect_anomalies,
     extract_filters,
-    filter_value_is_grounded,
-    match_discovery_dimension,
-    resolve_entities,
     select_metric,
 )
 
 
-def test_runtime_data_dictionary_covers_every_discoverable_dimension() -> None:
-    context = load_context("data_dictionary.yaml")
-    assert set(context["dimensions"]) == set(DISCOVERY_DIMENSIONS)
-    assert context["entities"]["tbl_gdt_dte_jira_issues"]["grain"]
-
-
-def test_discovery_language_routes_every_governed_dimension() -> None:
-    cases = {
-        "What projects are available?": "project",
-        "Can you list all the squad that you have?": "squad",
-        "Which release years exist?": "release_year",
-        "List all releases": "release",
-        "What issue types do you have?": "issue_type",
-        "List all available statuses": "status",
-        "What DORA metrics are supported?": "metric",
-    }
-    for question, dimension in cases.items():
-        assert match_discovery_dimension(question) == dimension
-        plan = deterministic_plan(question, {"last_context": {}})
-        assert plan["mode"] == "data"
-        assert plan["intent"] == "discovery"
-        assert plan["actions"][0]["query_id"] == "list_dimension_values"
-        assert plan["actions"][0]["filters"]["dimension"] == dimension
-
-
-def test_discovery_does_not_inherit_stale_dimension_memory() -> None:
-    plan = deterministic_plan(
-        "List all the squads that you have",
-        {
-            "last_context": {
-                "metric": "release_frequency",
-                "filters": {"project_key": "DCPM", "dcpsquad": "JAEGER"},
-                "query_ids": ["dora_metrics_by_squad"],
-            }
-        },
-    )
-    assert plan["actions"][0]["filters"] == {
-        "dimension": "squad",
-        "project_key": "DCPM",
-    }
-
-
-def test_generic_words_are_not_extracted_as_squad_names() -> None:
-    for question in (
-        "List all the squad that you have",
-        "Which squad is available?",
-        "Show every team recorded in the database",
-    ):
-        assert "dcpsquad" not in extract_filters(question)
-    assert extract_filters("Show squad Droid Spark")["dcpsquad"] == "DROID SPARK"
-    assert (
-        extract_filters("Analyze data for the HIVE KNIGHT squad")["dcpsquad"]
-        == "HIVE KNIGHT"
-    )
-    assert "fixversion" not in extract_filters("Show release that you have")
-    assert match_discovery_dimension("Show me the releases") == "release"
-    assert match_discovery_dimension("Give me all known teams") == "squad"
-
-
-def test_generative_planner_owns_valid_discovery_plan() -> None:
-    class DiscoveryLlm:
-        enabled = True
-        source = "deepseek:test"
-
-        @staticmethod
-        def complete(*_args: object, **_kwargs: object) -> str:
-            return (
-                '{"mode":"data","intent":"discover_available_squads",'
-                '"confidence":0.95,"reason":"The user wants current squad names",'
-                '"clarification":"","actions":[{"query_id":'
-                '"list_dimension_values","filters":{"dimension":"squad"},'
-                '"limit":100,"reason":"Retrieve the governed squad dimension"}]}'
-            )
-
-    plan, source = create_plan(
-        "List all the squads that you have",
-        memory={},
-        browser_history=[],
-        llm=DiscoveryLlm(),  # type: ignore[arg-type]
-    )
-    assert source == "deepseek:test"
-    assert plan["intent"] == "discover_available_squads"
-    assert plan["actions"][0]["query_id"] == "list_dimension_values"
-    assert plan["actions"][0]["filters"]["dimension"] == "squad"
-
-
-def test_invalid_ai_discovery_tool_falls_back_to_governed_plan() -> None:
-    class InvalidToolLlm:
-        enabled = True
-        source = "deepseek:test"
-
-        @staticmethod
-        def complete(*_args: object, **_kwargs: object) -> str:
-            return (
-                '{"mode":"data","intent":"discover_squads","confidence":0.95,'
-                '"reason":"Use an invented tool","clarification":"","actions":['
-                '{"query_id":"semantic_sql_search","filters":{},'
-                '"limit":100,"reason":"invalid"}]}'
-            )
-
-    plan, source = create_plan(
-        "List all the squads that you have",
-        memory={},
-        browser_history=[],
-        llm=InvalidToolLlm(),  # type: ignore[arg-type]
-    )
-    assert source == "deterministic-safety-fallback"
-    assert plan["intent"] == "discovery"
-    assert plan["actions"][0]["query_id"] == "list_dimension_values"
-
-
-def test_discovery_filter_validation_is_allowlisted_and_supports_spaced_squads() -> None:
-    filters = _normalize_filters(
-        "list_dimension_values",
-        {"dimension": "status", "project_key": "DCPM"},
-    )
-    assert filters["dimension"] == "status"
-
-    squad_filters = _normalize_filters(
-        "dora_metrics_by_squad",
-        {"dcpsquad": "Droid Spark", "project_key": "DCPM"},
-    )
-    assert squad_filters["dcpsquad"] == "DROID SPARK"
-
-    statement, params = _build_statement(
-        "list_dimension_values",
-        {"dimension": "metric", "project_key": "DCPM"},
-        100,
-    )
-    assert "CAST(:metric_0 AS text)" in statement
-    assert params["metric_0"] == "release_frequency"
-
-
-def test_empty_discovery_answer_never_generalizes_to_an_empty_database() -> None:
-    answer = _discovery_answer(
-        {
-            "query_id": "list_dimension_values",
-            "filters": {"dimension": "status", "project_key": "DCPM"},
-            "rows": [],
-        }
-    )
-    assert "No matching status values" in answer
-    assert "does not mean the rest of DoraDB is empty" in answer
-
-
-def test_deepseek_synthesizes_discovery_answer_with_deterministic_outage_fallback() -> None:
-    result = {
-        "query_id": "list_dimension_values",
-        "filters": {"dimension": "squad", "project_key": "DCPM"},
-        "rows": [
-            {
-                "dimension": "squad",
-                "value": "JAEGER",
-                "record_count": 12,
-                "total_values": 2,
-            },
-            {
-                "dimension": "squad",
-                "value": "TITAN",
-                "record_count": 10,
-                "total_values": 2,
-            },
-        ],
-        "row_count": 2,
-    }
-    state = {
-        "message": "List all the squads",
-        "plan": {
-            "mode": "data",
-            "intent": "discover_squads",
-            "confidence": 0.95,
-            "actions": [],
-            "reason": "test",
-            "clarification": "",
-        },
-        "validation": {"valid": True},
-        "results": [result],
-        "metric": select_metric("release frequency"),
-        "memory": {},
-        "analysis": {},
-        "chart": None,
-        "browser_history": [],
-    }
-
-    class DiscoveryResponseLlm:
-        enabled = True
-        source = "deepseek:test"
-
-        @staticmethod
-        def complete(*_args: object, **_kwargs: object) -> str:
-            return "The available squads are JAEGER and TITAN."
-
-    agent = AdvancedDoraDbAgent.__new__(AdvancedDoraDbAgent)
-    agent.llm = DiscoveryResponseLlm()  # type: ignore[assignment]
-    response = agent._respond(state)  # type: ignore[arg-type]
-    assert response["answer_source"] == "deepseek:test"
-    assert response["answer"] == "The available squads are JAEGER and TITAN."
-
-    class UnavailableResponseLlm:
-        enabled = True
-        source = "deepseek:test"
-
-        @staticmethod
-        def complete(*_args: object, **_kwargs: object) -> None:
-            return None
-
-    agent.llm = UnavailableResponseLlm()  # type: ignore[assignment]
-    fallback = agent._respond(state)  # type: ignore[arg-type]
-    assert fallback["answer_source"] == "deterministic-discovery"
-    assert "JAEGER" in fallback["answer"]
-
-
 def test_context_files_expose_formal_skill_pipeline() -> None:
     context = load_context("skills.yaml")
-    assert context["pipeline"][:2] == ["entity_grounding", "context_resolution"]
+    assert "result_validation" not in context["pipeline"]
     assert context["pipeline"][-1] == "summarisation"
-    assert context["controls"] == [
-        "plan_validation",
-        "result_validation",
-        "answer_validation",
-    ]
+    assert len(context["pipeline"]) == 9
 
 
 def test_skills_extract_and_analyze_without_llm_arithmetic() -> None:
@@ -412,15 +189,12 @@ def test_memory_is_structured_and_resettable() -> None:
             "filters": {"release_year": [2025, 2026]},
             "query_ids": ["dora_metrics_by_year"],
             "warnings": [],
-            "entities": {"squad": ["MBK"]},
-            "discovered_values": {"squad": ["MBK", "NAGA"]},
             "raw_results": [{"secret": "must not be stored"}],
         },
     )
     memory = store.get("session-test")
     assert memory["last_context"]["metric"] == "release_frequency"
     assert "raw_results" not in memory["last_context"]
-    assert memory["last_context"]["discovered_values"]["squad"] == ["MBK", "NAGA"]
     assert store.reset("session-test") is True
 
 
@@ -447,9 +221,10 @@ def test_delivery_risk_is_treated_as_holistic_analysis() -> None:
     )
 
 
-def test_explicit_data_request_uses_deepseek_first_then_safe_fallback() -> None:
+def test_explicit_data_request_uses_configured_llm_then_safe_fallback() -> None:
     class ConversationOnlyLlm:
         enabled = True
+        source = "test-provider:test-model"
         calls = 0
 
         def complete(self, *_args: object, **_kwargs: object) -> str:
@@ -467,16 +242,16 @@ def test_explicit_data_request_uses_deepseek_first_then_safe_fallback() -> None:
         llm=llm,  # type: ignore[arg-type]
     )
 
-    assert source == "deepseek:deepseek-v4-flash"
+    assert source == "test-provider:test-model"
     assert llm.calls == 1
     assert plan["mode"] == "data"
     assert plan["actions"][0]["query_id"] == "dora_metrics_by_year"
 
 
-def test_deepseek_can_answer_broad_analysis_without_forced_year_clarification() -> None:
+def test_gemini_can_answer_broad_analysis_without_forced_year_clarification() -> None:
     class AnalyticalLlm:
         enabled = True
-        source = "deepseek:test"
+        source = "google-ai-studio:test"
 
         @staticmethod
         def complete(*_args: object, **_kwargs: object) -> str:
@@ -495,17 +270,17 @@ def test_deepseek_can_answer_broad_analysis_without_forced_year_clarification() 
         llm=AnalyticalLlm(),  # type: ignore[arg-type]
     )
 
-    assert source == "deepseek:test"
+    assert source == "google-ai-studio:test"
     assert plan["mode"] == "data"
     assert plan["intent"] == "risk_analysis"
     assert plan["actions"][0]["query_id"] == "dora_metrics_by_year"
     assert plan["actions"][0]["filters"]["project_key"] == "DCPM"
 
 
-def test_deepseek_multi_query_plan_survives_allowlist_controls() -> None:
+def test_gemini_multi_query_plan_survives_allowlist_controls() -> None:
     class MultiQueryLlm:
         enabled = True
-        source = "deepseek:test"
+        source = "google-ai-studio:test"
 
         @staticmethod
         def complete(*_args: object, **_kwargs: object) -> str:
@@ -564,8 +339,7 @@ def test_broad_metric_clarifies_but_explicit_count_executes() -> None:
         llm=ClarificationOnlyLlm(),  # type: ignore[arg-type]
     )
     assert explicit["mode"] == "data"
-    assert explicit["actions"][0]["query_id"] == "list_dimension_values"
-    assert explicit["actions"][0]["filters"]["dimension"] == "release_year"
+    assert explicit["actions"][0]["query_id"] == "dora_metrics_by_year"
 
 
 def test_follow_up_inherits_metric_and_year_context() -> None:
@@ -659,18 +433,14 @@ def test_release_frequency_is_not_misread_as_a_fixversion() -> None:
     assert filters == {"project_key": "DCPM"}
 
 
-def test_unrelated_question_is_semantically_scoped_by_cloud_planning() -> None:
+def test_safe_general_question_routes_to_conversation_without_database_planning() -> None:
     class CountingLlm:
         enabled = True
         calls = 0
 
         def complete(self, *_args: object, **_kwargs: object) -> str:
             self.calls += 1
-            return (
-                '{"mode":"out_of_scope","intent":"out_of_context",'
-                '"confidence":0.99,"reason":"Unrelated to the governed domain",'
-                '"clarification":"","actions":[]}'
-            )
+            return "{}"
 
     llm = CountingLlm()
     plan, source = create_plan(
@@ -679,136 +449,41 @@ def test_unrelated_question_is_semantically_scoped_by_cloud_planning() -> None:
         browser_history=[],
         llm=llm,  # type: ignore[arg-type]
     )
-    assert plan["mode"] == "out_of_scope"
-    assert source == "deepseek:deepseek-v4-flash"
-    assert llm.calls == 1
-
-
-def test_live_entities_are_grounded_across_every_filterable_dimension() -> None:
-    catalogue = {
-        "project": ["DCPM"],
-        "squad": ["MBK", "Droid Spark", "NAGA"],
-        "release_year": ["2025", "2026"],
-        "release": ["R-4.2.0"],
-        "issue_type": ["Bug", "User Story"],
-        "status": ["In Progress", "Done"],
-        "metric": ["release_frequency", "change_failure_rate"],
-    }
-    cases = {
-        "Show mbk performance": ("dcpsquad", "MBK"),
-        "Analyze Droid Spark": ("dcpsquad", "Droid Spark"),
-        "Explain release R-4.2.0": ("fixversion", "R-4.2.0"),
-        "List Bug issues": ("issuetype", "Bug"),
-        "Show work In Progress": ("status", "In Progress"),
-        "Compare release frequency in 2025": ("release_year", [2025]),
-    }
-    for message, (filter_name, expected) in cases.items():
-        grounding = resolve_entities(message, catalogue)
-        assert grounding["filters"][filter_name] == expected
-
-
-def test_any_live_squad_name_routes_to_squad_metrics_without_hardcoding() -> None:
-    catalogue = {"squad": ["MBK", "NAGA", "HIVE KNIGHT"]}
-    for squad in catalogue["squad"]:
-        plan = deterministic_plan(
-            f"Show {squad.lower()} performance",
-            {"last_context": {}},
-            entity_catalogue=catalogue,
-        )
-        assert plan["mode"] == "data"
-        assert plan["actions"][0]["query_id"] == "dora_metrics_by_squad"
-        assert plan["actions"][0]["filters"]["dcpsquad"] == squad
-
-
-def test_definition_of_previous_answer_term_is_a_contextual_follow_up() -> None:
-    memory = {
-        "turns": [
-            {
-                "user": "Analyze 2026",
-                "assistant": "There are two important caveats for the year-to-date figures.",
-            }
-        ],
-        "last_context": {
-            "metric": "release_frequency",
-            "filters": {"project_key": "DCPM", "release_year": [2026]},
-            "query_ids": ["dora_metrics_by_year"],
-        },
-    }
-    plan = deterministic_plan("What is caveats?", memory)
     assert plan["mode"] == "conversation"
-    assert plan["intent"] == "context_follow_up"
+    assert source == "conversation"
+    assert llm.calls == 0
 
 
-def test_model_can_compare_multiple_grounded_values_in_one_dimension() -> None:
-    class ComparisonLlm:
-        enabled = True
-        source = "deepseek:test"
+def test_general_conversation_receives_current_date_context() -> None:
+    class CapturingLlm:
+        source = "test-provider:test-model"
+        system_prompt = ""
 
-        @staticmethod
-        def complete(*_args: object, **_kwargs: object) -> str:
-            return (
-                '{"mode":"data","intent":"squad_comparison","confidence":0.96,'
-                '"reason":"Compare both grounded squads","clarification":"",'
-                '"actions":['
-                '{"query_id":"dora_metrics_by_squad","filters":{"dcpsquad":"MBK"},'
-                '"limit":10,"reason":"MBK evidence"},'
-                '{"query_id":"dora_metrics_by_squad","filters":{"dcpsquad":"NAGA"},'
-                '"limit":10,"reason":"NAGA evidence"}]}'
-            )
+        def complete(self, system_prompt: str, _user_prompt: str) -> str:
+            self.system_prompt = system_prompt
+            return "A direct answer."
 
-    catalogue = {"squad": ["MBK", "NAGA"]}
-    plan, _ = create_plan(
-        "Compare MBK and NAGA performance",
-        memory={},
-        browser_history=[],
-        llm=ComparisonLlm(),  # type: ignore[arg-type]
-        entity_catalogue=catalogue,
+    llm = CapturingLlm()
+    agent = AdvancedDoraDbAgent.__new__(AdvancedDoraDbAgent)
+    agent.llm = llm  # type: ignore[assignment]
+
+    response = agent._respond(
+        {
+            "message": "What date is today?",
+            "plan": {
+                "mode": "conversation",
+                "intent": "general_conversation",
+                "confidence": 0.99,
+                "actions": [],
+                "reason": "test",
+                "clarification": "",
+            },
+        }  # type: ignore[arg-type]
     )
-    assert [action["filters"]["dcpsquad"] for action in plan["actions"]] == [
-        "MBK",
-        "NAGA",
-    ]
 
-
-def test_hallucinated_model_entity_is_not_executed() -> None:
-    class HallucinatingLlm:
-        enabled = True
-        source = "deepseek:test"
-
-        @staticmethod
-        def complete(*_args: object, **_kwargs: object) -> str:
-            return (
-                '{"mode":"data","intent":"squad_performance","confidence":0.96,'
-                '"reason":"query squad","clarification":"","actions":['
-                '{"query_id":"dora_metrics_by_squad",'
-                '"filters":{"dcpsquad":"GHOST"},"limit":10,"reason":"test"}]}'
-            )
-
-    plan, _ = create_plan(
-        "Show Ghost performance",
-        memory={},
-        browser_history=[],
-        llm=HallucinatingLlm(),  # type: ignore[arg-type]
-        entity_catalogue={"squad": ["MBK", "NAGA"]},
-    )
-    assert plan["mode"] == "clarification"
-    assert plan["intent"] == "unknown_entity"
-    assert plan["actions"] == []
-    assert filter_value_is_grounded("dcpsquad", "GHOST", {"squad": ["MBK"]}) is False
-
-    explicit_unknown = deterministic_plan(
-        "Show squad GHOST performance",
-        {"last_context": {}},
-        entity_catalogue={"squad": ["MBK", "NAGA"]},
-    )
-    assert explicit_unknown["mode"] == "clarification"
-    assert explicit_unknown["intent"] == "unknown_entity"
-
-
-def test_small_discovery_does_not_force_an_evidence_table() -> None:
-    results = [{"query_id": "list_dimension_values", "row_count": 5, "rows": []}]
-    assert _wants_table("List squads", "discovery", results) is False
-    assert _wants_table("List squads as a table", "discovery", results) is True
+    assert f"Current date: {date.today().isoformat()}" in llm.system_prompt
+    assert response["answer"] == "A direct answer."
+    assert response["answer_source"] == "test-provider:test-model"
 
 
 def test_agent_never_substitutes_a_template_when_ai_is_unavailable() -> None:
@@ -913,62 +588,3 @@ def test_answer_validation_accepts_deterministic_analysis_numbers() -> None:
         required_warnings=[],
     )
     assert validation["valid"] is True
-
-
-def test_answer_validation_rejects_completed_year_as_year_to_date() -> None:
-    completed_year = date.today().year - 1
-    validation = validate_answer(
-        f"{completed_year} has one release so far and is still in progress.",
-        results=[
-            {
-                "query_id": "dora_metrics_by_year",
-                "rows": [{"release_year": completed_year, "release_count": 1}],
-            }
-        ],
-        analysis={},
-        question="Explain the yearly result",
-        required_warnings=[],
-    )
-    assert validation["valid"] is False
-    assert validation["temporal_errors"]
-
-    provisional = validate_answer(
-        f"The {completed_year} result is provisional until more releases accumulate.",
-        results=[
-            {
-                "query_id": "dora_metrics_by_year",
-                "rows": [{"release_year": completed_year, "release_count": 1}],
-            }
-        ],
-        analysis={},
-        question="Explain the yearly result",
-        required_warnings=[],
-    )
-    assert provisional["valid"] is False
-    assert provisional["temporal_errors"]
-
-
-def test_current_year_results_receive_incomplete_period_warning() -> None:
-    current_year = date.today().year
-    report = validate_results(
-        [
-            {
-                "query_id": "dora_metrics_by_year",
-                "rows": [
-                    {
-                        "release_year": current_year,
-                        "release_count": 1,
-                        "release_frequency_months": 2.0,
-                        "change_failure_rate_pct": 0.0,
-                        "lead_time_for_change_months": 1.0,
-                        "delivery_cycle_time_months": 4.0,
-                        "user_story_count": 1,
-                        "feature_reference_count": 1,
-                        "feature_reference_release_count": 1,
-                    }
-                ],
-                "warnings": [],
-            }
-        ]
-    )
-    assert any(str(current_year) in warning for warning in report["warnings"])

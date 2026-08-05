@@ -28,6 +28,7 @@ from ..skills.dimension_discovery import (
     match_discovery_dimension,
 )
 from .control import enforce_plan
+from .request_router import route_jira_request
 from .state import AgentPlan, QueryAction
 
 
@@ -258,11 +259,11 @@ def deterministic_plan(
         }
     if intent["name"] == "general_conversation":
         return {
-            "mode": "out_of_scope",
-            "intent": "out_of_context",
-            "confidence": 1.0,
+            "mode": "conversation",
+            "intent": "general_conversation",
+            "confidence": intent["confidence"],
             "actions": [],
-            "reason": "The question is unrelated to the connected DoraDB scope.",
+            "reason": "A safe general question does not require a database query.",
             "clarification": "",
         }
 
@@ -373,12 +374,17 @@ def create_plan(
     """Let DeepSeek interpret the request, then validate its proposed actions.
 
     The deterministic plan is deliberately a fallback, not the primary router.
-    It still blocks unsafe/out-of-domain requests before a cloud call and keeps
+    It still blocks unsafe database requests before a cloud call and keeps
     the application useful when the provider is unavailable.
     """
 
     entity_catalogue = entity_catalogue or {}
     grounding = grounding or resolve_entities(message, entity_catalogue)
+
+    jira_route = route_jira_request(message)
+    if jira_route is not None:
+        return enforce_plan(jira_route), "jira-router"
+
     fallback = deterministic_plan(
         message,
         memory,
@@ -403,7 +409,13 @@ def create_plan(
         f"{item.get('role', 'user').upper()}: {item.get('content', '')[:800]}"
         for item in supplied_history[-12:]
     )
-    memory_context = json.dumps(memory.get("last_context", {}), default=str)
+    memory_context = json.dumps(
+        {
+            "conversation_summary": str(memory.get("conversation_summary", ""))[:3000],
+            "last_context": memory.get("last_context", {}),
+        },
+        default=str,
+    )
     entity_context = json.dumps(compact_catalogue(entity_catalogue), default=str)
     grounding_context = json.dumps(grounding, default=str)
     system = f"""You are the reasoning and tool-planning agent for a governed
@@ -460,7 +472,7 @@ Planning principles:
             f"Request: {message}"
         ),
         json_mode=True,
-        temperature=settings.deepseek_planner_temperature,
+        temperature=settings.llm_planner_temperature,
     )
     parsed = _parse_json(raw) if raw else None
     if not parsed:
@@ -576,7 +588,7 @@ Planning principles:
         planner_source = getattr(
             llm,
             "source",
-            f"deepseek:{settings.deepseek_model}",
+            settings.llm_source,
         )
         if (
             fallback["mode"] == "data"

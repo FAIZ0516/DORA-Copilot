@@ -75,6 +75,18 @@ export default function App() {
     llm: "DeepSeek",
   });
 
+  function changeWorkspace(workspace) {
+    const next = workspace === "business" ? "business" : "technical";
+    window.localStorage.setItem(ROLE_STORAGE_KEY, next);
+    setSelectedRole(next);
+  }
+
+  useEffect(() => {
+    if (screen !== "splash") return undefined;
+    const timer = window.setTimeout(() => setScreen("role-selection"), 2000);
+    return () => window.clearTimeout(timer);
+  }, [screen]);
+
   useEffect(() => {
     if (screen !== "splash") return undefined;
     const timer = window.setTimeout(() => setScreen("role-selection"), 2000);
@@ -275,7 +287,12 @@ export default function App() {
         </header>
 
         <section className="echo-chat-app-body" aria-label="Echo chat workspace">
-          <Chat projects={projects} databaseConnected={system.databaseConnected} />
+          <Chat
+            projects={projects}
+            databaseConnected={system.databaseConnected}
+            selectedRole={selectedRole}
+            onWorkspaceChange={changeWorkspace}
+          />
         </section>
       </main>
     );
@@ -389,7 +406,12 @@ export default function App() {
               request a chart, or ask the agent to explain what changed.
             </p>
           </div>
-          <Chat projects={projects} databaseConnected={system.databaseConnected} />
+          <Chat
+            projects={projects}
+            databaseConnected={system.databaseConnected}
+            selectedRole={selectedRole}
+            onWorkspaceChange={changeWorkspace}
+          />
         </section>
 
         <section className="trust-section" id="governance">

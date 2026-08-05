@@ -16,6 +16,24 @@ DATA_DICTIONARY = load_context("data_dictionary.yaml")
 DISCOVERY_DIMENSIONS: dict[str, dict[str, Any]] = DATA_DICTIONARY["dimensions"]
 APPROVED_QUERY_IDS = {
     "list_dimension_values",
+    "database_schema_objects",
+    "database_table_presence",
+    "database_columns",
+    "database_metric_columns",
+    "database_squad_sources",
+    "jira_distinct_squads",
+    "jira_bug_counts_by_squad",
+    "jira_issue_counts_by_status",
+    "jira_unresolved_older_than_days",
+    "jira_backlog_by_status",
+    "jira_bug_resolution_trend",
+    "jira_dashboard_kpis",
+    "jira_dashboard_status_categories",
+    "jira_dashboard_issue_types",
+    "jira_dashboard_open_ageing",
+    "jira_dashboard_data_quality",
+    "jira_open_work_breakdown",
+    "jira_impeded_breakdown",
     "dora_metrics_by_year",
     "dora_metrics_by_squad",
     "dora_metrics_release_detail",
@@ -38,10 +56,8 @@ LARGE_QUERY_REQUIRED_FILTERS = {
     "release_name",
     "issuetype",
     "jira_key",
-    "status",
 }
 ALLOWED_FILTERS = {
-    "dimension",
     "release_year",
     "release_date",
     "fixversion",
@@ -51,6 +67,11 @@ ALLOWED_FILTERS = {
     "status",
     "project_key",
     "dcpsquad",
+    "table_schema",
+    "table_name",
+    "column_search",
+    "age_days",
+    "ageing_bucket",
 }
 
 QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
@@ -69,6 +90,171 @@ QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
             "value",
             "record_count",
             "total_values",
+        ],
+    },
+    "database_schema_objects": {
+        "purpose": "Visible non-system PostgreSQL tables and views from metadata.",
+        "default_limit": 200,
+        "allowed_filters": ["table_schema", "table_name"],
+        "expected_columns": ["table_schema", "table_name", "object_type"],
+    },
+    "database_table_presence": {
+        "purpose": "Verify whether a named PostgreSQL table or view exists.",
+        "default_limit": 20,
+        "allowed_filters": ["table_schema", "table_name"],
+        "expected_columns": ["table_schema", "table_name", "object_type"],
+    },
+    "database_columns": {
+        "purpose": "Visible PostgreSQL column metadata for a verified table or search term.",
+        "default_limit": 200,
+        "allowed_filters": ["table_schema", "table_name", "column_search"],
+        "expected_columns": [
+            "table_schema",
+            "table_name",
+            "column_name",
+            "data_type",
+            "is_nullable",
+            "ordinal_position",
+        ],
+    },
+    "database_metric_columns": {
+        "purpose": (
+            "Discover visible lead-time, LTC, cycle-time, created, and resolved "
+            "columns without querying business rows."
+        ),
+        "default_limit": 200,
+        "allowed_filters": [],
+        "expected_columns": [
+            "table_schema",
+            "table_name",
+            "column_name",
+            "data_type",
+        ],
+    },
+    "database_squad_sources": {
+        "purpose": "Discover visible tables and views containing squad or team columns.",
+        "default_limit": 100,
+        "allowed_filters": [],
+        "expected_columns": [
+            "table_schema",
+            "table_name",
+            "column_name",
+            "data_type",
+        ],
+    },
+    "jira_distinct_squads": {
+        "purpose": (
+            "Distinct non-blank dcpsquad values from the verified public Jira issue "
+            "table, with missing-squad row count."
+        ),
+        "default_limit": 100,
+        "allowed_filters": ["project_key"],
+        "expected_columns": ["dcpsquad", "missing_squad_rows"],
+    },
+    "jira_bug_counts_by_squad": {
+        "purpose": "Non-sensitive Jira bug counts grouped by populated squad value.",
+        "default_limit": 100,
+        "allowed_filters": ["project_key"],
+        "expected_columns": ["dcpsquad", "bug_count"],
+    },
+    "jira_issue_counts_by_status": {
+        "purpose": "Non-sensitive Jira issue counts grouped by type and current status.",
+        "default_limit": 100,
+        "allowed_filters": ["project_key", "issuetype", "status"],
+        "expected_columns": [
+            "issuetype",
+            "status",
+            "status_category",
+            "issue_count",
+        ],
+    },
+    "jira_unresolved_older_than_days": {
+        "purpose": "Unresolved Jira issue aggregates older than a bounded number of days.",
+        "default_limit": 100,
+        "allowed_filters": ["project_key", "age_days"],
+        "expected_columns": [
+            "status",
+            "status_category",
+            "issue_count",
+            "oldest_created",
+        ],
+    },
+    "jira_backlog_by_status": {
+        "purpose": "Current unresolved Jira backlog counts grouped by status.",
+        "default_limit": 100,
+        "allowed_filters": ["project_key"],
+        "expected_columns": ["status", "status_category", "issue_count"],
+    },
+    "jira_bug_resolution_trend": {
+        "purpose": "Monthly Jira bug creation and resolution counts.",
+        "default_limit": 120,
+        "allowed_filters": ["project_key"],
+        "expected_columns": ["month", "created_bug_count", "resolved_bug_count"],
+    },
+    "jira_dashboard_kpis": {
+        "purpose": "Snapshot Jira issue, open-work, impeded, and missing-squad KPIs.",
+        "default_limit": 1,
+        "allowed_filters": ["project_key"],
+        "expected_columns": [
+            "total_issues",
+            "open_work_count",
+            "impeded_issues",
+            "missing_squad_count",
+            "missing_squad_pct",
+        ],
+    },
+    "jira_dashboard_status_categories": {
+        "purpose": "Current Jira issue counts grouped by stored status category.",
+        "default_limit": 20,
+        "allowed_filters": ["project_key"],
+        "expected_columns": ["status_category", "issue_count"],
+    },
+    "jira_dashboard_issue_types": {
+        "purpose": "Current Jira issue counts grouped by actual issue type.",
+        "default_limit": 50,
+        "allowed_filters": ["project_key"],
+        "expected_columns": ["issuetype", "issue_count"],
+    },
+    "jira_dashboard_open_ageing": {
+        "purpose": "Calendar-age buckets for Jira open work using created timestamps.",
+        "default_limit": 5,
+        "allowed_filters": ["project_key"],
+        "expected_columns": ["ageing_bucket", "issue_count", "bucket_order"],
+    },
+    "jira_dashboard_data_quality": {
+        "purpose": "Aggregate Jira snapshot completeness and timestamp-quality checks.",
+        "default_limit": 1,
+        "allowed_filters": ["project_key"],
+        "expected_columns": [
+            "missing_squad_count",
+            "missing_assignee_count",
+            "done_without_resolved_count",
+            "invalid_resolution_interval_count",
+        ],
+    },
+    "jira_open_work_breakdown": {
+        "purpose": "Aggregate open Jira work by calendar age, type, priority, status category, and squad coverage.",
+        "default_limit": 200,
+        "allowed_filters": ["project_key", "ageing_bucket"],
+        "expected_columns": [
+            "ageing_bucket",
+            "issuetype",
+            "priority",
+            "status_category",
+            "squad_coverage",
+            "issue_count",
+        ],
+    },
+    "jira_impeded_breakdown": {
+        "purpose": "Aggregate currently impeded Jira work by calendar age, type, priority, and squad coverage.",
+        "default_limit": 200,
+        "allowed_filters": ["project_key"],
+        "expected_columns": [
+            "ageing_bucket",
+            "issuetype",
+            "priority",
+            "squad_coverage",
+            "issue_count",
         ],
     },
     "dora_metrics_by_year": {
@@ -146,7 +332,6 @@ QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
             "release_year",
             "issuetype",
             "jira_key",
-            "summary",
             "status",
             "outcome_rating",
             "release_date",
@@ -167,7 +352,6 @@ QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
             "release_name",
             "jira_key",
             "issuetype",
-            "summary",
             "status",
             "release_date",
         ],
@@ -222,36 +406,14 @@ def planner_context() -> str:
         for query_id, definition in QUERY_CATALOGUE.items()
     )
     metrics = "\n".join(f"- {name}: {definition}" for name, definition in METRIC_DEFINITIONS.items())
-    dimensions = "\n".join(
-        f"- {name} ({definition['label']}): {definition['meaning']}"
-        for name, definition in DISCOVERY_DIMENSIONS.items()
-    )
-    entities = "\n".join(
-        f"- {entity}: {definition['grain']} Important fields: "
-        + "; ".join(
-            f"{field} = {meaning}"
-            for field, meaning in definition.get("important_fields", {}).items()
-        )
-        for entity, definition in DATA_DICTIONARY["entities"].items()
-    )
     return f"""Approved DoraDB query tools:
 {routes}
-
-DoraDB discoverable dimensions:
-{dimensions}
-
-DoraDB entity semantics:
-{entities}
 
 DoraDB metric definitions:
 {metrics}
 
 Rules:
 - Default project_key to DCPM.
-- Use list_dimension_values for requests that ask what values exist, what is
-  available, or to list/count projects, squads, release years, releases,
-  issue types, statuses, or supported metrics. Set its dimension filter to one
-  of: {", ".join(DISCOVERY_DIMENSIONS)}.
 - Use dora_metrics_by_year first for general DORA questions and comparisons.
 - Use dora_metrics_by_squad when dcpsquad is present. A squad is a dimension
   inside DCPM and must never replace project_key.

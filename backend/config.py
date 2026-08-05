@@ -2,6 +2,8 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
@@ -20,6 +22,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     database_url: str = f"sqlite:///{(ROOT_DIR / 'backend' / 'dora_runtime.db').as_posix()}"
+    assistant_database_schema: str = "ai_assistant"
     result_limit: int = Field(default=1000, ge=1, le=5000)
 
     doradb_host: str = "127.0.0.1"
@@ -38,6 +41,18 @@ class Settings(BaseSettings):
     agent_memory_max_sessions: int = Field(default=250, ge=10, le=5000)
     agent_memory_max_turns: int = Field(default=12, ge=2, le=30)
     agent_audit_max_records: int = Field(default=500, ge=10, le=10000)
+    conversation_recent_message_limit: int = Field(default=12, ge=4, le=30)
+    conversation_summary_trigger_messages: int = Field(default=12, ge=4, le=100)
+    conversation_summary_max_chars: int = Field(default=3000, ge=500, le=10_000)
+    query_result_cache_ttl_seconds: int = Field(default=300, ge=30, le=86_400)
+    query_result_cache_max_entries: int = Field(default=6, ge=1, le=20)
+    query_result_cache_max_rows: int = Field(default=100, ge=1, le=500)
+    query_result_cache_max_chars: int = Field(default=30_000, ge=1000, le=200_000)
+    jira_dashboard_cache_ttl_seconds: int = Field(default=60, ge=5, le=3600)
+
+    llm_provider: Literal["google-ai-studio", "deepseek", "ollama"] = (
+        "google-ai-studio"
+    )
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -48,6 +63,22 @@ class Settings(BaseSettings):
     deepseek_thinking_enabled: bool = True
     deepseek_planner_max_tokens: int = Field(default=1600, ge=256, le=8192)
     deepseek_response_max_tokens: int = Field(default=3000, ge=256, le=8192)
+
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-v4-flash"
+    deepseek_timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
+    deepseek_planner_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    deepseek_response_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    deepseek_thinking_enabled: bool = True
+    deepseek_planner_max_tokens: int = Field(default=1600, ge=1, le=384_000)
+    deepseek_response_max_tokens: int = Field(default=3000, ge=1, le=384_000)
+
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3:4b"
+    ollama_timeout_seconds: float = Field(default=90.0, ge=1.0, le=300.0)
+    ollama_planner_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+    ollama_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
 
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
@@ -77,6 +108,54 @@ class Settings(BaseSettings):
     @property
     def deepseek_configured(self) -> bool:
         return bool(self.deepseek_api_key)
+
+    @property
+    def ollama_configured(self) -> bool:
+        return bool(self.ollama_base_url.strip() and self.ollama_model.strip())
+
+    @property
+    def deepseek_configured(self) -> bool:
+        return bool(
+            self.deepseek_api_key
+            and self.deepseek_base_url.strip()
+            and self.deepseek_model.strip()
+        )
+
+    @property
+    def llm_configured(self) -> bool:
+        if self.llm_provider == "ollama":
+            return self.ollama_configured
+        if self.llm_provider == "deepseek":
+            return self.deepseek_configured
+        return self.gemini_configured
+
+    @property
+    def llm_model(self) -> str:
+        if self.llm_provider == "ollama":
+            return self.ollama_model
+        if self.llm_provider == "deepseek":
+            return self.deepseek_model
+        return self.gemini_model
+
+    @property
+    def llm_source(self) -> str:
+        return f"{self.llm_provider}:{self.llm_model}"
+
+    @property
+    def llm_planner_temperature(self) -> float:
+        if self.llm_provider == "ollama":
+            return self.ollama_planner_temperature
+        if self.llm_provider == "deepseek":
+            return self.deepseek_planner_temperature
+        return self.gemini_planner_temperature
+
+    @property
+    def llm_response_temperature(self) -> float:
+        if self.llm_provider == "ollama":
+            return self.ollama_response_temperature
+        if self.llm_provider == "deepseek":
+            return self.deepseek_response_temperature
+        return self.gemini_response_temperature
 
     @property
     def doradb_url(self) -> URL:
