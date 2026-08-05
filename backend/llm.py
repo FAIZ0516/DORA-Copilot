@@ -9,8 +9,6 @@ from typing import Any
 
 import httpx
 import truststore
-from google import genai
-from google.genai import types
 
 from .config import Settings
 
@@ -33,10 +31,13 @@ class GenerativeAIClient:
         self.settings = settings
         self.last_model: str | None = None
         self.last_error: str | None = None
-        self.client: genai.Client | None = None
+        self.client: Any | None = None
         self.http_client: httpx.Client | None = None
 
         if settings.llm_provider == "google-ai-studio" and settings.gemini_configured:
+            from google import genai
+            from google.genai import types
+
             ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             self.http_client = httpx.Client(
                 verify=ssl_context,

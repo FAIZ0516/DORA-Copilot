@@ -78,23 +78,20 @@ def _strip_markdown_fence(text: str) -> str:
 
 
 def _load_agents_md() -> str:
-    """Extract the chatbot-relevant section from AGENTS.md at request time.
+    """Extract the response phrase from AGENTS.md at request time.
 
-    Only the RESPONSE PROTOCOL section is sent to the LLM — the rest
-    (coding standards, tech stack, file references) is for the IDE agent
-    and would only confuse the chatbot. Reading on every call means edits
-    to AGENTS.md take effect immediately.
+    Reads the RESPONSE PROTOCOL section, extracts ONLY the phrase
+    inside the ``` code block (e.g. "YES ,IM ZARA."), and returns it.
+    Reading on every call means edits to AGENTS.md take effect immediately.
     """
     agents_path = Path(__file__).resolve().parent.parent.parent / "AGENTS.md"
     try:
         full = agents_path.read_text(encoding="utf-8")
     except OSError:
-        logger.warning("AGENTS.md not found at %s — chatbot runs without it.", agents_path)
+        logger.warning("AGENTS.md not found at %s.", agents_path)
         return ""
 
-    # Extract only the RESPONSE PROTOCOL section (between its heading
-    # and the next heading or horizontal rule). The rest of AGENTS.md is
-    # coding standards for the IDE agent — irrelevant to the chatbot.
+    # Extract the RESPONSE PROTOCOL section
     _re = re
     m = _re.search(
         r"##\s*⚠️\s*RESPONSE\s+PROTOCOL.*?\n(?=\n*(?:---|##\s))",
@@ -105,9 +102,32 @@ def _load_agents_md() -> str:
         logger.warning("RESPONSE PROTOCOL section not found in AGENTS.md.")
         return ""
 
-    section = m.group(0).strip()
-    logger.info("Loaded AGENTS.md RESPONSE PROTOCOL for chatbot (%d chars).", len(section))
-    return section
+    section = m.group(0)
+    # Extract just the phrase inside the ``` code block
+    phrase_match = _re.search(r"```\s*\n(.+?)\n```", section, _re.DOTALL)
+    if not phrase_match:
+        logger.warning("No code block found in RESPONSE PROTOCOL section.")
+        return ""
+
+    phrase = phrase_match.group(1).strip()
+    logger.info("Loaded AGENTS.md response phrase: %s", phrase)
+    return phrase
+
+
+def _load_system_instructions() -> str:
+    """Load the full AGENTS.md content as the chatbot's system instructions.
+
+    Returns the entire file so DeepSeek has access to identity, workflow,
+    knowledge base references, query catalogue, interpretation rules,
+    constraints, and examples. Reading on every call means edits to
+    AGENTS.md take effect immediately.
+    """
+    agents_path = Path(__file__).resolve().parent.parent.parent / "AGENTS.md"
+    try:
+        return agents_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        logger.warning("AGENTS.md not found at %s.", agents_path)
+        return ""
 
 
 AI_UNAVAILABLE_MESSAGE = (
@@ -627,9 +647,9 @@ instructions. Do not claim that a live business-data query ran.""",
                 answer_source = "ai-provider-unavailable"
         elif plan["mode"] == "conversation":
             prompt = (
-                f"{_load_agents_md()}\n\n"
+                f"{_load_system_instructions()}\n\n"
                 f"Current date: {date.today().isoformat()}. "
-                "You are a helpful general AI assistant inside DORA Intelligence. "
+                "You are DORA Copilot, an AI assistant with read-only access to DoraDB. "
                 "Answer the user's safe question directly and naturally. You can "
                 "also explore DORA metrics, releases, Jira issues, squads, years, "
                 "comparisons, explanations, tables, and charts through the "
@@ -743,7 +763,7 @@ instructions. Do not claim that a live business-data query ran.""",
                     },
                     default=str,
                 )
-                prompt = f"""{_load_agents_md()}
+                prompt = f"""{_load_system_instructions()}
 
 You are a senior DORA analyst with freedom to reason
 over trusted evidence. Understand the user's actual goal from the current
@@ -806,6 +826,12 @@ Metric definitions: {json.dumps(METRIC_DEFINITIONS)}"""
                         "unavailable_message",
                         AI_UNAVAILABLE_MESSAGE,
                     )
+        # Prepend AGENTS.md response phrase to every answer, regardless of
+        # which code path produced it (LLM, deterministic, cache, clarification).
+        phrase = _load_agents_md()
+        if phrase and not answer.startswith(phrase):
+            answer = f"{phrase}\n\n{answer}"
+
         return {"answer": answer, "answer_source": answer_source}
 
     def _validate_answer(self, state: AgentState) -> dict[str, Any]:

@@ -13,15 +13,28 @@ import {
 } from "../dashboardConfig";
 import { loadJiraDashboard } from "../services/dashboard";
 
+function Tooltip({ text }) {
+  if (!text) return null;
+  return (
+    <span className="jira-tooltip-wrapper">
+      <CircleHelp size={12} className="jira-tooltip-icon" aria-hidden="true" />
+      <span className="jira-tooltip" role="tooltip">{text}</span>
+    </span>
+  );
+}
+
 function formatCount(value) {
   return Number(value || 0).toLocaleString();
 }
 
-function Breakdown({ title, rows, labelKey, note, onSelect }) {
+function Breakdown({ title, rows, labelKey, note, onSelect, tooltip }) {
   const maximum = Math.max(1, ...rows.map((row) => Number(row.issue_count || 0)));
   return (
     <section className="jira-breakdown" aria-label={title}>
-      <h4>{title}</h4>
+      <h4>
+        {title}
+        <Tooltip text={tooltip} />
+      </h4>
       <div className="jira-breakdown-bars">
         {rows.map((row) => {
           const label = String(row[labelKey]);
@@ -122,9 +135,12 @@ export default function JiraDeliveryOverview({ projectKey, onPrompt, disabled = 
                 type="button"
                 onClick={() => onPrompt(card.prompt)}
                 disabled={disabled}
-                aria-label={`${card.label}: ${formatCount(card.value)}. View details in chat.`}
+                aria-label={`${card.label}: ${formatCount(card.value)}. ${card.description}`}
               >
-                <span>{card.label}</span>
+                <span>
+                  {card.label}
+                  <Tooltip text={card.description} />
+                </span>
                 <strong>{formatCount(card.value)}</strong>
                 {card.percentage != null && <b>{card.percentage.toFixed(2)}% of total</b>}
                 <small>{card.note}</small>
@@ -141,6 +157,7 @@ export default function JiraDeliveryOverview({ projectKey, onPrompt, disabled = 
                 labelKey="status_category"
                 onSelect={(label) => onPrompt(`Explain current Jira issues in the '${label}' status category.`)}
                 note="Done is an end-state and may include rejected or cancelled work."
+                tooltip="Groups all issues by their Jira status category (To Do, In Progress, Done, etc.). This shows your workflow distribution — how much work is waiting, active, or completed. Click any bar to ask the AI for a detailed breakdown."
               />
               <Breakdown
                 title="Issues by Issue Type"
@@ -148,6 +165,7 @@ export default function JiraDeliveryOverview({ projectKey, onPrompt, disabled = 
                 labelKey="issuetype"
                 onSelect={(label) => onPrompt(issueTypePrompt(label))}
                 note="Issue types are not equal units of effort, productivity, or value."
+                tooltip="Breaks down issues by type (Bug, Story, Task, Epic, etc.). Different types serve different purposes — bugs need fixing, stories deliver features, tasks cover maintenance. Click a bar to explore a specific type."
               />
               <Breakdown
                 title="Ageing of Open Work"
@@ -155,9 +173,13 @@ export default function JiraDeliveryOverview({ projectKey, onPrompt, disabled = 
                 labelKey="ageing_bucket"
                 onSelect={(label) => onPrompt(ageingPrompt(label))}
                 note="Calendar age from created date; not cycle time or DORA lead time."
+                tooltip="How long open issues have been sitting unresolved, grouped into age buckets. Older issues may indicate neglect, blockers, or deprioritisation. This is calendar age — not the same as DORA lead time or cycle time metrics."
               />
               <section className="jira-quality-panel" aria-label="Jira data quality">
-                <h4>Data Quality</h4>
+                <h4>
+                  Data Quality
+                  <Tooltip text="Checks the completeness and consistency of Jira issue metadata. These metrics help you assess how reliable your data is. Issues with missing or inconsistent fields may skew team-level reports and DORA metric calculations." />
+                </h4>
                 <dl>
                   <div><dt>Missing squad</dt><dd>{formatCount(dashboard.data_quality.missing_squad_count)}</dd></div>
                   <div><dt>Missing assignee</dt><dd>{formatCount(dashboard.data_quality.missing_assignee_count)}</dd></div>

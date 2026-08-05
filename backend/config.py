@@ -51,18 +51,8 @@ class Settings(BaseSettings):
     jira_dashboard_cache_ttl_seconds: int = Field(default=60, ge=5, le=3600)
 
     llm_provider: Literal["google-ai-studio", "deepseek", "ollama"] = (
-        "google-ai-studio"
+        "deepseek"
     )
-
-    deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-v4-flash"
-    deepseek_timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
-    deepseek_planner_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
-    deepseek_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
-    deepseek_thinking_enabled: bool = True
-    deepseek_planner_max_tokens: int = Field(default=1600, ge=256, le=8192)
-    deepseek_response_max_tokens: int = Field(default=3000, ge=256, le=8192)
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -73,6 +63,12 @@ class Settings(BaseSettings):
     deepseek_thinking_enabled: bool = True
     deepseek_planner_max_tokens: int = Field(default=1600, ge=1, le=384_000)
     deepseek_response_max_tokens: int = Field(default=3000, ge=1, le=384_000)
+
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.6-flash"
+    gemini_timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
+    gemini_planner_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    gemini_response_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
 
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3:4b"
@@ -106,8 +102,8 @@ class Settings(BaseSettings):
         return bool(self.doradb_user and self.doradb_password)
 
     @property
-    def deepseek_configured(self) -> bool:
-        return bool(self.deepseek_api_key)
+    def gemini_configured(self) -> bool:
+        return bool(self.gemini_api_key)
 
     @property
     def ollama_configured(self) -> bool:
