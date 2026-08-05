@@ -8,6 +8,7 @@ from typing import Any
 from ..config import settings
 from ..doradb_catalog import (
     APPROVED_QUERY_IDS,
+    DISCOVERY_DIMENSIONS,
     LARGE_QUERY_IDS,
     LARGE_QUERY_REQUIRED_FILTERS,
     QUERY_CATALOGUE,
@@ -44,6 +45,11 @@ def enforce_plan(plan: AgentPlan) -> AgentPlan:
             for key, value in action.get("filters", {}).items()
             if key in QUERY_CATALOGUE[query_id]["allowed_filters"] and value not in (None, "")
         }
+        if (
+            query_id == "list_dimension_values"
+            and filters.get("dimension") not in DISCOVERY_DIMENSIONS
+        ):
+            continue
         if query_id == "dora_metrics_by_squad" and "dcpsquad" not in filters:
             continue
         if query_id in LARGE_QUERY_IDS and not (

@@ -39,6 +39,9 @@ class SessionMemoryStore:
             "filters": context.get("filters", {}),
             "query_ids": context.get("query_ids", []),
             "warnings": context.get("warnings", []),
+            "entities": context.get("entities", {}),
+            "discovered_values": context.get("discovered_values", {}),
+            "user_goal": str(context.get("user_goal", ""))[:500],
         }
         turn = {
             "user": user_message[:2000],

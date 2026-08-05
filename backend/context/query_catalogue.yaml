@@ -1,6 +1,8 @@
 {
   "approved": [
+    "list_dimension_values",
     "dora_metrics_by_year",
+    "dora_metrics_by_squad",
     "dora_metrics_release_detail",
     "feature_vs_release_frequency",
     "feature_vs_user_story",

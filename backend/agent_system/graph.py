@@ -3,18 +3,25 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import uuid
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from langgraph.graph import END, StateGraph
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from ..config import settings
 from ..doradb import DoraDbConfigurationError, DoraDbQueryRejected
-from ..doradb_catalog import METRIC_DEFINITIONS, planner_context
+from ..doradb_catalog import (
+    DISCOVERY_DIMENSIONS,
+    METRIC_DEFINITIONS,
+    planner_context,
+)
 from ..llm import GenerativeAIClient
 from ..skills import (
     analyze_trend,
@@ -23,10 +30,13 @@ from ..skills import (
     compare_rows,
     detect_anomalies,
     execute_approved_query,
+    load_entity_catalogue,
+    merge_memory_entities,
     message_mentions_metric,
     select_delivery_performance_metric,
     select_metric,
     select_metric_by_id,
+    resolve_entities,
 )
 from .audit import audit_log
 from .control import ensure_within_deadline, public_policy
@@ -45,11 +55,49 @@ def _strip_markdown_fence(text: str) -> str:
     ).strip()
 
 
+def _load_agents_md() -> str:
+    """Extract the chatbot-relevant section from AGENTS.md at request time.
+
+    Only the RESPONSE PROTOCOL section is sent to DeepSeek — the rest
+    (coding standards, tech stack, file references) is for the IDE agent
+    and would only confuse the chatbot. Reading on every call means edits
+    to AGENTS.md take effect immediately.
+    """
+    agents_path = Path(__file__).resolve().parent.parent.parent / "AGENTS.md"
+    try:
+        full = agents_path.read_text(encoding="utf-8")
+    except OSError:
+        logger = logging.getLogger(__name__)
+        logger.warning("AGENTS.md not found at %s — chatbot runs without it.", agents_path)
+        return ""
+
+    # Extract only the RESPONSE PROTOCOL section (between its heading
+    # and the next heading or horizontal rule). The rest of AGENTS.md is
+    # coding standards for the IDE agent — irrelevant to the chatbot.
+    import re as _re
+    m = _re.search(
+        r"##\s*⚠️\s*RESPONSE\s+PROTOCOL.*?\n(?=\n*(?:---|##\s))",
+        full,
+        _re.DOTALL | _re.IGNORECASE,
+    )
+    if not m:
+        logger = logging.getLogger(__name__)
+        logger.warning("RESPONSE PROTOCOL section not found in AGENTS.md.")
+        return ""
+
+    section = m.group(0).strip()
+    logger = logging.getLogger(__name__)
+    logger.info("Loaded AGENTS.md RESPONSE PROTOCOL for chatbot (%d chars).", len(section))
+    return section
+
+
 AI_UNAVAILABLE_MESSAGE = (
-    "The Google AI Studio model is unavailable right now or its free request quota "
-    "has been exhausted. I did not substitute a template answer. Please try "
-    "again when the free-model service is available."
+    "The DeepSeek model is unavailable right now, or the API account has no "
+    "available balance. I did not substitute a template answer. Please try "
+    "again after the DeepSeek service or account is available."
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _table_spec(results: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -57,6 +105,10 @@ def _table_spec(results: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
     rows = results[0]["rows"][:50]
     preferred = [
+        "dimension",
+        "value",
+        "record_count",
+        "total_values",
         "dcpsquad",
         "release_year",
         "release_date",
@@ -82,16 +134,70 @@ def _table_spec(results: list[dict[str, Any]]) -> dict[str, Any] | None:
     }
 
 
-def _wants_table(message: str, intent: str) -> bool:
+def _wants_table(
+    message: str,
+    intent: str,
+    results: list[dict[str, Any]] | None = None,
+) -> bool:
     """Keep evidence available without forcing a table into every answer."""
 
-    return intent == "issue_listing" or bool(
+    explicit = bool(
         re.search(
             r"\b(table|tabular|raw data|evidence table|data rows?|records?|"
             r"spreadsheet|csv)\b",
             message,
             re.I,
         )
+    )
+    if explicit or intent == "issue_listing":
+        return True
+    # A long catalogue is easier to scan as a table; short discovery answers
+    # remain conversational unless the user explicitly requests rows.
+    return bool(
+        intent == "discovery"
+        and results
+        and results[0].get("row_count", len(results[0].get("rows", []))) > 30
+    )
+
+
+def _discovery_answer(result: dict[str, Any]) -> str:
+    """Render simple catalogue evidence without asking a model to reinterpret it."""
+
+    filters = result.get("filters", {})
+    dimension = str(filters.get("dimension", "value"))
+    definition = DISCOVERY_DIMENSIONS.get(
+        dimension,
+        {"label": dimension.replace("_", " ")},
+    )
+    label = str(definition["label"])
+    rows = result.get("rows", [])
+    if not rows:
+        scope_parts = [f"project {filters.get('project_key', settings.doradb_project_key)}"]
+        if filters.get("release_year"):
+            years = ", ".join(str(year) for year in filters["release_year"])
+            scope_parts.append(f"release year {years}")
+        return (
+            f"No matching {dimension.replace('_', ' ')} values were returned "
+            f"for the applied filters. Scope: {'; '.join(scope_parts)}. "
+            "This result applies only to that "
+            "dimension and scope; it does not mean the rest of DoraDB is empty."
+        )
+
+    total = int(rows[0].get("total_values") or len(rows))
+    values = [str(row.get("value", "")).strip() for row in rows]
+    values = [value for value in values if value]
+    displayed = values[:30]
+    rendered = ", ".join(value.replace("_", " ") for value in displayed)
+    suffix = (
+        f" Showing the first {len(displayed)} here; the supporting table contains "
+        f"{len(rows)} returned values."
+        if total > len(displayed)
+        else ""
+    )
+    return (
+        f"DoraDB currently has {total} {label} in the governed "
+        f"{filters.get('project_key', settings.doradb_project_key)} scope: "
+        f"{rendered}.{suffix}"
     )
 
 
@@ -122,7 +228,7 @@ _ANALYTICAL_METRICS = {
 
 
 class AdvancedDoraDbAgent:
-    """A Gemini agent with deterministic controls around every data action."""
+    """A DeepSeek agent with deterministic controls around every data action."""
 
     def __init__(self, session: Session | None) -> None:
         self.session = session
@@ -164,8 +270,23 @@ class AdvancedDoraDbAgent:
         self.graph = graph.compile()
 
     def _load_memory(self, state: AgentState) -> dict[str, Any]:
+        memory = memory_store.get(state["session_id"])
+        try:
+            catalogue = load_entity_catalogue(
+                state.get("db_session"),
+                project_key=settings.doradb_project_key,
+            )
+        except SQLAlchemyError as exc:
+            # Entity grounding improves language understanding, but a temporary
+            # catalogue refresh failure must not block safe conversation. A
+            # later data action will still surface the database outage.
+            logger.warning("Could not refresh DoraDB entity catalogue: %s", exc)
+            catalogue = load_entity_catalogue(None)
+        catalogue = merge_memory_entities(catalogue, memory)
         return {
-            "memory": memory_store.get(state["session_id"]),
+            "memory": memory,
+            "entity_catalogue": catalogue,
+            "grounding": resolve_entities(state["message"], catalogue),
             "started_at": time.monotonic(),
             "repair_count": 0,
             "answer_retry_count": 0,
@@ -178,6 +299,8 @@ class AdvancedDoraDbAgent:
             memory=state["memory"],
             browser_history=state.get("browser_history", []),
             llm=self.llm,
+            entity_catalogue=state.get("entity_catalogue", {}),
+            grounding=state.get("grounding", {}),
         )
         metric = select_metric(state["message"])
         if (
@@ -319,6 +442,7 @@ class AdvancedDoraDbAgent:
                 if _wants_table(
                     state["message"],
                     state.get("plan", {}).get("intent", ""),
+                    results,
                 )
                 else None
             ),
@@ -330,7 +454,7 @@ class AdvancedDoraDbAgent:
         if plan["mode"] == "out_of_scope":
             if plan["intent"] == "out_of_context":
                 answer = (
-                    "I can only help with the connected DoraDB dataset: DORA "
+                    "OK CAPTAIN. I can only help with the connected DoraDB dataset: DORA "
                     "metrics, releases, delivery performance, Jira issues, DCPM "
                     "squads, and related engineering analysis. Please ask a "
                     "question within that scope."
@@ -342,23 +466,41 @@ class AdvancedDoraDbAgent:
                     "I cannot modify data, run arbitrary SQL, or expose credentials."
                 )
         elif plan["mode"] == "clarification":
-            if state.get("planner_source", "").startswith("google-ai-studio:"):
+            if state.get("planner_source", "").startswith("deepseek:"):
                 answer = plan["clarification"]
                 answer_source = self.llm.source
             else:
                 answer = AI_UNAVAILABLE_MESSAGE
                 answer_source = "ai-provider-unavailable"
         elif plan["mode"] == "conversation":
-            prompt = (
-                "You are the friendly DORA Intelligence assistant. Respond "
-                "naturally to this greeting or request for help. Briefly explain "
-                "that you can explore DORA metrics, releases, Jira issues, squads, "
-                "years, comparisons, explanations, tables, and requested charts "
-                "from the connected read-only DoraDB. Ask one useful, non-canned "
-                "question that helps the user begin. Do not claim that a database "
-                "query ran and do not discuss unrelated topics."
+            conversation = "\n".join(
+                f"{item.get('role', 'user').upper()}: {item.get('content', '')[:1200]}"
+                for item in state.get("browser_history", [])[-10:]
             )
-            generated = self.llm.complete(prompt, state["message"])
+            if not conversation:
+                conversation = "\n".join(
+                    f"USER: {item.get('user', '')[:800]}\n"
+                    f"ASSISTANT: {item.get('assistant', '')[:1200]}"
+                    for item in state.get("memory", {}).get("turns", [])[-6:]
+                )
+            prompt = f"""{_load_agents_md()}
+
+You are the conversational reasoning layer of DORA
+Intelligence. Answer the user's current in-domain conversational request
+naturally and specifically using the supplied conversation. If they ask what
+a word, caveat, conclusion, or earlier statement means, explain that exact
+thing in context. If they greet you, greet them briefly. If they ask about
+capabilities, describe the connected read-only DoraDB capabilities accurately.
+Do not use a canned menu, do not repeat the scope statement, do not claim a
+database query ran, and do not invent facts or numbers that are not present in
+the conversation. Ask a follow-up only when it is genuinely required."""
+            generated = self.llm.complete(
+                prompt,
+                (
+                    f"Conversation:\n{conversation or '(none)'}\n\n"
+                    f"Current request: {state['message']}"
+                ),
+            )
             answer = generated or AI_UNAVAILABLE_MESSAGE
             answer_source = (
                 self.llm.source
@@ -372,8 +514,17 @@ class AdvancedDoraDbAgent:
                 "rows": [],
                 "filters": {},
             }
-            answer = AI_UNAVAILABLE_MESSAGE
-            answer_source = "ai-provider-unavailable"
+            is_discovery = primary.get("query_id") == "list_dimension_values"
+            answer = (
+                _discovery_answer(primary)
+                if is_discovery
+                else AI_UNAVAILABLE_MESSAGE
+            )
+            answer_source = (
+                "deterministic-discovery"
+                if is_discovery
+                else "ai-provider-unavailable"
+            )
             if self.llm.enabled and state["validation"]["valid"]:
                 conversation = "\n".join(
                     f"{item.get('role', 'user').upper()}: "
@@ -395,7 +546,9 @@ class AdvancedDoraDbAgent:
                     },
                     default=str,
                 )
-                prompt = f"""You are a senior DORA analyst with freedom to reason
+                prompt = f"""{_load_agents_md()}
+
+You are a senior DORA analyst with freedom to reason
 over trusted evidence. Understand the user's actual goal from the current
 question and recent conversation, examine all supplied query results together,
 and compose the most useful direct answer. Use only validated evidence for
@@ -407,11 +560,22 @@ names, validation language, or a generic definition unless the user asked for
 one. Choose the structure, depth, comparisons, and emphasis that best fit this
 specific question. Do not mention JSON, query IDs, database field names,
 deterministic analysis, validation machinery, or implementation details.
-Never promise future querying. Speak as an experienced analyst.
+ Never promise future querying. Speak as an experienced analyst.
+
+For discovery requests, directly answer which governed values exist and how
+many were found. Use the supplied list_dimension_values evidence, respect its
+total_values and applied limit, and never replace it with remembered examples.
+An empty filtered discovery result applies only to that dimension and scope;
+it does not prove that other DoraDB data is absent.
 
 Treat the current calendar year as potentially incomplete. Do not compare its
 release count with completed full years as if they covered equal periods, and
-state that limitation whenever it materially affects a conclusion. Correlation
+state that limitation whenever it materially affects a conclusion. Never call
+an earlier completed calendar year "year-to-date", "so far", "partial", or
+"still in progress" merely because it has fewer rows. Do not say a completed
+year is provisional until more releases arrive; later releases cannot change
+that completed year's count. A small completed-year sample may be described as
+limited, but not incomplete. Correlation
 is not causation: describe possible drivers as hypotheses unless the evidence
 directly proves them.
 
@@ -434,7 +598,7 @@ Metric definitions: {json.dumps(METRIC_DEFINITIONS)}"""
                 generated = self.llm.complete(
                     prompt,
                     evidence,
-                    temperature=settings.gemini_response_temperature,
+                    temperature=settings.deepseek_response_temperature,
                 )
                 if generated:
                     answer = _strip_markdown_fence(generated)
@@ -481,17 +645,21 @@ Metric definitions: {json.dumps(METRIC_DEFINITIONS)}"""
             default=str,
         )
         repaired = self.llm.complete(
-            """You are a senior DORA analyst repairing an evidence-grounded answer.
+            f"""You are a senior DORA analyst repairing an evidence-grounded answer.
 Answer the user's exact question now using only the supplied JSON. Do not
 promise future work. Keep every numeric statement traceable to results or
 the supplied comparisons. Be natural and specific, not a canned template.
+The current date is {date.today().isoformat()}. Only {date.today().year} may be
+described as current, year-to-date, or in progress. Never call an earlier
+calendar year partial or provisional merely because it has fewer records, and
+never imply future releases can be added to a completed year.
 For recommendation requests, assess every DORA measure in the evidence and
 prioritize concrete actions instead of merely listing values.
 Never mention JSON, query IDs, field names, deterministic analysis, or
 validation internals. If the question asks what years exist, count and list
 those years. Keep under 350 words.""",
             evidence,
-            temperature=min(settings.gemini_response_temperature, 0.2),
+            temperature=min(settings.deepseek_response_temperature, 0.2),
         )
         answer = _strip_markdown_fence(repaired) if repaired else AI_UNAVAILABLE_MESSAGE
         return {
@@ -523,8 +691,24 @@ those years. Keep under 350 words.""",
             "repairs": state.get("repair_count", 0),
             "answer_regenerations": state.get("answer_retry_count", 0),
             "control": public_policy(),
+            "grounded_entities": state.get("grounding", {}).get("matches", {}),
+            "presentation": {
+                "chart": bool(state.get("chart")),
+                "table": bool(state.get("table")),
+            },
         }
         prior_context = state.get("memory", {}).get("last_context", {})
+        discovered_values: dict[str, list[str]] = {}
+        for result in results:
+            if result.get("query_id") != "list_dimension_values":
+                continue
+            dimension = str(result.get("filters", {}).get("dimension", ""))
+            if dimension:
+                discovered_values[dimension] = [
+                    str(row.get("value", "")).strip()
+                    for row in result.get("rows", [])
+                    if str(row.get("value", "")).strip()
+                ]
         next_context = (
             {
                 "intent": state["plan"]["intent"],
@@ -532,6 +716,9 @@ those years. Keep under 350 words.""",
                 "filters": filters,
                 "query_ids": query_ids,
                 "warnings": state.get("warnings", []),
+                "entities": state.get("grounding", {}).get("matches", {}),
+                "discovered_values": discovered_values,
+                "user_goal": state["message"],
             }
             if state["plan"]["mode"] in {"data", "clarification"}
             else prior_context

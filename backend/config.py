@@ -39,11 +39,15 @@ class Settings(BaseSettings):
     agent_memory_max_turns: int = Field(default=12, ge=2, le=30)
     agent_audit_max_records: int = Field(default=500, ge=10, le=10000)
 
-    gemini_api_key: str = ""
-    gemini_model: str = "gemini-3.6-flash"
-    gemini_timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
-    gemini_planner_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
-    gemini_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-v4-flash"
+    deepseek_timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
+    deepseek_planner_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+    deepseek_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
+    deepseek_thinking_enabled: bool = True
+    deepseek_planner_max_tokens: int = Field(default=1600, ge=256, le=8192)
+    deepseek_response_max_tokens: int = Field(default=3000, ge=256, le=8192)
 
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
@@ -71,8 +75,8 @@ class Settings(BaseSettings):
         return bool(self.doradb_user and self.doradb_password)
 
     @property
-    def gemini_configured(self) -> bool:
-        return bool(self.gemini_api_key)
+    def deepseek_configured(self) -> bool:
+        return bool(self.deepseek_api_key)
 
     @property
     def doradb_url(self) -> URL:

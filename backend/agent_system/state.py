@@ -32,6 +32,8 @@ class AgentState(TypedDict, total=False):
     message: str
     browser_history: list[dict[str, str]]
     memory: dict[str, Any]
+    entity_catalogue: dict[str, list[str]]
+    grounding: dict[str, Any]
     db_session: Session | None
     started_at: float
     planner_source: str

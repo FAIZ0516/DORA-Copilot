@@ -8,9 +8,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from .context import load_context
+
 
 DEFAULT_PROJECT_KEY = "DCPM"
+DATA_DICTIONARY = load_context("data_dictionary.yaml")
+DISCOVERY_DIMENSIONS: dict[str, dict[str, Any]] = DATA_DICTIONARY["dimensions"]
 APPROVED_QUERY_IDS = {
+    "list_dimension_values",
     "dora_metrics_by_year",
     "dora_metrics_by_squad",
     "dora_metrics_release_detail",
@@ -26,13 +31,17 @@ DETAIL_QUERY_IDS = {
 }
 LARGE_QUERY_IDS = {"feature_vs_release_frequency", "feature_vs_user_story"}
 LARGE_QUERY_REQUIRED_FILTERS = {
+    "dcpsquad",
+    "release_date",
     "release_year",
     "fixversion",
     "release_name",
     "issuetype",
     "jira_key",
+    "status",
 }
 ALLOWED_FILTERS = {
+    "dimension",
     "release_year",
     "release_date",
     "fixversion",
@@ -45,6 +54,23 @@ ALLOWED_FILTERS = {
 }
 
 QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
+    "list_dimension_values": {
+        "purpose": (
+            "List the current distinct values for a governed dimension. Use for "
+            "catalogue questions about projects, squads, release years, releases, "
+            "issue types, statuses, or supported metrics; never use an analytical "
+            "metrics query to enumerate dimension values."
+        ),
+        "default_limit": 100,
+        "allowed_filters": ["dimension", "release_year", "project_key"],
+        "required_filters": ["dimension"],
+        "expected_columns": [
+            "dimension",
+            "value",
+            "record_count",
+            "total_values",
+        ],
+    },
     "dora_metrics_by_year": {
         "purpose": (
             "Yearly release frequency, change failure rate, lead time for change, "
@@ -196,14 +222,36 @@ def planner_context() -> str:
         for query_id, definition in QUERY_CATALOGUE.items()
     )
     metrics = "\n".join(f"- {name}: {definition}" for name, definition in METRIC_DEFINITIONS.items())
+    dimensions = "\n".join(
+        f"- {name} ({definition['label']}): {definition['meaning']}"
+        for name, definition in DISCOVERY_DIMENSIONS.items()
+    )
+    entities = "\n".join(
+        f"- {entity}: {definition['grain']} Important fields: "
+        + "; ".join(
+            f"{field} = {meaning}"
+            for field, meaning in definition.get("important_fields", {}).items()
+        )
+        for entity, definition in DATA_DICTIONARY["entities"].items()
+    )
     return f"""Approved DoraDB query tools:
 {routes}
+
+DoraDB discoverable dimensions:
+{dimensions}
+
+DoraDB entity semantics:
+{entities}
 
 DoraDB metric definitions:
 {metrics}
 
 Rules:
 - Default project_key to DCPM.
+- Use list_dimension_values for requests that ask what values exist, what is
+  available, or to list/count projects, squads, release years, releases,
+  issue types, statuses, or supported metrics. Set its dimension filter to one
+  of: {", ".join(DISCOVERY_DIMENSIONS)}.
 - Use dora_metrics_by_year first for general DORA questions and comparisons.
 - Use dora_metrics_by_squad when dcpsquad is present. A squad is a dimension
   inside DCPM and must never replace project_key.

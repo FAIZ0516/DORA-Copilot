@@ -5,8 +5,11 @@ from __future__ import annotations
 import re
 from typing import Literal, TypedDict
 
+from .dimension_discovery import match_discovery_dimension
+
 
 IntentName = Literal[
+    "discovery",
     "metric_lookup",
     "comparison",
     "trend",
@@ -37,7 +40,8 @@ _UNSAFE = re.compile(
 _DOMAIN = re.compile(
     r"\b(dora|doradb|releases?|deployments?|deploy|change failure|failure rate|"
     r"lead time|load time|cycle time|jira|feature|user stor(?:y|ies)|"
-    r"delivery|throughput|metrics?|projects?|issues?|tickets?|sprints?|squads?|"
+    r"delivery|engineering|developer|performance|risk|throughput|metrics?|"
+    r"projects?|issues?|tickets?|sprints?|squads?|teams?|"
     r"titan|jaeger|fixversion)\b",
     re.I,
 )
@@ -61,6 +65,8 @@ def classify_intent(message: str) -> IntentMatch:
         name, confidence = "greeting", 0.99
     elif re.search(r"\b(help|what can you do|capabilit(?:y|ies)|examples?)\b", lowered):
         name, confidence = "help", 0.98
+    elif match_discovery_dimension(message):
+        name, confidence = "discovery", 0.99
     elif not _DOMAIN.search(message):
         name, confidence = "general_conversation", 0.99
     elif re.search(r"\b(ratio|per feature|story.to.feature)\b", lowered):
@@ -93,8 +99,8 @@ def classify_intent(message: str) -> IntentMatch:
         name, confidence = "visualization", 0.84
     elif re.search(
         r"\b(dora|release|deploy|failure|lead time|load time|cycle time|jira|"
-        r"feature|user stor|delivery|throughput|metric|project|issue|sprint|"
-        r"squad|titan|jaeger)\b",
+        r"feature|user stor|delivery|engineering|developer|performance|risk|"
+        r"throughput|metric|project|issue|sprint|squad|team|titan|jaeger)\b",
         lowered,
     ):
         name, confidence = "metric_lookup", 0.72

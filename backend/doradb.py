@@ -15,8 +15,10 @@ from .config import settings
 from .doradb_catalog import (
     ALLOWED_FILTERS,
     APPROVED_QUERY_IDS,
+    DISCOVERY_DIMENSIONS,
     LARGE_QUERY_IDS,
     LARGE_QUERY_REQUIRED_FILTERS,
+    METRIC_DEFINITIONS,
     QUERY_CATALOGUE,
 )
 
@@ -249,6 +251,98 @@ _BASE_QUERIES = {
     """,
 }
 
+_DISCOVERY_BASE_QUERIES = {
+    "project": """
+        SELECT
+            'project'::text AS dimension,
+            UPPER(TRIM(j.project_key))::text AS value,
+            COUNT(*)::bigint AS record_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE UPPER(j.project_key) = UPPER(:project_key)
+          AND NULLIF(TRIM(j.project_key), '') IS NOT NULL
+        GROUP BY UPPER(TRIM(j.project_key))
+    """,
+    "squad": """
+        SELECT
+            'squad'::text AS dimension,
+            TRIM(j.dcpsquad)::text AS value,
+            COUNT(*)::bigint AS record_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE UPPER(j.project_key) = UPPER(:project_key)
+          AND NULLIF(TRIM(j.dcpsquad), '') IS NOT NULL
+        GROUP BY TRIM(j.dcpsquad)
+    """,
+    "issue_type": """
+        SELECT
+            'issue_type'::text AS dimension,
+            TRIM(j.issuetype)::text AS value,
+            COUNT(*)::bigint AS record_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE UPPER(j.project_key) = UPPER(:project_key)
+          AND NULLIF(TRIM(j.issuetype), '') IS NOT NULL
+        GROUP BY TRIM(j.issuetype)
+    """,
+    "status": """
+        SELECT
+            'status'::text AS dimension,
+            TRIM(j.status)::text AS value,
+            COUNT(*)::bigint AS record_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE UPPER(j.project_key) = UPPER(:project_key)
+          AND NULLIF(TRIM(j.status), '') IS NOT NULL
+        GROUP BY TRIM(j.status)
+    """,
+    "release": """
+        WITH issue_versions AS (
+            SELECT
+                jsonb_array_elements_text(
+                    COALESCE(
+                        j.fixversions::jsonb -> 'fixversions',
+                        '[]'::jsonb
+                    )
+                ) AS value
+            FROM public.tbl_gdt_dte_jira_issues AS j
+            WHERE UPPER(j.project_key) = UPPER(:project_key)
+        )
+        SELECT
+            'release'::text AS dimension,
+            TRIM(v.value)::text AS value,
+            COUNT(*)::bigint AS record_count
+        FROM issue_versions AS v
+        LEFT JOIN public.tbl_gdt_dte_release_info AS r
+          ON r.fixversion = v.value
+        WHERE NULLIF(TRIM(v.value), '') IS NOT NULL
+          AND (
+              :release_year IS NULL
+              OR EXTRACT(YEAR FROM r.release_date)::integer = :release_year
+          )
+        GROUP BY TRIM(v.value)
+    """,
+    "release_year": """
+        WITH issue_versions AS (
+            SELECT DISTINCT
+                jsonb_array_elements_text(
+                    COALESCE(
+                        j.fixversions::jsonb -> 'fixversions',
+                        '[]'::jsonb
+                    )
+                ) AS fixversion
+            FROM public.tbl_gdt_dte_jira_issues AS j
+            WHERE UPPER(j.project_key) = UPPER(:project_key)
+        )
+        SELECT
+            'release_year'::text AS dimension,
+            EXTRACT(YEAR FROM r.release_date)::integer::text AS value,
+            COUNT(DISTINCT r.fixversion)::bigint AS record_count
+        FROM issue_versions AS v
+        JOIN public.tbl_gdt_dte_release_info AS r
+          ON r.fixversion = v.fixversion
+        WHERE r.release_category = 1
+          AND r.release_date IS NOT NULL
+        GROUP BY EXTRACT(YEAR FROM r.release_date)::integer
+    """,
+}
+
 _FILTER_COLUMNS = {
     "dora_metrics_by_year": {
         "release_year": "approved.release_year",
@@ -355,7 +449,12 @@ def _normalize_filters(query_id: str, raw_filters: dict[str, Any]) -> dict[str, 
     for key, raw_value in raw_filters.items():
         if key not in ALLOWED_FILTERS or key not in allowed_for_query or raw_value in (None, ""):
             continue
-        if key == "release_year":
+        if key == "dimension":
+            value = str(raw_value).strip().lower()
+            if value not in DISCOVERY_DIMENSIONS:
+                raise DoraDbQueryRejected("Unknown discovery dimension")
+            normalized[key] = value
+        elif key == "release_year":
             values = raw_value if isinstance(raw_value, list) else [raw_value]
             years = sorted({int(value) for value in values})
             if not years or any(year < 2000 or year > 2100 for year in years):
@@ -371,7 +470,7 @@ def _normalize_filters(query_id: str, raw_filters: dict[str, Any]) -> dict[str, 
                 ) from exc
         elif key == "dcpsquad":
             value = str(raw_value).strip().upper()
-            if not re.fullmatch(r"[A-Z][A-Z0-9_-]{1,30}", value):
+            if not re.fullmatch(r"[A-Z][A-Z0-9 _-]{1,40}", value):
                 raise DoraDbQueryRejected("Invalid DoraDB squad")
             normalized[key] = value
         elif key == "jira_key":
@@ -390,6 +489,8 @@ def _normalize_filters(query_id: str, raw_filters: dict[str, Any]) -> dict[str, 
                 raise DoraDbQueryRejected(f"{key} is too long")
             normalized[key] = value
     normalized["project_key"] = settings.doradb_project_key.upper()
+    if query_id == "list_dimension_values" and "dimension" not in normalized:
+        raise DoraDbQueryRejected("list_dimension_values requires a dimension filter")
     if query_id == "dora_metrics_by_squad" and "dcpsquad" not in normalized:
         raise DoraDbQueryRejected("dora_metrics_by_squad requires a squad filter")
     if query_id in LARGE_QUERY_IDS and not (
@@ -406,6 +507,47 @@ def _build_statement(
     filters: dict[str, Any],
     limit: int,
 ) -> tuple[str, dict[str, Any]]:
+    if query_id == "list_dimension_values":
+        dimension = filters["dimension"]
+        params: dict[str, Any] = {
+            "limit": limit,
+            "project_key": filters["project_key"],
+            "release_year": (
+                filters.get("release_year", [None])[0]
+                if filters.get("release_year")
+                else None
+            ),
+        }
+        if dimension == "metric":
+            metric_selects: list[str] = []
+            for index, metric_id in enumerate(METRIC_DEFINITIONS):
+                parameter = f"metric_{index}"
+                params[parameter] = metric_id
+                metric_selects.append(
+                    "SELECT 'metric'::text AS dimension, "
+                    f"CAST(:{parameter} AS text) AS value, "
+                    "NULL::bigint AS record_count"
+                )
+            base_query = "\nUNION ALL\n".join(metric_selects)
+        else:
+            base_query = _DISCOVERY_BASE_QUERIES[dimension]
+        order_by = (
+            "CAST(discovered.value AS integer) DESC"
+            if dimension == "release_year"
+            else "LOWER(discovered.value)"
+        )
+        statement = f"""
+            SELECT
+                discovered.dimension,
+                discovered.value,
+                discovered.record_count,
+                COUNT(*) OVER()::integer AS total_values
+            FROM ({base_query}) AS discovered
+            ORDER BY {order_by}
+            LIMIT :limit
+        """
+        return statement, params
+
     params: dict[str, Any] = {
         "limit": limit,
         "project_key": filters["project_key"],

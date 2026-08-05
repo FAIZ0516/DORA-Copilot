@@ -1,14 +1,13 @@
-"""Google AI Studio Gemini adapter used by the governed agent."""
+"""DeepSeek API adapter used by the governed DoraDB agent."""
 
 from __future__ import annotations
 
 import logging
 import ssl
+from typing import Any
 
 import httpx
 import truststore
-from google import genai
-from google.genai import types
 
 from .config import Settings
 
@@ -16,34 +15,31 @@ logger = logging.getLogger(__name__)
 
 
 class GenerativeAIClient:
-    """Call the configured Gemini model without exposing credentials."""
+    """Call DeepSeek's OpenAI-compatible chat-completions endpoint safely."""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.last_model: str | None = None
-        self.client: genai.Client | None = None
         self.http_client: httpx.Client | None = None
-        if settings.gemini_configured:
+        if settings.deepseek_configured:
             ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             self.http_client = httpx.Client(
+                base_url=settings.deepseek_base_url.rstrip("/"),
+                headers={
+                    "Authorization": f"Bearer {settings.deepseek_api_key}",
+                    "Content-Type": "application/json",
+                },
                 verify=ssl_context,
-                timeout=settings.gemini_timeout_seconds,
-            )
-            self.client = genai.Client(
-                api_key=settings.gemini_api_key,
-                http_options=types.HttpOptions(
-                    timeout=int(settings.gemini_timeout_seconds * 1000),
-                    httpx_client=self.http_client,
-                ),
+                timeout=settings.deepseek_timeout_seconds,
             )
 
     @property
     def enabled(self) -> bool:
-        return self.client is not None
+        return self.http_client is not None
 
     @property
     def source(self) -> str:
-        return f"google-ai-studio:{self.last_model or self.settings.gemini_model}"
+        return f"deepseek:{self.last_model or self.settings.deepseek_model}"
 
     def complete(
         self,
@@ -53,35 +49,59 @@ class GenerativeAIClient:
         json_mode: bool = False,
         temperature: float | None = None,
     ) -> str | None:
-        """Return model text, falling back safely on provider errors."""
+        """Return model text and fail closed when the provider is unavailable."""
 
-        if self.client is None:
+        if self.http_client is None:
             return None
+
+        selected_temperature = (
+            self.settings.deepseek_planner_temperature
+            if temperature is None and json_mode
+            else (
+                self.settings.deepseek_response_temperature
+                if temperature is None
+                else temperature
+            )
+        )
+        payload: dict[str, Any] = {
+            "model": self.settings.deepseek_model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": selected_temperature,
+            "max_tokens": (
+                self.settings.deepseek_planner_max_tokens
+                if json_mode
+                else self.settings.deepseek_response_max_tokens
+            ),
+            "stream": False,
+            "thinking": {
+                "type": (
+                    "enabled"
+                    if self.settings.deepseek_thinking_enabled
+                    else "disabled"
+                )
+            },
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
         try:
-            config = types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                temperature=(
-                    self.settings.gemini_planner_temperature
-                    if temperature is None and json_mode
-                    else (
-                        self.settings.gemini_response_temperature
-                        if temperature is None
-                        else temperature
-                    )
-                ),
-                response_mime_type="application/json" if json_mode else "text/plain",
-            )
-            response = self.client.models.generate_content(
-                model=self.settings.gemini_model,
-                contents=user_prompt,
-                config=config,
-            )
-            self.last_model = self.settings.gemini_model
-            return (response.text or "").strip() or None
-        except Exception as exc:
+            response = self.http_client.post("/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices") or []
+            if not choices:
+                return None
+            message = choices[0].get("message") or {}
+            content = message.get("content")
+            self.last_model = str(data.get("model") or self.settings.deepseek_model)
+            return str(content).strip() if content else None
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
             logger.warning(
-                "Google AI Studio model %s unavailable: %s",
-                self.settings.gemini_model,
+                "DeepSeek model %s unavailable: %s",
+                self.settings.deepseek_model,
                 exc,
             )
             return None

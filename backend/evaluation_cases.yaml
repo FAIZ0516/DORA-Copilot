@@ -1,5 +1,12 @@
 {
   "cases": [
+    {"question": "What projects are available?", "intent": "discovery", "query": "list_dimension_values", "dimension": "project"},
+    {"question": "List all the squads that you have.", "intent": "discovery", "query": "list_dimension_values", "dimension": "squad"},
+    {"question": "Which release years exist?", "intent": "discovery", "query": "list_dimension_values", "dimension": "release_year"},
+    {"question": "List all releases.", "intent": "discovery", "query": "list_dimension_values", "dimension": "release"},
+    {"question": "What issue types do you have?", "intent": "discovery", "query": "list_dimension_values", "dimension": "issue_type"},
+    {"question": "List all available statuses.", "intent": "discovery", "query": "list_dimension_values", "dimension": "status"},
+    {"question": "What DORA metrics are supported?", "intent": "discovery", "query": "list_dimension_values", "dimension": "metric"},
     {"question": "What was release frequency in 2025?", "intent": "metric_lookup", "query": "dora_metrics_by_year"},
     {"question": "Compare release frequency between 2024 and 2025.", "intent": "comparison", "query": "dora_metrics_by_year"},
     {"question": "Plot change failure rate by year.", "intent": "visualization", "query": "dora_metrics_by_year"},

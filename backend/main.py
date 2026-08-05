@@ -52,7 +52,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description=(
-        "Google AI Studio-powered conversational DORA intelligence over the real, "
+        "DeepSeek-powered conversational DORA intelligence over the real, "
         "read-only PostgreSQL DoraDB dataset."
     ),
     version="0.4.0",
@@ -88,17 +88,17 @@ def health() -> HealthResponse:
             status = "degraded"
             detail = "DoraDB is configured but not reachable."
 
-    if not settings.gemini_configured:
+    if not settings.deepseek_configured:
         status = "degraded"
-        detail = "GEMINI_API_KEY is required for generative responses."
+        detail = "DEEPSEEK_API_KEY is required for generative responses."
 
     return HealthResponse(
         status=status,
         database=database,
         data_source="doradb",
         database_connected=database_connected,
-        llm_provider=f"google-ai-studio:{settings.gemini_model}",
-        llm_configured=settings.gemini_configured,
+        llm_provider=f"deepseek:{settings.deepseek_model}",
+        llm_configured=settings.deepseek_configured,
         tts_configured=bool(settings.elevenlabs_api_key),
         detail=detail,
     )
@@ -121,7 +121,7 @@ def projects() -> dict[str, list[dict[str, Any]]]:
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
-    """Run Gemini planning and real DoraDB tools when data is required."""
+    """Run DeepSeek planning and real DoraDB tools when data is required."""
 
     history = [item.model_dump() for item in request.history]
     try:
@@ -133,7 +133,7 @@ def chat(request: ChatRequest) -> ChatResponse:
                     history=history,
                 )
         else:
-            # Safe conversation can still run through Gemini. Any plan that
+            # Safe conversation can still run through DeepSeek. Any plan that
             # requires dataset evidence is rejected before query execution.
             result = DoraDbAgent(None).chat(
                 request.message,

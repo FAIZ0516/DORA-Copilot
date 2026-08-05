@@ -17,12 +17,51 @@ import MetricChart from "./MetricChart";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const SESSION_KEY = "dora-copilot-session";
+const ROLE_STORAGE_KEY = "echo-selected-role";
+const ROLE_CAPABILITIES = {
+  technical: [
+    { icon: "📊", title: "Sprint Health", description: "Investigate delivery flow and sprint-level signals." },
+    {
+      icon: "🚀",
+      title: "Deployment Trends",
+      description: "Explore release cadence and changes over time.",
+    },
+    {
+      icon: "⚠️",
+      title: "Engineering Bottlenecks",
+      description: "Surface bottlenecks and evidence-backed delivery risks.",
+    },
+    {
+      icon: "🤖",
+      title: "AI Recommendations",
+      description: "Generate prioritized actions from validated metrics.",
+    },
+  ],
+  business: [
+    {
+      icon: "📈",
+      title: "Executive Summary",
+      description: "Translate delivery evidence into decision-ready summaries.",
+    },
+    {
+      icon: "💰",
+      title: "Productivity",
+      description: "Understand delivery trends and team-level performance.",
+    },
+    { icon: "⚠️", title: "Delivery Risks", description: "Identify material delivery risks and supporting evidence." },
+    {
+      icon: "💡",
+      title: "Management Recommendations",
+      description: "Turn findings into clear management priorities.",
+    },
+  ],
+};
 
 const welcomeMessage = {
   id: "welcome",
   role: "assistant",
   text:
-    "Hello — I’m your **Gemini-powered DoraDB agent**. Ask about your delivery data in your own words. I retrieve and validate read-only evidence, then the AI interprets it for your exact question.",
+    "Hello — I’m your **DeepSeek-powered DoraDB agent**. Ask about your delivery data in your own words. I retrieve and validate read-only evidence, then the AI interprets it for your exact question.",
 };
 
 function createSessionId() {
@@ -43,9 +82,17 @@ function makeMessage(role, text, extras = {}) {
   };
 }
 
+function readSelectedRole() {
+  if (typeof window === "undefined") return "technical";
+  return window.localStorage.getItem(ROLE_STORAGE_KEY) === "business"
+    ? "business"
+    : "technical";
+}
+
 export default function Chat({ projects, databaseConnected }) {
   const [messages, setMessages] = useState([welcomeMessage]);
   const [input, setInput] = useState("");
+  const [selectedRole] = useState(readSelectedRole);
   const [project, setProject] = useState("");
   const [sessionId, setSessionId] = useState(createSessionId);
   const [isSending, setIsSending] = useState(false);
@@ -53,6 +100,7 @@ export default function Chat({ projects, databaseConnected }) {
   const [speechError, setSpeechError] = useState("");
   const [speakingId, setSpeakingId] = useState(null);
   const endRef = useRef(null);
+  const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const audioRef = useRef(null);
   const audioRequestControllerRef = useRef(null);
@@ -248,8 +296,33 @@ export default function Chat({ projects, databaseConnected }) {
     }
   }
 
+  const isEmpty = !messages.some((message) => message.role === "user");
+  const capabilities = ROLE_CAPABILITIES[selectedRole];
+  const emptyQuestion =
+    selectedRole === "business"
+      ? "What business insight are you looking for today?"
+      : "What would you like to analyse today?";
+  const inputPlaceholder =
+    selectedRole === "business"
+      ? "Ask about executive summaries, KPIs or engineering performance..."
+      : "Ask about DORA metrics, sprint performance, deployment trends...";
+
   return (
-    <div className="chat-panel">
+    <div className={`chat-panel chat-panel-workspace ${isEmpty ? "chat-panel-empty" : ""}`}>
+      <aside className="empty-chat-sidebar" aria-label="Recent conversations">
+        <div>
+          <p>Workspace</p>
+          <h3>Recent Conversations</h3>
+        </div>
+        <div className="empty-chat-sidebar-note">
+          <Sparkles size={16} aria-hidden="true" />
+          <div>
+            <strong>New conversation</strong>
+            <span>Your recent chats will appear here.</span>
+          </div>
+        </div>
+        <span className="empty-chat-role-label">{selectedRole} workspace</span>
+      </aside>
       <div className="chat-toolbar">
         <div className="project-picker">
           <label htmlFor="project-select">Project scope</label>
@@ -280,7 +353,37 @@ export default function Chat({ projects, databaseConnected }) {
       </div>
 
       <div className="message-list" aria-live="polite">
-        <div className="conversation-intro">
+        <section
+          className={`empty-chat-state ${isEmpty ? "" : "is-hidden"}`}
+          aria-hidden={!isEmpty}
+        >
+          <header className="empty-chat-greeting">
+            <p>Hello <span aria-hidden="true">👋</span></p>
+            <h3>{emptyQuestion}</h3>
+          </header>
+          <div className="empty-chat-suggestions">
+            <p>Workspace capabilities</p>
+            <div className="suggestion-card-grid">
+              {capabilities.map((capability, index) => (
+                <article
+                  className="suggestion-card"
+                  key={capability.title}
+                  style={{ "--suggestion-index": index }}
+                >
+                  <span className="suggestion-icon" aria-hidden="true">
+                    {capability.icon}
+                  </span>
+                  <span className="suggestion-copy">
+                    <strong>{capability.title}</strong>
+                    <span>{capability.description}</span>
+                  </span>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <div className={`conversation-intro ${isEmpty ? "empty-chat-existing-hidden" : ""}`}>
           <span className="intro-icon"><Sparkles size={25} /></span>
           <div>
             <h3>Your delivery intelligence agent</h3>
@@ -290,7 +393,7 @@ export default function Chat({ projects, databaseConnected }) {
 
         {messages.map((message) => (
           <article
-            className={`message ${message.role} ${message.error ? "message-error" : ""}`}
+            className={`message ${message.role} ${message.error ? "message-error" : ""} ${isEmpty ? "empty-chat-existing-hidden" : ""}`}
             key={message.id}
           >
             <div className="message-avatar" aria-hidden="true">
@@ -329,7 +432,7 @@ export default function Chat({ projects, databaseConnected }) {
                   <ShieldCheckIcon />
                   <span>
                     {message.metadata.answer_source === "ai-provider-unavailable"
-                      ? "Google AI Studio unavailable · no template substituted"
+                      ? "DeepSeek unavailable · no template substituted"
                       : "Analyzed from DoraDB · AI answer checked"}
                   </span>
                 </div>
@@ -341,7 +444,7 @@ export default function Chat({ projects, databaseConnected }) {
         {isSending && (
           <div className="thinking" role="status">
             <span /><span /><span />
-            <p>Gemini is reasoning, querying when needed, and validating the answer…</p>
+            <p>DeepSeek is reasoning, querying when needed, and validating the answer…</p>
           </div>
         )}
         <div ref={endRef} />
@@ -354,8 +457,9 @@ export default function Chat({ projects, databaseConnected }) {
           sendMessage(input);
         }}>
           <textarea
+            ref={inputRef}
             aria-label="Ask about your delivery metrics"
-            placeholder="Ask about DoraDB, DORA, software delivery, or anything else…"
+            placeholder={inputPlaceholder}
             rows="1"
             value={input}
             maxLength={2000}

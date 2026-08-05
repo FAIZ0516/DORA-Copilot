@@ -1,6 +1,7 @@
 {
   "database": ["read_only", "approved_query_ids", "bound_parameters", "hard_limits", "statement_timeout"],
   "privacy": ["no_credentials", "no_sensitive_configuration", "no_raw_database_dump"],
-  "response": ["evidence_grounded", "no_fabricated_numbers", "inferences_labeled", "warnings_preserved"],
+  "response": ["evidence_grounded", "no_fabricated_numbers", "no_incorrect_year_status", "inferences_labeled", "warnings_preserved"],
+  "routing": ["unsafe_requests_blocked_before_model", "ambiguous_safe_requests_receive_semantic_planning", "live_entities_override_keyword_assumptions"],
   "prohibited": ["writes", "DDL", "arbitrary_SQL", "credential_disclosure"]
 }

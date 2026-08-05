@@ -18,6 +18,7 @@ def validate_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
     checks: list[str] = []
+    current_year = date.today().year
     if not results:
         return {
             "valid": True,
@@ -38,7 +39,14 @@ def validate_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             if missing:
                 errors.append(f"{query_id} missing fields: {', '.join(sorted(missing))}")
         else:
-            warnings.append(f"{query_id} returned no matching rows.")
+            if query_id == "list_dimension_values":
+                dimension = str(result.get("filters", {}).get("dimension", "values"))
+                label = dimension.replace("_", " ")
+                warnings.append(
+                    f"No matching {label} values were returned for the applied filters."
+                )
+            else:
+                warnings.append(f"{query_id} returned no matching rows.")
         checks.append("expected_columns")
 
         serialized = [json.dumps(row, sort_keys=True, default=str) for row in rows]
@@ -47,6 +55,11 @@ def validate_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         checks.append("duplicate_rows")
 
         for row_index, row in enumerate(rows):
+            if row.get("release_year") == current_year:
+                warnings.append(
+                    f"{current_year} is the current calendar year and may be incomplete; "
+                    "treat its totals as year-to-date unless the source proves otherwise."
+                )
             for key, value in row.items():
                 if value is None:
                     continue
@@ -109,9 +122,31 @@ def validate_answer(
     warning_missing = bool(required_warnings) and not any(
         warning.lower()[:35] in answer.lower() for warning in required_warnings
     )
-    valid = len(unsupported) <= 1 and not warning_missing
+    current_year = date.today().year
+    temporal_errors: list[str] = []
+    incomplete_language = (
+        r"(?:partial|year[- ]to[- ]date|ytd|so far|still in progress|"
+        r"in-progress|may be incomplete|provisional|"
+        r"until (?:more|additional) (?:data|releases?|records?) (?:accumulate|arrive)|"
+        r"slow start(?: to the year)?)"
+    )
+    for year_text in set(re.findall(r"\b20\d{2}\b", answer)):
+        year = int(year_text)
+        if year >= current_year:
+            continue
+        if re.search(
+            rf"(?:\b{year}\b.{{0,90}}{incomplete_language}|"
+            rf"{incomplete_language}.{{0,90}}\b{year}\b)",
+            answer,
+            re.I | re.S,
+        ):
+            temporal_errors.append(
+                f"Completed calendar year {year} was described as in progress."
+            )
+    valid = len(unsupported) <= 1 and not warning_missing and not temporal_errors
     return {
         "valid": valid,
         "unsupported_numbers": unsupported,
         "warning_missing": warning_missing,
+        "temporal_errors": temporal_errors,
     }

@@ -1,10 +1,19 @@
 {
   "rules": [
+    {"when": "list or count available dimension values", "query": "list_dimension_values"},
     {"when": "general DORA metric, comparison, trend, anomaly, visualization", "query": "dora_metrics_by_year"},
+    {"when": "metrics for a named squad", "query": "dora_metrics_by_squad"},
     {"when": "why or release drill-down", "query": "dora_metrics_release_detail"},
     {"when": "release issue impact", "query": "feature_vs_release_frequency"},
     {"when": "list issue references", "query": "feature_vs_user_story"},
     {"when": "User Story to Feature ratio", "query": "story_to_feature_ratio"}
   ],
-  "large_query_requires_narrowing_filter": true
+  "large_query_requires_narrowing_filter": true,
+  "entity_grounding": {
+    "source": "live governed DoraDB dimensions",
+    "dimensions": ["project", "squad", "release_year", "release", "issue_type", "status", "metric"],
+    "model_filters_must_match_catalogue": true,
+    "multiple_values_may_create_multiple_actions": true
+  },
+  "scope_order": ["block unsafe operations", "resolve conversation context", "ground live entities", "semantic AI planning", "apply scope decision"]
 }

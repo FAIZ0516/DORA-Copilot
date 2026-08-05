@@ -1,0 +1,106 @@
+{
+  "scope": {
+    "description": "Governed read-only delivery data for the configured Jira project.",
+    "project_filter": "project_key",
+    "default_project": "DCPM",
+    "freshness": "Values are retrieved from DoraDB at request time; this file contains semantics, not row data."
+  },
+  "dimensions": {
+    "project": {
+      "label": "projects",
+      "meaning": "Jira project identifiers available inside the configured application scope.",
+      "source": "tbl_gdt_dte_jira_issues.project_key"
+    },
+    "squad": {
+      "label": "squads",
+      "meaning": "Engineering squad recorded as the owner of a Jira issue.",
+      "source": "tbl_gdt_dte_jira_issues.dcpsquad",
+      "null_rule": "Blank values mean the issue has no recorded squad and are excluded from discovery results."
+    },
+    "release_year": {
+      "label": "release years",
+      "meaning": "Calendar year of a major release associated with the configured project.",
+      "source": "tbl_gdt_dte_release_info.release_date"
+    },
+    "release": {
+      "label": "releases",
+      "meaning": "Fix-version values attached to Jira issues in the configured project.",
+      "source": "tbl_gdt_dte_jira_issues.fixversions"
+    },
+    "issue_type": {
+      "label": "issue types",
+      "meaning": "Jira work-item type, such as Feature, User Story, Bug, Task, or Test.",
+      "source": "tbl_gdt_dte_jira_issues.issuetype"
+    },
+    "status": {
+      "label": "statuses",
+      "meaning": "Current Jira workflow status recorded for an issue.",
+      "source": "tbl_gdt_dte_jira_issues.status"
+    },
+    "metric": {
+      "label": "supported metrics",
+      "meaning": "Governed analytical measures calculated by approved DoraDB query tools.",
+      "source": "application metric catalogue"
+    }
+  },
+  "entities": {
+    "tbl_gdt_dte_jira_issues": {
+      "grain": "One row per Jira issue.",
+      "important_fields": {
+        "key": "Jira issue key.",
+        "project_key": "Jira project identifier and mandatory scope control.",
+        "dcpsquad": "Owning engineering squad; may be blank.",
+        "issuetype": "Jira work-item type.",
+        "status": "Current workflow status.",
+        "fixversions": "JSON collection of associated release fix versions."
+      }
+    },
+    "tbl_gdt_dte_release_info": {
+      "grain": "One row per release record.",
+      "important_fields": {
+        "fixversion": "Release identifier used to join Jira issues to releases.",
+        "release_date": "Release date used to derive release year.",
+        "release_category": "Category flag; value 1 identifies major releases.",
+        "outcome_rating": "Release outcome signal used by change-failure calculations."
+      }
+    },
+    "tbl_gdt_dte_releases": {
+      "grain": "One row per release reference.",
+      "important_fields": {
+        "release_name": "Release name used by issue-reference drill-downs.",
+        "release_date": "Recorded date for the release."
+      }
+    },
+    "vw_gdt_dte_release_frequency": {
+      "grain": "One row per governed release-frequency record.",
+      "important_fields": {
+        "release_year": "Calendar release year.",
+        "fixversion": "Release identifier.",
+        "major_release_freq": "Months between major releases.",
+        "ltc": "Lead time for change in 30-day months.",
+        "overall_actual_diff": "Delivery-cycle duration used by governed calculations."
+      }
+    },
+    "vw_gdt_dte_release_success": {
+      "grain": "One row per governed release-success record.",
+      "important_fields": {
+        "r_id": "Governed release identifier.",
+        "success_rel_freq": "Release-frequency success measure.",
+        "delivery_cycle_time": "Delivery-cycle duration associated with the release."
+      }
+    },
+    "mvw_gdt_dte_jira_fuslist": {
+      "grain": "One row per materialized Jira issue-to-release reference.",
+      "important_fields": {
+        "release_year": "Calendar release year.",
+        "release_name": "Release identifier associated with the issue.",
+        "key": "Jira issue key.",
+        "issuetype": "Jira work-item type.",
+        "status": "Current workflow status.",
+        "major_flag": "Whether the reference belongs to a major release.",
+        "hide_flag": "Whether the reference is excluded from governed aggregates."
+      },
+      "freshness_rule": "Values may remain stale until an authorized materialized-view refresh."
+    }
+  }
+}
