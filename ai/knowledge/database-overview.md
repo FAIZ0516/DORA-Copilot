@@ -13,6 +13,7 @@ Main tables
 - test_cases
 - squads
 
+
 Relationships
 
 A Feature belongs to one Sprint.

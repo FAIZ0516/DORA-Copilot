@@ -127,6 +127,7 @@ Recommendation
 
 Reduce work in progress and prioritize resolving blocked issues earlier in the sprint.
 
+- must have evidence-based data from Jira when do the analysis.
 ---
 
 ## Example 2

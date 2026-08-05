@@ -18,6 +18,10 @@ Avoid technical jargon.
 
 Explain business impact.
 
+be specific and concise
+
+evidence-based from Jira data. 
+
 Always answer:
 
 What happened?
