@@ -30,6 +30,277 @@ class DoraDbQueryRejected(ValueError):
 
 
 _BASE_QUERIES = {
+    "database_schema_objects": """
+        SELECT
+            table_schema,
+            table_name,
+            CASE table_type
+                WHEN 'BASE TABLE' THEN 'table'
+                ELSE LOWER(table_type)
+            END AS object_type
+        FROM information_schema.tables
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+    """,
+    "database_table_presence": """
+        SELECT
+            table_schema,
+            table_name,
+            CASE table_type
+                WHEN 'BASE TABLE' THEN 'table'
+                ELSE LOWER(table_type)
+            END AS object_type
+        FROM information_schema.tables
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+    """,
+    "database_columns": """
+        SELECT
+            table_schema,
+            table_name,
+            column_name,
+            data_type,
+            is_nullable,
+            ordinal_position
+        FROM information_schema.columns
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+    """,
+    "database_metric_columns": """
+        SELECT
+            table_schema,
+            table_name,
+            column_name,
+            data_type
+        FROM information_schema.columns
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+          AND (
+              LOWER(column_name) LIKE '%lead%'
+              OR LOWER(column_name) LIKE '%cycle%'
+              OR LOWER(column_name) = 'ltc'
+              OR LOWER(column_name) IN ('created', 'resolved')
+          )
+    """,
+    "database_squad_sources": """
+        SELECT
+            table_schema,
+            table_name,
+            column_name,
+            data_type
+        FROM information_schema.columns
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+          AND LOWER(column_name) IN (
+              'dcpsquad', 'squad', 'squad_id', 'squad_name', 'team', 'team_name'
+          )
+    """,
+    "jira_distinct_squads": """
+        SELECT
+            BTRIM(j.dcpsquad) AS dcpsquad,
+            (
+                SELECT COUNT(*)
+                FROM public.tbl_gdt_dte_jira_issues AS missing
+                WHERE missing.project_key = :project_key
+                  AND (
+                      missing.dcpsquad IS NULL
+                      OR BTRIM(missing.dcpsquad) = ''
+                  )
+            ) AS missing_squad_rows
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND j.dcpsquad IS NOT NULL
+          AND BTRIM(j.dcpsquad) <> ''
+        GROUP BY BTRIM(j.dcpsquad)
+    """,
+    "jira_bug_counts_by_squad": """
+        SELECT
+            BTRIM(j.dcpsquad) AS dcpsquad,
+            COUNT(*) AS bug_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND LOWER(COALESCE(j.issuetype, '')) = 'bug'
+          AND j.dcpsquad IS NOT NULL
+          AND BTRIM(j.dcpsquad) <> ''
+        GROUP BY BTRIM(j.dcpsquad)
+    """,
+    "jira_issue_counts_by_status": """
+        SELECT
+            j.issuetype,
+            j.status,
+            j.status_category,
+            COUNT(*) AS issue_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+        GROUP BY j.issuetype, j.status, j.status_category
+    """,
+    "jira_unresolved_older_than_days": """
+        SELECT
+            j.status,
+            j.status_category,
+            COUNT(*) AS issue_count,
+            MIN(j.created) AS oldest_created
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND j.resolved IS NULL
+          AND j.created < CURRENT_TIMESTAMP - (:age_days * INTERVAL '1 day')
+        GROUP BY j.status, j.status_category
+    """,
+    "jira_backlog_by_status": """
+        SELECT
+            j.status,
+            j.status_category,
+            COUNT(*) AS issue_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND j.resolved IS NULL
+          AND COALESCE(j.status_category, '') <> 'Done'
+        GROUP BY j.status, j.status_category
+    """,
+    "jira_bug_resolution_trend": """
+        WITH created_counts AS (
+            SELECT
+                DATE_TRUNC('month', created)::date AS month,
+                COUNT(*) AS created_bug_count
+            FROM public.tbl_gdt_dte_jira_issues
+            WHERE project_key = :project_key
+              AND LOWER(COALESCE(issuetype, '')) = 'bug'
+            GROUP BY DATE_TRUNC('month', created)::date
+        ),
+        resolved_counts AS (
+            SELECT
+                DATE_TRUNC('month', resolved)::date AS month,
+                COUNT(*) AS resolved_bug_count
+            FROM public.tbl_gdt_dte_jira_issues
+            WHERE project_key = :project_key
+              AND LOWER(COALESCE(issuetype, '')) = 'bug'
+              AND resolved IS NOT NULL
+              AND resolved >= created
+            GROUP BY DATE_TRUNC('month', resolved)::date
+        )
+        SELECT
+            COALESCE(c.month, r.month) AS month,
+            COALESCE(c.created_bug_count, 0) AS created_bug_count,
+            COALESCE(r.resolved_bug_count, 0) AS resolved_bug_count
+        FROM created_counts AS c
+        FULL OUTER JOIN resolved_counts AS r USING (month)
+    """,
+    "jira_dashboard_kpis": """
+        SELECT
+            COUNT(*) AS total_issues,
+            COUNT(*) FILTER (
+                WHERE j.resolved IS NULL AND j.status_category <> 'Done'
+            ) AS open_work_count,
+            COUNT(*) FILTER (WHERE j.status = 'IMPEDED') AS impeded_issues,
+            COUNT(*) FILTER (
+                WHERE j.dcpsquad IS NULL OR BTRIM(j.dcpsquad) = ''
+            ) AS missing_squad_count,
+            ROUND(
+                100.0 * COUNT(*) FILTER (
+                    WHERE j.dcpsquad IS NULL OR BTRIM(j.dcpsquad) = ''
+                ) / NULLIF(COUNT(*), 0),
+                2
+            ) AS missing_squad_pct
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+    """,
+    "jira_dashboard_status_categories": """
+        SELECT
+            COALESCE(NULLIF(BTRIM(j.status_category), ''), 'Unknown') AS status_category,
+            COUNT(*) AS issue_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+        GROUP BY COALESCE(NULLIF(BTRIM(j.status_category), ''), 'Unknown')
+    """,
+    "jira_dashboard_issue_types": """
+        SELECT
+            COALESCE(NULLIF(BTRIM(j.issuetype), ''), 'Unknown') AS issuetype,
+            COUNT(*) AS issue_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+        GROUP BY COALESCE(NULLIF(BTRIM(j.issuetype), ''), 'Unknown')
+    """,
+    "jira_dashboard_open_ageing": """
+        SELECT
+            CASE
+                WHEN j.created IS NULL THEN 'Unknown created date'
+                WHEN CURRENT_DATE - j.created::date < 30 THEN 'Less than 30 days'
+                WHEN CURRENT_DATE - j.created::date BETWEEN 30 AND 60 THEN '30-60 days'
+                WHEN CURRENT_DATE - j.created::date BETWEEN 61 AND 90 THEN '61-90 days'
+                ELSE 'More than 90 days'
+            END AS ageing_bucket,
+            COUNT(*) AS issue_count,
+            CASE
+                WHEN j.created IS NULL THEN 5
+                WHEN CURRENT_DATE - j.created::date < 30 THEN 1
+                WHEN CURRENT_DATE - j.created::date BETWEEN 30 AND 60 THEN 2
+                WHEN CURRENT_DATE - j.created::date BETWEEN 61 AND 90 THEN 3
+                ELSE 4
+            END AS bucket_order
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND j.resolved IS NULL
+          AND j.status_category <> 'Done'
+        GROUP BY ageing_bucket, bucket_order
+    """,
+    "jira_dashboard_data_quality": """
+        SELECT
+            COUNT(*) FILTER (
+                WHERE j.dcpsquad IS NULL OR BTRIM(j.dcpsquad) = ''
+            ) AS missing_squad_count,
+            COUNT(*) FILTER (
+                WHERE j.assignee IS NULL OR BTRIM(j.assignee) = ''
+            ) AS missing_assignee_count,
+            COUNT(*) FILTER (
+                WHERE j.status_category = 'Done' AND j.resolved IS NULL
+            ) AS done_without_resolved_count,
+            COUNT(*) FILTER (
+                WHERE j.resolved IS NOT NULL
+                  AND j.created IS NOT NULL
+                  AND j.resolved < j.created
+            ) AS invalid_resolution_interval_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+    """,
+    "jira_open_work_breakdown": """
+        SELECT
+            CASE
+                WHEN j.created IS NULL THEN 'Unknown created date'
+                WHEN CURRENT_DATE - j.created::date < 30 THEN 'Less than 30 days'
+                WHEN CURRENT_DATE - j.created::date BETWEEN 30 AND 60 THEN '30-60 days'
+                WHEN CURRENT_DATE - j.created::date BETWEEN 61 AND 90 THEN '61-90 days'
+                ELSE 'More than 90 days'
+            END AS ageing_bucket,
+            COALESCE(NULLIF(BTRIM(j.issuetype), ''), 'Unknown') AS issuetype,
+            COALESCE(NULLIF(BTRIM(j.priority), ''), 'Unknown') AS priority,
+            COALESCE(NULLIF(BTRIM(j.status_category), ''), 'Unknown') AS status_category,
+            CASE
+                WHEN j.dcpsquad IS NULL OR BTRIM(j.dcpsquad) = '' THEN 'Missing squad'
+                ELSE 'Squad populated'
+            END AS squad_coverage,
+            COUNT(*) AS issue_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND j.resolved IS NULL
+          AND j.status_category <> 'Done'
+        GROUP BY ageing_bucket, issuetype, priority, status_category, squad_coverage
+    """,
+    "jira_impeded_breakdown": """
+        SELECT
+            CASE
+                WHEN j.created IS NULL THEN 'Unknown created date'
+                WHEN CURRENT_DATE - j.created::date < 30 THEN 'Less than 30 days'
+                WHEN CURRENT_DATE - j.created::date BETWEEN 30 AND 60 THEN '30-60 days'
+                WHEN CURRENT_DATE - j.created::date BETWEEN 61 AND 90 THEN '61-90 days'
+                ELSE 'More than 90 days'
+            END AS ageing_bucket,
+            COALESCE(NULLIF(BTRIM(j.issuetype), ''), 'Unknown') AS issuetype,
+            COALESCE(NULLIF(BTRIM(j.priority), ''), 'Unknown') AS priority,
+            CASE
+                WHEN j.dcpsquad IS NULL OR BTRIM(j.dcpsquad) = '' THEN 'Missing squad'
+                ELSE 'Squad populated'
+            END AS squad_coverage,
+            COUNT(*) AS issue_count
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND j.status = 'IMPEDED'
+        GROUP BY ageing_bucket, issuetype, priority, squad_coverage
+    """,
     "dora_metrics_by_year": """
         WITH dora AS (
             SELECT
@@ -197,7 +468,6 @@ _BASE_QUERIES = {
             f.release_year,
             f.issuetype,
             f.key AS jira_key,
-            f.summary,
             f.status,
             f.major_flag,
             r.outcome_rating,
@@ -220,7 +490,6 @@ _BASE_QUERIES = {
             f.id,
             f.key AS jira_key,
             f.issuetype,
-            f.summary,
             f.status,
             f.major_flag,
             f.hide_flag,
@@ -250,6 +519,39 @@ _BASE_QUERIES = {
 }
 
 _FILTER_COLUMNS = {
+    "database_schema_objects": {
+        "table_schema": "approved.table_schema",
+        "table_name": "approved.table_name",
+    },
+    "database_table_presence": {
+        "table_schema": "approved.table_schema",
+        "table_name": "approved.table_name",
+    },
+    "database_columns": {
+        "table_schema": "approved.table_schema",
+        "table_name": "approved.table_name",
+        "column_search": "approved.column_name",
+    },
+    "database_metric_columns": {},
+    "database_squad_sources": {},
+    "jira_distinct_squads": {},
+    "jira_bug_counts_by_squad": {},
+    "jira_issue_counts_by_status": {
+        "issuetype": "approved.issuetype",
+        "status": "approved.status",
+    },
+    "jira_unresolved_older_than_days": {},
+    "jira_backlog_by_status": {},
+    "jira_bug_resolution_trend": {},
+    "jira_dashboard_kpis": {},
+    "jira_dashboard_status_categories": {},
+    "jira_dashboard_issue_types": {},
+    "jira_dashboard_open_ageing": {},
+    "jira_dashboard_data_quality": {},
+    "jira_open_work_breakdown": {
+        "ageing_bucket": "approved.ageing_bucket",
+    },
+    "jira_impeded_breakdown": {},
     "dora_metrics_by_year": {
         "release_year": "approved.release_year",
     },
@@ -286,6 +588,30 @@ _FILTER_COLUMNS = {
 }
 
 _ORDER_BY = {
+    "database_schema_objects": "approved.table_schema, approved.table_name",
+    "database_table_presence": "approved.table_schema, approved.table_name",
+    "database_columns": (
+        "approved.table_schema, approved.table_name, approved.ordinal_position"
+    ),
+    "database_metric_columns": (
+        "approved.table_schema, approved.table_name, approved.column_name"
+    ),
+    "database_squad_sources": (
+        "approved.table_schema, approved.table_name, approved.column_name"
+    ),
+    "jira_distinct_squads": "approved.dcpsquad",
+    "jira_bug_counts_by_squad": "approved.bug_count DESC, approved.dcpsquad",
+    "jira_issue_counts_by_status": "approved.issue_count DESC, approved.status",
+    "jira_unresolved_older_than_days": "approved.issue_count DESC, approved.status",
+    "jira_backlog_by_status": "approved.issue_count DESC, approved.status",
+    "jira_bug_resolution_trend": "approved.month DESC",
+    "jira_dashboard_kpis": "approved.total_issues DESC",
+    "jira_dashboard_status_categories": "approved.issue_count DESC, approved.status_category",
+    "jira_dashboard_issue_types": "approved.issue_count DESC, approved.issuetype",
+    "jira_dashboard_open_ageing": "approved.bucket_order",
+    "jira_dashboard_data_quality": "approved.missing_squad_count DESC",
+    "jira_open_work_breakdown": "approved.issue_count DESC, approved.ageing_bucket",
+    "jira_impeded_breakdown": "approved.issue_count DESC, approved.ageing_bucket",
     "dora_metrics_by_year": "approved.release_year DESC",
     "dora_metrics_by_squad": "approved.release_year DESC",
     "dora_metrics_release_detail": "approved.release_date DESC NULLS LAST",
@@ -384,6 +710,16 @@ def _normalize_filters(query_id: str, raw_filters: dict[str, Any]) -> dict[str, 
             if value != settings.doradb_project_key.upper():
                 raise DoraDbQueryRejected("Only the configured DoraDB project is allowed")
             normalized[key] = value
+        elif key in {"table_schema", "table_name", "column_search"}:
+            value = str(raw_value).strip().lower()
+            if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", value):
+                raise DoraDbQueryRejected(f"Invalid metadata filter: {key}")
+            normalized[key] = value
+        elif key == "age_days":
+            value = int(raw_value)
+            if not 1 <= value <= 3650:
+                raise DoraDbQueryRejected("age_days must be between 1 and 3650")
+            normalized[key] = value
         else:
             value = str(raw_value).strip()
             if len(value) > 120:
@@ -412,6 +748,8 @@ def _build_statement(
     }
     if query_id == "dora_metrics_by_squad":
         params["dcpsquad"] = filters["dcpsquad"]
+    if query_id == "jira_unresolved_older_than_days":
+        params["age_days"] = filters["age_days"]
     conditions: list[str] = []
     for key, column in _FILTER_COLUMNS[query_id].items():
         if key not in filters:
@@ -424,13 +762,21 @@ def _build_statement(
                 placeholders.append(f":{parameter}")
                 params[parameter] = year
             conditions.append(f"{column} IN ({', '.join(placeholders)})")
+        elif key == "column_search":
+            parameter = "filter_column_search"
+            params[parameter] = f"%{value}%"
+            conditions.append(f"LOWER(CAST({column} AS text)) LIKE :{parameter}")
         else:
             parameter = f"filter_{key}"
             params[parameter] = value
             conditions.append(f"LOWER(CAST({column} AS text)) = LOWER(:{parameter})")
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    projected_columns = ", ".join(
+        f"approved.{column}"
+        for column in QUERY_CATALOGUE[query_id]["expected_columns"]
+    )
     statement = f"""
-        SELECT *
+        SELECT {projected_columns}
         FROM ({_BASE_QUERIES[query_id]}) AS approved
         {where_clause}
         ORDER BY {_ORDER_BY[query_id]}
@@ -473,6 +819,20 @@ def query_doradb(
         raise DoraDbQueryRejected(
             f"Validated query result is missing expected fields: {', '.join(missing)}"
         )
+    warnings: list[str] = []
+    if query_id in {
+        "feature_vs_release_frequency",
+        "feature_vs_user_story",
+        "story_to_feature_ratio",
+    }:
+        warnings.append(
+            "The feature materialized view may be stale until an authorized refresh."
+        )
+    if query_id == "jira_distinct_squads":
+        warnings.append(
+            "Jira dcpsquad values are not confirmed as an authoritative "
+            "organisation-wide squad directory."
+        )
     return {
         "query_id": query_id,
         "project_key": safe_filters["project_key"],
@@ -480,13 +840,5 @@ def query_doradb(
         "rows": result_rows,
         "row_count": len(result_rows),
         "limit_applied": safe_limit,
-        "warnings": (
-            ["The feature materialized view may be stale until an authorized refresh."]
-            if query_id in {
-                "feature_vs_release_frequency",
-                "feature_vs_user_story",
-                "story_to_feature_ratio",
-            }
-            else []
-        ),
+        "warnings": warnings,
     }

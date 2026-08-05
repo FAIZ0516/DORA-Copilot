@@ -27,7 +27,7 @@ class ProviderStatus:
 
 
 class GenerativeAIClient:
-    """Call Google AI Studio or a local Ollama server without exposing secrets."""
+    """Call the configured AI provider without exposing secrets."""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -54,10 +54,21 @@ class GenerativeAIClient:
                 base_url=f"{settings.ollama_base_url.rstrip('/')}/",
                 timeout=settings.ollama_timeout_seconds,
             )
+        elif settings.llm_provider == "deepseek" and settings.deepseek_configured:
+            ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            self.http_client = httpx.Client(
+                base_url=f"{settings.deepseek_base_url.rstrip('/')}/",
+                headers={
+                    "Authorization": f"Bearer {settings.deepseek_api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=settings.deepseek_timeout_seconds,
+                verify=ssl_context,
+            )
 
     @property
     def enabled(self) -> bool:
-        if self.settings.llm_provider == "ollama":
+        if self.settings.llm_provider in {"deepseek", "ollama"}:
             return self.http_client is not None
         return self.client is not None
 
@@ -75,6 +86,12 @@ class GenerativeAIClient:
                 f"{self.settings.ollama_base_url}. Start Ollama and install the model, "
                 "then try again. I did not substitute a fabricated answer."
             )
+        if self.settings.llm_provider == "deepseek":
+            return (
+                f"The DeepSeek model '{self.settings.deepseek_model}' is unavailable. "
+                "Check the API key, account balance, and provider status, then try "
+                "again. I did not substitute a fabricated answer."
+            )
         return (
             "The Google AI Studio model is unavailable right now or its free request "
             "quota has been exhausted. I did not substitute a template answer. Please "
@@ -88,17 +105,25 @@ class GenerativeAIClient:
             self.http_client.close()
 
     def check_availability(self) -> ProviderStatus:
-        """Check local Ollama reachability; preserve Gemini's configured semantics."""
+        """Check provider configuration and lightweight reachability."""
 
         if not self.settings.llm_configured:
             if self.settings.llm_provider == "ollama":
                 detail = "Configure OLLAMA_BASE_URL and OLLAMA_MODEL."
+            elif self.settings.llm_provider == "deepseek":
+                detail = (
+                    "Configure DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, and "
+                    "DEEPSEEK_MODEL."
+                )
             else:
                 detail = "GEMINI_API_KEY is required for generative responses."
             return ProviderStatus(configured=False, available=False, detail=detail)
 
         if self.settings.llm_provider == "google-ai-studio":
             return ProviderStatus(configured=True, available=True)
+
+        if self.settings.llm_provider == "deepseek":
+            return self._check_deepseek_availability()
 
         if self.http_client is None:
             return ProviderStatus(
@@ -145,6 +170,56 @@ class GenerativeAIClient:
                 detail=f"Ollama is not reachable at {self.settings.ollama_base_url}.",
             )
 
+    def _check_deepseek_availability(self) -> ProviderStatus:
+        if self.http_client is None:
+            return ProviderStatus(
+                configured=False,
+                available=False,
+                detail="Configure the DeepSeek API settings.",
+            )
+        try:
+            response = self.http_client.get(
+                "models",
+                timeout=min(10.0, self.settings.deepseek_timeout_seconds),
+            )
+            if response.status_code in {401, 403}:
+                return ProviderStatus(
+                    configured=True,
+                    available=False,
+                    detail="DeepSeek rejected the configured API key.",
+                )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("DeepSeek models response must be an object")
+            models = {
+                str(item.get("id", ""))
+                for item in payload.get("data", [])
+                if isinstance(item, dict)
+            }
+            if self.settings.deepseek_model not in models:
+                return ProviderStatus(
+                    configured=True,
+                    available=False,
+                    detail=(
+                        f"DeepSeek model '{self.settings.deepseek_model}' is not "
+                        "available to this account."
+                    ),
+                )
+            return ProviderStatus(configured=True, available=True)
+        except httpx.TimeoutException:
+            return ProviderStatus(
+                configured=True,
+                available=False,
+                detail="DeepSeek timed out during the availability check.",
+            )
+        except (httpx.HTTPError, ValueError, TypeError):
+            return ProviderStatus(
+                configured=True,
+                available=False,
+                detail="DeepSeek is not reachable right now.",
+            )
+
     def complete(
         self,
         system_prompt: str,
@@ -161,6 +236,13 @@ class GenerativeAIClient:
             return None
         if self.settings.llm_provider == "ollama":
             return self._complete_ollama(
+                system_prompt,
+                user_prompt,
+                json_mode=json_mode,
+                temperature=temperature,
+            )
+        if self.settings.llm_provider == "deepseek":
+            return self._complete_deepseek(
                 system_prompt,
                 user_prompt,
                 json_mode=json_mode,
@@ -212,6 +294,106 @@ class GenerativeAIClient:
             )
             self.last_error = self.unavailable_message
             return None
+
+    def _complete_deepseek(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        json_mode: bool,
+        temperature: float | None,
+    ) -> str | None:
+        if self.http_client is None:
+            return None
+        request: dict[str, Any] = {
+            "model": self.settings.deepseek_model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": (
+                self.settings.llm_planner_temperature
+                if temperature is None and json_mode
+                else (
+                    self.settings.llm_response_temperature
+                    if temperature is None
+                    else temperature
+                )
+            ),
+            "max_tokens": (
+                self.settings.deepseek_planner_max_tokens
+                if json_mode
+                else self.settings.deepseek_response_max_tokens
+            ),
+            "thinking": {
+                "type": (
+                    "enabled"
+                    if self.settings.deepseek_thinking_enabled
+                    else "disabled"
+                )
+            },
+        }
+        if json_mode:
+            request["response_format"] = {"type": "json_object"}
+        try:
+            response = self.http_client.post("chat/completions", json=request)
+            if response.status_code in {401, 403}:
+                self.last_error = (
+                    "DeepSeek rejected the configured API key. Update "
+                    "DEEPSEEK_API_KEY and try again."
+                )
+                return None
+            if response.status_code == 402:
+                self.last_error = (
+                    "The DeepSeek account has insufficient balance. Add credit and "
+                    "try again."
+                )
+                return None
+            if response.status_code == 429:
+                self.last_error = (
+                    "DeepSeek is rate-limiting requests right now. Please try again "
+                    "shortly."
+                )
+                return None
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError("DeepSeek chat response must be an object")
+            choices = payload.get("choices", [])
+            if not isinstance(choices, list) or not choices:
+                raise ValueError("DeepSeek chat response has no choices")
+            message = choices[0].get("message", {})
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, str) or not content.strip():
+                self.last_error = (
+                    "DeepSeek returned an empty response. I did not substitute a "
+                    "fabricated answer."
+                )
+                return None
+            self.last_model = self.settings.deepseek_model
+            return content.strip()
+        except httpx.TimeoutException:
+            self.last_error = (
+                f"DeepSeek timed out while using model "
+                f"'{self.settings.deepseek_model}'. Please try again."
+            )
+        except httpx.ConnectError:
+            self.last_error = (
+                f"DeepSeek is not reachable at {self.settings.deepseek_base_url}. "
+                "Please try again."
+            )
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            logger.warning(
+                "DeepSeek model %s unavailable: %s",
+                self.settings.deepseek_model,
+                exc,
+            )
+            self.last_error = (
+                "DeepSeek could not complete the request. Check the provider status "
+                "and model configuration, then try again."
+            )
+        return None
 
     def _complete_ollama(
         self,

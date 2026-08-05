@@ -38,7 +38,10 @@ def validate_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             if missing:
                 errors.append(f"{query_id} missing fields: {', '.join(sorted(missing))}")
         else:
-            warnings.append(f"{query_id} returned no matching rows.")
+            warnings.append(
+                "The query ran successfully, but no records matched the current "
+                "filters. This does not mean the table or column is absent."
+            )
         checks.append("expected_columns")
 
         serialized = [json.dumps(row, sort_keys=True, default=str) for row in rows]

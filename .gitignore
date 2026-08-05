@@ -19,6 +19,7 @@ frontend/dist/
 frontend/.vite/
 .npm-cache/
 .runtime/
+*.log
 
 # Editors and OS
 .idea/

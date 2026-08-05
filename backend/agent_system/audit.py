@@ -31,6 +31,8 @@ class AuditLog:
             "repairs": record.get("repairs", 0),
             "answer_regenerations": record.get("answer_regenerations", 0),
             "duration_ms": record.get("duration_ms"),
+            "evidence_sources": record.get("evidence_sources", []),
+            "knowledge_sections": record.get("knowledge_sections", []),
         }
         with self._lock:
             self._records.append(safe)

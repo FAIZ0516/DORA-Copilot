@@ -1,3 +1,5 @@
+from datetime import date
+
 from backend.agent_system.control import enforce_plan, public_policy
 from backend.agent_system.graph import (
     AI_UNAVAILABLE_MESSAGE,
@@ -219,9 +221,10 @@ def test_delivery_risk_is_treated_as_holistic_analysis() -> None:
     )
 
 
-def test_explicit_data_request_uses_gemini_first_then_safe_fallback() -> None:
+def test_explicit_data_request_uses_configured_llm_then_safe_fallback() -> None:
     class ConversationOnlyLlm:
         enabled = True
+        source = "test-provider:test-model"
         calls = 0
 
         def complete(self, *_args: object, **_kwargs: object) -> str:
@@ -239,7 +242,7 @@ def test_explicit_data_request_uses_gemini_first_then_safe_fallback() -> None:
         llm=llm,  # type: ignore[arg-type]
     )
 
-    assert source == "google-ai-studio:gemini-3.6-flash"
+    assert source == "test-provider:test-model"
     assert llm.calls == 1
     assert plan["mode"] == "data"
     assert plan["actions"][0]["query_id"] == "dora_metrics_by_year"
@@ -430,7 +433,7 @@ def test_release_frequency_is_not_misread_as_a_fixversion() -> None:
     assert filters == {"project_key": "DCPM"}
 
 
-def test_unrelated_question_is_stopped_before_cloud_planning() -> None:
+def test_safe_general_question_routes_to_conversation_without_database_planning() -> None:
     class CountingLlm:
         enabled = True
         calls = 0
@@ -446,9 +449,41 @@ def test_unrelated_question_is_stopped_before_cloud_planning() -> None:
         browser_history=[],
         llm=llm,  # type: ignore[arg-type]
     )
-    assert plan["mode"] == "out_of_scope"
-    assert source == "scope-guard"
+    assert plan["mode"] == "conversation"
+    assert source == "conversation"
     assert llm.calls == 0
+
+
+def test_general_conversation_receives_current_date_context() -> None:
+    class CapturingLlm:
+        source = "test-provider:test-model"
+        system_prompt = ""
+
+        def complete(self, system_prompt: str, _user_prompt: str) -> str:
+            self.system_prompt = system_prompt
+            return "A direct answer."
+
+    llm = CapturingLlm()
+    agent = AdvancedDoraDbAgent.__new__(AdvancedDoraDbAgent)
+    agent.llm = llm  # type: ignore[assignment]
+
+    response = agent._respond(
+        {
+            "message": "What date is today?",
+            "plan": {
+                "mode": "conversation",
+                "intent": "general_conversation",
+                "confidence": 0.99,
+                "actions": [],
+                "reason": "test",
+                "clarification": "",
+            },
+        }  # type: ignore[arg-type]
+    )
+
+    assert f"Current date: {date.today().isoformat()}" in llm.system_prompt
+    assert response["answer"] == "A direct answer."
+    assert response["answer_source"] == "test-provider:test-model"
 
 
 def test_agent_never_substitutes_a_template_when_ai_is_unavailable() -> None:

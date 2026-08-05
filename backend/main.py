@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -16,7 +18,10 @@ from .agent_system.audit import audit_log
 from .agent_system.control import public_policy
 from .agent_system.memory import memory_store
 from .config import settings
+from .conversation_context import persistent_context, recent_history, update_persistent_state
+from .conversation_repository import ConversationRepository, serialize_conversation, serialize_message
 from .db import get_db, init_db
+from .dashboard_service import get_jira_dashboard
 from .doradb import (
     DoraDbConfigurationError,
     DoraDbQueryRejected,
@@ -29,7 +34,14 @@ from .llm import GenerativeAIClient
 from .schemas import (
     ChatRequest,
     ChatResponse,
+    ConversationCreate,
+    ConversationDetailResponse,
+    ConversationListResponse,
+    ConversationMessageCreate,
+    ConversationMessageResponse,
+    ConversationSummaryResponse,
     HealthResponse,
+    JiraDashboardResponse,
     SessionResetRequest,
     TTSRequest,
 )
@@ -45,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # SQLite is retained only for ElevenLabs character-usage accounting.
+    # Initialize the writable runtime store; analytical DoraDB remains read-only.
     init_db()
     yield
 
@@ -63,9 +75,101 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_methods=["GET", "POST", "DELETE", "PATCH"],
+    allow_headers=["Content-Type", "X-Development-Session"],
 )
+
+
+def development_session(
+    value: str = Header(default="local-development", alias="X-Development-Session"),
+) -> str:
+    """Temporary browser identity for development; replace with authenticated user IDs."""
+
+    cleaned = value.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{8,120}", cleaned):
+        raise HTTPException(status_code=400, detail="Invalid development session identifier.")
+    return cleaned
+
+
+@app.post("/api/conversations", response_model=ConversationSummaryResponse)
+def create_conversation(
+    request: ConversationCreate,
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> ConversationSummaryResponse:
+    conversation = ConversationRepository(session).create(
+        user_id=user_id,
+        workspace=request.workspace,
+        project_scope=request.project_scope,
+        first_question=request.first_question,
+        title=request.title,
+    )
+    return ConversationSummaryResponse.model_validate(serialize_conversation(conversation))
+
+
+@app.get("/api/conversations", response_model=ConversationListResponse)
+def list_conversations(
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> ConversationListResponse:
+    conversations = ConversationRepository(session).list_recent(user_id=user_id)
+    return ConversationListResponse.model_validate(
+        {"conversations": [serialize_conversation(item) for item in conversations]}
+    )
+
+
+@app.get("/api/conversations/{conversation_id}", response_model=ConversationDetailResponse)
+def get_conversation(
+    conversation_id: UUID,
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> ConversationDetailResponse:
+    conversation = ConversationRepository(session).get(
+        conversation_id, user_id=user_id, include_messages=True
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return ConversationDetailResponse.model_validate(
+        serialize_conversation(conversation, include_messages=True)
+    )
+
+
+@app.post(
+    "/api/conversations/{conversation_id}/messages",
+    response_model=ConversationMessageResponse,
+)
+def add_conversation_message(
+    conversation_id: UUID,
+    request: ConversationMessageCreate,
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> ConversationMessageResponse:
+    repository = ConversationRepository(session)
+    conversation = repository.get(conversation_id, user_id=user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    message = repository.add_message(
+        conversation,
+        role=request.role,
+        content=request.content,
+        structured_content=request.structured_content,
+    )
+    return ConversationMessageResponse.model_validate(serialize_message(message))
+
+
+@app.delete("/api/conversations/{conversation_id}")
+def archive_conversation(
+    conversation_id: UUID,
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> dict[str, str]:
+    repository = ConversationRepository(session)
+    conversation = repository.get(conversation_id, user_id=user_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    repository.archive(conversation)
+    memory_store.reset(str(conversation_id))
+    return {"status": "archived", "conversation_id": str(conversation_id)}
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -128,27 +232,120 @@ def projects() -> dict[str, list[dict[str, Any]]]:
     }
 
 
+@app.get("/api/jira-dashboard", response_model=JiraDashboardResponse)
+def jira_dashboard(
+    project_key: str | None = None,
+    refresh: bool = False,
+) -> JiraDashboardResponse:
+    """Return bounded Jira snapshot aggregates; manual refresh bypasses cache."""
+
+    active_project = (project_key or settings.doradb_project_key).strip().upper()
+    try:
+        with doradb_session() as real_session:
+            payload = get_jira_dashboard(
+                real_session,
+                project_key=active_project,
+                refresh=refresh,
+            )
+        logger.info(
+            "jira_dashboard project=%s cached=%s",
+            active_project,
+            payload["cached"],
+        )
+        return JiraDashboardResponse.model_validate(payload)
+    except DoraDbConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except DoraDbQueryRejected as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Jira dashboard query failed for project=%s", active_project)
+        raise HTTPException(
+            status_code=503,
+            detail="The Jira dashboard data is temporarily unavailable.",
+        ) from exc
+
+
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
+def chat(
+    request: ChatRequest,
+    user_id: str = Depends(development_session),
+    runtime_session: Session = Depends(get_db),
+) -> ChatResponse:
     """Run configured-LLM planning and real DoraDB tools when data is required."""
 
-    history = [item.model_dump() for item in request.history]
+    repository = ConversationRepository(runtime_session)
+    conversation = (
+        repository.get(request.conversation_id, user_id=user_id, include_messages=True)
+        if request.conversation_id
+        else None
+    )
+    if request.conversation_id and conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    project_scope = {"project_key": request.project_key or settings.doradb_project_key}
+    if conversation is None:
+        conversation = repository.create(
+            user_id=user_id,
+            workspace=request.workspace,
+            project_scope=project_scope,
+            first_question=request.message,
+        )
+        persisted_history: list[dict[str, str]] = []
+    else:
+        persisted_history = recent_history(conversation.messages)
+    history = persisted_history or [item.model_dump() for item in request.history]
+    repository.add_message(conversation, role="user", content=request.message)
     try:
         if settings.doradb_configured:
             with doradb_session() as real_session:
                 result = DoraDbAgent(real_session).chat(
                     request.message,
-                    session_id=request.session_id,
+                    session_id=str(conversation.id),
                     history=history,
+                    persistent_context=persistent_context(conversation.state or {}),
+                    project_scope=project_scope,
                 )
         else:
             # Safe conversation can still run through the configured LLM. Any plan that
             # requires dataset evidence is rejected before query execution.
             result = DoraDbAgent(None).chat(
                 request.message,
-                session_id=request.session_id,
+                session_id=str(conversation.id),
                 history=history,
+                persistent_context=persistent_context(conversation.state or {}),
+                project_scope=project_scope,
             )
+        agent_persistence = result.pop("_persistence", {})
+        result.setdefault("metadata", {})["conversation_id"] = str(conversation.id)
+        result["metadata"]["workspace"] = request.workspace
+        result["metadata"]["project_scope"] = project_scope
+        repository.add_message(
+            conversation,
+            role="assistant",
+            content=result["answer"],
+            structured_content={
+                "chart": result.get("chart"),
+                "table": result.get("table"),
+                "warnings": result.get("warnings", []),
+                "validation": result.get("validation", {}),
+                "metadata": result.get("metadata", {}),
+                "detected_intent": result.get("intent"),
+                "source_type": result.get("metadata", {}).get("answer_source"),
+                "query_identifiers": result.get("metadata", {}).get("query_ids", []),
+                "row_counts": result.get("metadata", {}).get("row_counts", []),
+                "knowledge_sections": result.get("metadata", {}).get("knowledge_sections", []),
+            },
+        )
+        repository.update_state(
+            conversation,
+            update_persistent_state(
+                conversation.state or {},
+                workspace=request.workspace,
+                project_scope=project_scope,
+                question=request.message,
+                answer=result["answer"],
+                agent_persistence=agent_persistence,
+            ),
+        )
         return ChatResponse.model_validate(result)
     except DoraDbConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

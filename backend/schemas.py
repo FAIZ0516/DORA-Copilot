@@ -1,7 +1,8 @@
 """Pydantic request and response contracts."""
 
 from typing import Any, Literal
-from uuid import uuid4
+from datetime import datetime
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -19,6 +20,8 @@ class ChatRequest(BaseModel):
         default_factory=lambda: str(uuid4()), min_length=8, max_length=80
     )
     project_key: str | None = Field(default=None, min_length=2, max_length=16)
+    conversation_id: UUID | None = None
+    workspace: Literal["business", "technical"] = "technical"
     days: int | None = Field(default=None, ge=1, le=365)
     history: list[ChatHistoryItem] = Field(default_factory=list, max_length=12)
 
@@ -86,6 +89,44 @@ class ChatResponse(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
+class ConversationCreate(BaseModel):
+    workspace: Literal["business", "technical"] = "technical"
+    project_scope: dict[str, Any] = Field(default_factory=dict)
+    first_question: str = Field(default="", max_length=2000)
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+class ConversationMessageCreate(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: str = Field(min_length=1, max_length=10_000)
+    structured_content: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConversationMessageResponse(BaseModel):
+    id: str
+    role: Literal["user", "assistant", "system"]
+    content: str
+    structured_content: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class ConversationSummaryResponse(BaseModel):
+    id: str
+    title: str
+    workspace: Literal["business", "technical"]
+    project_scope: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationDetailResponse(ConversationSummaryResponse):
+    messages: list[ConversationMessageResponse] = Field(default_factory=list)
+
+
+class ConversationListResponse(BaseModel):
+    conversations: list[ConversationSummaryResponse] = Field(default_factory=list)
+
+
 class SessionResetRequest(BaseModel):
     session_id: str = Field(min_length=8, max_length=80)
 
@@ -113,3 +154,16 @@ class HealthResponse(BaseModel):
     llm_available: bool
     tts_configured: bool
     detail: str | None = None
+
+
+class JiraDashboardResponse(BaseModel):
+    project_scope: dict[str, str]
+    refreshed_at: datetime
+    cached: bool
+    empty: bool
+    kpis: dict[str, int | float | None]
+    status_categories: list[dict[str, str | int]]
+    issue_types: list[dict[str, str | int]]
+    open_ageing: list[dict[str, str | int]]
+    data_quality: dict[str, int]
+    notes: list[str]

@@ -31,11 +31,19 @@ class AgentState(TypedDict, total=False):
     session_id: str
     message: str
     browser_history: list[dict[str, str]]
+    persistent_context: dict[str, Any]
+    project_scope: dict[str, Any]
     memory: dict[str, Any]
     db_session: Session | None
     started_at: float
     planner_source: str
+    context_reused: bool
+    query_result_reused: bool
+    database_query_executed: bool
+    cache_reason: str
     plan: AgentPlan
+    knowledge_sections: list[dict[str, str]]
+    evidence_sources: list[str]
     metric: dict[str, str]
     results: list[dict[str, Any]]
     validation: dict[str, Any]
@@ -49,3 +57,4 @@ class AgentState(TypedDict, total=False):
     answer_retry_count: int
     warnings: list[str]
     metadata: dict[str, Any]
+    persistence: dict[str, Any]

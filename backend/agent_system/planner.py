@@ -1,4 +1,4 @@
-"""Gemini planner constrained by deterministic steering and controls."""
+"""Configured-LLM planner constrained by deterministic steering and controls."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from ..skills.filter_extraction import extract_filters
 from ..skills.intent_matching import classify_intent
 from ..skills.metric_selection import select_metric
 from .control import enforce_plan
+from .request_router import route_jira_request
 from .state import AgentPlan, QueryAction
 
 
@@ -127,11 +128,11 @@ def deterministic_plan(message: str, memory: dict[str, Any]) -> AgentPlan:
         }
     if intent["name"] == "general_conversation":
         return {
-            "mode": "out_of_scope",
-            "intent": "out_of_context",
-            "confidence": 1.0,
+            "mode": "conversation",
+            "intent": "general_conversation",
+            "confidence": intent["confidence"],
             "actions": [],
-            "reason": "The question is unrelated to the connected DoraDB scope.",
+            "reason": "A safe general question does not require a database query.",
             "clarification": "",
         }
 
@@ -232,14 +233,18 @@ def create_plan(
     """Let the configured LLM interpret the request, then validate its actions.
 
     The deterministic plan is deliberately a fallback, not the primary router.
-    It still blocks unsafe/out-of-domain requests before a cloud call and keeps
+    It still blocks unsafe database requests before a cloud call and keeps
     the application useful when the provider is unavailable.
     """
+
+    jira_route = route_jira_request(message)
+    if jira_route is not None:
+        return enforce_plan(jira_route), "jira-router"
 
     fallback = deterministic_plan(message, memory)
     if fallback["mode"] == "conversation":
         return enforce_plan(fallback), "conversation"
-    if fallback["intent"] in {"out_of_context", "unsafe_request"}:
+    if fallback["intent"] == "unsafe_request":
         return enforce_plan(fallback), "scope-guard"
     if not llm.enabled:
         return enforce_plan(fallback), "deterministic"
@@ -248,7 +253,13 @@ def create_plan(
         f"{item.get('role', 'user').upper()}: {item.get('content', '')[:800]}"
         for item in browser_history[-8:]
     )
-    memory_context = json.dumps(memory.get("last_context", {}), default=str)
+    memory_context = json.dumps(
+        {
+            "conversation_summary": str(memory.get("conversation_summary", ""))[:3000],
+            "last_context": memory.get("last_context", {}),
+        },
+        default=str,
+    )
     system = f"""You are the reasoning and tool-planning agent for a governed
 DoraDB assistant. Understand the user's actual objective from their wording,
 recent conversation, and structured memory. Decide what evidence is needed now.
