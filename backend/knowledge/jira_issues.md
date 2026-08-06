@@ -18,6 +18,24 @@ The statements in this guide were checked on 2026-08-03 using read-only inspecti
 
 No row was inserted, changed, or deleted. No personal values, issue summaries, root-cause text, or remediation text are shown.
 
+### 2026-08-05 cross-check update
+
+This guide was additionally cross-checked on 2026-08-05 against two new sources supplied directly by a user, not against a fresh live-database query:
+
+- `Jira issue.xlsx`, a 101-row sample export with the same 26 column headers as this guide.
+- `Jira_Columns_Definitions_Table.pdf`, the organisation's official column-definitions reference.
+
+Findings from that cross-check are marked **(2026-08-05 sample/PDF)** below so they are not confused with the original 2026-08-03 live-database inspection.
+
+**Evidence-path discrepancy found.** The paths cited above (`backup/playgrounddb`, `backend/app/approved_sql`, `backend/app/services/approved_queries.py`, `backend/app/services/schema_service.py`) do not exist in the current repository. The current backend instead uses:
+
+- `backend/doradb_catalog.py` — the approved query catalogue: `dora_metrics_by_year`, `dora_metrics_by_squad`, `dora_metrics_release_detail`, `feature_vs_release_frequency`, `feature_vs_user_story`, `story_to_feature_ratio`.
+- `backend/doradb.py` — the actual parameterised SQL text for each approved query (embedded as Python strings, not separate `.sql` files).
+- `backend/context/schema.yaml` — declares only two columns for this table (`key`, `project_key`), far fewer than the 26 documented here.
+- `backend/context/joins.yaml` — the only approved join naming this table: `jira_fuslist.key = jira_issues.key`.
+
+Either the repository was restructured after the original inspection, or the original inspection was run against a different checkout. Treat file-path citations in this guide as **needs confirmation** until re-verified against the live repository.
+
 ### How to read certainty labels
 
 - **Confirmed** means the fact is supported directly by the schema, view/query definition, or aggregate database result.
@@ -137,15 +155,21 @@ The category is useful for broad reporting, but `Done` includes `Cancelled` and 
 
 `priority` records relative importance or urgency. The actual values are `Medium`, `High`, and `Low`. Priority is not the same as defect severity, and no separate severity column exists.
 
+**(2026-08-05 PDF)** The official column-definitions document states priority "affects release scheduling and developer triage" — i.e. it is intended as an input to sequencing decisions, not only a descriptive label.
+
 ### Reporter and assignee
 
 The `reporter` is the person or account that reported the issue. The `assignee` is the person or account currently responsible for it. These values are personal or operational data and must be protected.
+
+**(2026-08-05 PDF)** The official column-definitions document describes the reporter as typically "a Business Analyst or QA Analyst" — a role hint, not a guarantee, and it does not change the need to protect the actual stored identity.
 
 No separate `creator` column is present.
 
 ### Squad
 
 `dcpsquad` is a project-specific team/squad field. Twenty-one non-null squad values were detected, but 63,481 rows have no squad. **Needs confirmation:** the authoritative squad mapping and whether the value means current ownership or ownership at extraction time.
+
+**(2026-08-05 sample/PDF)** The official column-definitions document gives long-form examples such as "Titan Squad", "MBK Squad", and "IBK Squad". The 101-row sample export instead stores short codes: `TITAN`, `MBK`, `IBK 1`, `IBK 2`, `BE 1`, `BO`, `Droid Spark`, `KAIJU`, `Prime`, `SRE`. A filter or search built on the PDF's long-form names (e.g. `dcpsquad = 'Titan Squad'`) will silently match zero rows against the real column values. Use the short-code form when querying.
 
 ### Sprint
 
@@ -157,6 +181,8 @@ An issue may appear in more than one stored sprint object. Counting expanded spr
 
 A Jira **fix version** associates an issue with a planned or actual release. `fixversions` is JSON because one issue can have multiple versions. The materialized view `mvw_gdt_dte_jira_fixversions` expands those values and connects them logically to release tables.
 
+**(2026-08-05 PDF/sample)** The official document's example version names are `4.2` and `MBK 4.2`. The sample export's real (non-empty) example was `{"fixversions":["2.17.0"]}` — a semantic-version style string, not the `MBK 4.2` team-prefixed style. Both formats should be treated as valid; do not assume a single naming convention when parsing.
+
 ### Labels
 
 Labels are flexible tags. They are stored in the `labels` JSON. A label is not a controlled classification unless the organisation enforces naming rules.
@@ -165,6 +191,8 @@ Labels are flexible tags. They are stored in the `labels` JSON. A label is not a
 
 `resolution` explains how work ended, with values such as `Done`, `Rejected`, and `Cancelled`. A null resolution usually means unresolved, but consistency checks are still required.
 
+**(2026-08-05 PDF)** The official column-definitions document also lists `Fixed` and `Cannot Reproduce` as valid resolution values, in addition to `Done`, `Rejected`, and `Cancelled`. Neither `Fixed` nor `Cannot Reproduce` appeared in the 2026-08-03 live-inspection value list or in the 101-row sample export, so treat them as **documented but not yet confirmed present** in the live table.
+
 ### Linked issues, feature links, and sub-tasks
 
 - `issuelinks` stores general links to other issues and their link types.
@@ -172,6 +200,8 @@ Labels are flexible tags. They are stored in the `labels` JSON. A label is not a
 - `subtasks` stores child issue references.
 
 These are logical relationships. The database does not enforce them with foreign-key constraints.
+
+**(2026-08-05 PDF/sample)** The official document names four link-type values: `relates to`, `blocks`, `is blocked by`, and `cloned to`. The sample export's real JSON used related-but-not-identical wording — `"is relates to"` and `"is cloned by"` — for example: `{"issuelinks":[{"id":484846,"type":"is cloned by"},{"id":435459,"type":"is relates to"}]}`. Do not assume the PDF's four labels are the exhaustive or exact string set; match `issuelink_type` values case- and wording-sensitively against live data before filtering on them.
 
 ### Dates
 
@@ -207,15 +237,15 @@ The `Nullable` column below describes what the database schema permits. Actual m
 | `status` | `varchar(30)` | Yes | None | Detailed current workflow state. | `To Do`, `InProgress`, `Done` | Work queues and status counts. | Twenty-nine custom values detected. A current snapshot does not reveal status history. |
 | `status_category` | `varchar(30)` | Yes | None | Broad Jira grouping of the detailed status. | `To Do`, `In Progress`, `Done` | Open/in-progress/end-state summaries. | `Done` includes rejected/cancelled work. Source: aggregate status mapping. |
 | `progress_pct` | `integer` | Yes | None | Stored progress percentage from 0 to 100. | `0`, `50`, `100` | Optional progress summaries. | 64,874 values are missing. **Needs confirmation:** how Jira/source logic calculates it. It is not story points. |
-| `resolution` | `varchar(20)` | Yes | None | How an issue was resolved. | `Done`, `Rejected`, `Cancelled` | Successful vs rejected/cancelled end states. | 9,520 missing. Do not use it interchangeably with `status`. |
+| `resolution` | `varchar(20)` | Yes | None | How an issue was resolved. | `Done`, `Rejected`, `Cancelled` (live-observed); `Fixed`, `Cannot Reproduce` (documented in the official PDF, not yet observed live) | Successful vs rejected/cancelled end states. | 9,520 missing. Do not use it interchangeably with `status`. |
 
 ### Project, team, and people
 
 | Column | Data Type | Nullable | Key Type | Beginner Meaning | Example | Reporting Use | Important Notes |
 |---|---|---:|---|---|---|---|---|
-| `project_key` | `varchar(20)` | Yes | None | Short Jira project code. | `DCPM` | Project filter/grouping. | Only `DCPM` exists in the inspected snapshot. Source: aggregate query and approved-query default. |
+| `project_key` | `varchar(20)` | Yes | None | Short Jira project code. | `DCPM` | Project filter/grouping. | Only `DCPM` exists in the inspected snapshot. Source: aggregate query and approved-query default. **(2026-08-05 PDF)** The official document's own examples (`DCPM`, `DXP`, `RBS`) show this column is shared org-wide across multiple projects even though this table's snapshot holds only `DCPM`. |
 | `project_name` | `varchar(50)` | Yes | None | Long Jira project name. | `DCPM - Digital Channel Platform` | Display labels for project reports. | All rows populated; still filter using stable `project_key`. |
-| `dcpsquad` | `varchar(20)` | Yes | Logical team field | Project-specific squad/team value. | `[anonymised squad]` | Team workload and delivery breakdowns. | 63,481 missing; 21 non-null values. Custom ownership meaning needs confirmation. |
+| `dcpsquad` | `varchar(20)` | Yes | Logical team field | Project-specific squad/team value. | `[anonymised squad]` | Team workload and delivery breakdowns. | 63,481 missing; 21 non-null values. Custom ownership meaning needs confirmation. **(2026-08-05 sample)** Real short-code values include `TITAN`, `MBK`, `IBK 1`, `IBK 2`, `BE 1`, `BO`, `Droid Spark`, `KAIJU`, `Prime`, `SRE` — see the Squad section above for why these differ from the PDF's long-form examples. |
 | `reporter` | `varchar(100)` | Yes | None | Person/account that reported the issue. | `[redacted Jira identity]` | Reporter-based operational analysis when authorised. | Personal data; 1,667 missing. Do not use as a productivity measure. |
 | `assignee` | `varchar(100)` | Yes | None | Person/account currently assigned. | `[redacted Jira identity]` | Unassigned work and workload context. | Personal data; 7,763 missing. Snapshot ownership may differ from historical ownership. |
 
@@ -232,9 +262,9 @@ The `Nullable` column below describes what the database schema permits. Actual m
 
 | Column | Data Type | Nullable | Key Type | Beginner Meaning | Example | Reporting Use | Important Notes |
 |---|---|---:|---|---|---|---|---|
-| `fixversions` | `json` | Yes | Logical release link | Wrapper object containing zero or more Jira fix-version names. | `{"fixversions":["<release name>"]}` | Issues/features by release. | 41,384 issues have at least one value. Expanded by `mvw_gdt_dte_jira_fixversions`. Values link logically to release names; no FK. |
+| `fixversions` | `json` | Yes | Logical release link | Wrapper object containing zero or more Jira fix-version names. | `{"fixversions":["<release name>"]}`, e.g. `{"fixversions":["2.17.0"]}` | Issues/features by release. | 41,384 issues have at least one value. Expanded by `mvw_gdt_dte_jira_fixversions`. Values link logically to release names; no FK. |
 | `labels` | `json` | Yes | None | Wrapper object containing Jira labels. | `{"labels":["<label>"]}` | Tag-based filtering and exploratory grouping. | 40,585 issues have at least one label. Labels may be inconsistent or uncontrolled. |
-| `issuelinks` | `json` | Yes | Logical issue links | Wrapper object containing linked issue IDs/types. | `{"issuelinks":[{"id":"<id>","type":"<type>"}]}` | Dependency/link analysis. | 50,604 issues have links. Expanded rows can exceed issue count. Direction/semantics depend on the stored type. |
+| `issuelinks` | `json` | Yes | Logical issue links | Wrapper object containing linked issue IDs/types. | `{"issuelinks":[{"id":"<id>","type":"<type>"}]}`, e.g. `{"issuelinks":[{"id":484846,"type":"is cloned by"}]}` | Dependency/link analysis. | 50,604 issues have links. Expanded rows can exceed issue count. Direction/semantics depend on the stored type; **(2026-08-05 sample)** observed types (`is cloned by`, `is relates to`) do not exactly match the PDF's four documented labels — match strings exactly against live data. |
 | `sprints` | `json` | Yes | Logical sprint links | Wrapper object containing sprint metadata. | `{"sprints":[{"id":"<id>","name":"<name>","state":"closed"}]}` | Sprint participation and dates. | 38,387 issues have at least one sprint. Materialized view also expects `startDate` and `endDate`. Not guaranteed to be full sprint history. |
 | `featurelink_key` | `varchar(20)` | Yes | Logical self-reference | Jira key of a feature connected to this issue. | `DCPM-<feature number>` | Feature-to-story/task reporting. | 24,192 populated; 73 did not match a current `key`. Used by `mvw_gdt_dte_jira_fuslist`; no FK. Exact custom-field rule needs confirmation. |
 | `subtasks` | `json` | Yes | Logical child links | Wrapper object containing sub-task IDs and keys. | `{"subtasks":[{"id":"<id>","key":"DCPM-<number>"}]}` | Parent/sub-task reporting. | 8,540 issues have at least one sub-task. Expanded by `mvw_gdt_dte_jira_subtasks`; no FK. |
@@ -382,6 +412,39 @@ The application's approved queries use the Jira table as follows:
 - `dora_release_metrics.sql`: uses release-frequency, release-success, and release-info relations; it does not read the Jira table directly.
 
 The live database also contains `vw_gdt_dte_release_frequency` and `vw_gdt_dte_release_success` plus `_dev`/`_test` variants. Their metrics are labelled organisation-specific in backend code.
+
+### Field-level relationship map for all 26 columns (added 2026-08-05)
+
+Every column is listed below with its relationship status, so "no relationship" is a stated fact rather than an omission. "Approved query" names refer to the current `backend/doradb_catalog.py` catalogue (`dora_metrics_by_year`, `dora_metrics_by_squad`, `dora_metrics_release_detail`, `feature_vs_release_frequency`, `feature_vs_user_story`, `story_to_feature_ratio`); none of these relationships is FK-enforced.
+
+| Column | Relationship type | Related to |
+|---|---|---|
+| `id` | Primary key of this table | Logically referenced by `subtasks`/`issuelinks` JSON child `id` values and `tbl_gdt_dte_excluded_issues.issue_id`. |
+| `key` | Unique business key | The one join declared in `backend/context/joins.yaml`: `jira_fuslist.key = jira_issues.key`. Also matched by other rows' `featurelink_key` and by `subtasks` JSON child `key`. |
+| `summary` | None | Standalone descriptive text. |
+| `issuetype` | None (no FK) | Used as a filter inside `mvw_gdt_dte_jira_fuslist` to separate Feature rows from User Story/Task/Bug/Test rows. |
+| `priority` | None | Standalone filter/grouping attribute. |
+| `status` | Same-row functional link | Maps to `status_category` (Section 8 mapping table). |
+| `status_category` | Same-row derived grouping | Derived from `status`. |
+| `progress_pct` | None | Standalone numeric attribute. |
+| `project_key` | Filter key | Scopes every approved query in `backend/doradb_catalog.py`; paired same-row with `project_name`. `backend/context/schema.yaml` lists only `key` and `project_key` for this table — the narrowest possible view of it. |
+| `project_name` | Same-row descriptive pair | Paired with `project_key`; no FK. |
+| `dcpsquad` | Filter/grouping dimension | Required filter for the approved `dora_metrics_by_squad` query, which resolves squad -> release indirectly through each issue's `fixversions`. |
+| `reporter` | None | Personal attribute, standalone. |
+| `assignee` | None | Personal attribute, standalone. |
+| `created` | Time axis | Logically precedes `updated`/`resolved`; used in trend and ageing queries. |
+| `updated` | Time axis | Logically >= `created`; distinct from `superset_updated_ts`. |
+| `resolved` | Time axis, paired with `resolution` | Logically >= `created` when populated (2 exceptions found live). |
+| `superset_updated_ts` | None | Independent warehouse-refresh metadata, unrelated to Jira lifecycle dates. |
+| `fixversions` | The most connected field in this table | Expands via `mvw_gdt_dte_jira_fixversions`; matches `tbl_gdt_dte_releases.release_name` and `tbl_gdt_dte_fixversionmap`. The same values drive `vw_gdt_dte_release_frequency` and `tbl_gdt_dte_release_info`, which back every DORA metric in `dora_metrics_by_year`, `dora_metrics_by_squad`, and `dora_metrics_release_detail`. |
+| `labels` | Logical expansion only | Expands via `mvw_gdt_dte_jira_labels`; no link to other business tables. |
+| `issuelinks` | Self-referencing | Expands via `mvw_gdt_dte_jira_issuelinks` into `issuelink_id` (another row's `id`) and `issuelink_type`. |
+| `sprints` | Logical expansion | Expands via `mvw_gdt_dte_jira_sprints`; sprint-name text is parsed for release/squad hints, an indirect link to `fixversions`/`dcpsquad`. |
+| `featurelink_key` | Self-referencing (parent) | Matches another row's `key` (the parent Feature); drives `mvw_gdt_dte_jira_fuslist`, which feeds the approved `feature_vs_release_frequency`, `feature_vs_user_story`, and `story_to_feature_ratio` queries. |
+| `resolution` | Same-row pair | Paired with `status`/`status_category`; no FK. |
+| `subtasks` | Self-referencing (children) | Expands via `mvw_gdt_dte_jira_subtasks`; child `id`/`key` values reference other rows in this same table. |
+| `root_cause` | None | Standalone sensitive text. |
+| `how_to_fix` | None | Standalone sensitive text, conceptually paired with `root_cause` on the same row. |
 
 ## 10. Safe Data Exploration Queries
 
@@ -645,6 +708,13 @@ This summarises missingness. A null is not automatically an error: unresolved wo
 | Issues with at least one issue link | 50,604 | General link coverage is partial. |
 | Issues with at least one sprint | 38,387 | Sprint reporting covers less than half of all issue rows. |
 | Issues with at least one sub-task | 8,540 | Only a minority contain child references. |
+| **(2026-08-05 sample)** Column-misaligned rows in the 101-row export | 1 of 101 | See "Export column-shift finding" below. |
+
+### Export column-shift finding (2026-08-05, from the 101-row sample only)
+
+Row `DCPM-41925` in the supplied `Jira issue.xlsx` sample is misaligned: `issuetype` holds the text `Payment Details` (which reads like summary content, not a real issue type), and `priority`, `status`, `status_category`, `project_key`, and `project_name` each hold the next column's true value shifted one position left (e.g. `project_key` is empty and `project_name` holds `DCPM` instead of the full project name). The most likely cause is an unescaped delimiter inside that row's `summary` text during export, which pushed every later column one position over.
+
+This is an **export artifact in this specific 101-row file**, not a confirmed live-database defect — it was not observed in the 2026-08-03 live-inspection findings above. But it means: (1) any pipeline that ingests this or a similarly generated export must validate row alignment (e.g. check `issuetype` values against the known six-type set) before trusting per-column data, and (2) a single corrupted row can silently inflate counts for unrelated categories (here, it would miscount one `Feature`/`Medium`-priority/`To Do` issue as issue type `Payment Details`).
 
 ### Recommended consistency query
 
