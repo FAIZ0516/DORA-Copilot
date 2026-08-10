@@ -29,6 +29,7 @@ def persistent_context(state: dict[str, Any]) -> dict[str, Any]:
         ],
         "workspace": state.get("workspace", "technical"),
         "project_scope": dict(state.get("project_scope", {})),
+        "dashboard_context": dict(state.get("dashboard_context", {})),
     }
 
 
@@ -69,10 +70,13 @@ def update_persistent_state(
     question: str,
     answer: str,
     agent_persistence: dict[str, Any],
+    dashboard_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     next_state = dict(current or {})
     next_state["workspace"] = workspace
     next_state["project_scope"] = project_scope
+    if dashboard_context is not None:
+        next_state["dashboard_context"] = dict(dashboard_context)
     next_state["turn_count"] = int(next_state.get("turn_count", 0)) + 2
     next_state["last_context"] = dict(agent_persistence.get("last_context", {}))
 

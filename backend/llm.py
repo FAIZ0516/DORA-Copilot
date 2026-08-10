@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 import truststore
-from google import genai
+from google import genai  # pyright: ignore[reportAttributeAccessIssue]
 from google.genai import types
 
 from .config import Settings

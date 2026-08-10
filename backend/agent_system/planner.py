@@ -323,7 +323,10 @@ Planning principles:
         for item in parsed.get("actions", []):
             if not isinstance(item, dict):
                 continue
-            model_filters = item.get("filters") if isinstance(item.get("filters"), dict) else {}
+            raw_model_filters = item.get("filters")
+            model_filters: dict[str, Any] = (
+                raw_model_filters if isinstance(raw_model_filters, dict) else {}
+            )
             safe_model_filters = {
                 key: value
                 for key, value in model_filters.items()

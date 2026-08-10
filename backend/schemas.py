@@ -1,7 +1,7 @@
 """Pydantic request and response contracts."""
 
 from typing import Any, Literal
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator
@@ -14,6 +14,22 @@ class ChatHistoryItem(BaseModel):
     content: str = Field(min_length=1, max_length=3000)
 
 
+class DashboardContext(BaseModel):
+    """Structured dashboard scope supplied independently from the user message."""
+
+    role: Literal["scrum_master", "head_of_department"] | None = None
+    active_view: Literal["portfolio", "squad_detail", "chat"] | None = None
+    project: str | None = Field(default=None, min_length=1, max_length=20)
+    squad: str | None = Field(default=None, min_length=1, max_length=80)
+    release: str | None = Field(default=None, min_length=1, max_length=120)
+    sprint: str | None = Field(default=None, min_length=1, max_length=200)
+    date_from: date | None = None
+    date_to: date | None = None
+    selected_metric: str | None = Field(default=None, min_length=1, max_length=80)
+    selected_squad_row: dict[str, Any] | None = None
+    current_metric_value: int | float | str | None = None
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     session_id: str = Field(
@@ -24,6 +40,7 @@ class ChatRequest(BaseModel):
     workspace: Literal["business", "technical"] = "technical"
     days: int | None = Field(default=None, ge=1, le=365)
     history: list[ChatHistoryItem] = Field(default_factory=list, max_length=12)
+    dashboard_context: DashboardContext | None = None
 
     @field_validator("message")
     @classmethod
@@ -115,6 +132,7 @@ class ConversationSummaryResponse(BaseModel):
     title: str
     workspace: Literal["business", "technical"]
     project_scope: dict[str, Any] = Field(default_factory=dict)
+    dashboard_context: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

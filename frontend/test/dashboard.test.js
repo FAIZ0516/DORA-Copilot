@@ -9,9 +9,11 @@ import {
   kpiCards,
 } from "../src/dashboardConfig.js";
 
-test("dashboard is placed above suggested questions", () => {
+test("dashboard is mounted in the persistent centre workspace panel", () => {
   const source = readFileSync(new URL("../src/components/Chat.jsx", import.meta.url), "utf8");
-  assert.ok(source.indexOf("<JiraDeliveryOverview") < source.indexOf("empty-chat-suggestions"));
+  assert.match(source, /const dashboardPanel/);
+  assert.match(source, /<RoleDashboard/);
+  assert.match(source, /<ThreePanelWorkspace/);
 });
 
 test("all four KPI cards use live aggregate values and correct percentage", () => {

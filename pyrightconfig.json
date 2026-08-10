@@ -3,5 +3,6 @@
   "exclude": ["frontend", ".venv"],
   "pythonVersion": "3.10",
   "typeCheckingMode": "basic",
-  "reportMissingImports": "none"
+  "reportMissingImports": "none",
+  "reportTypedDictNotRequiredAccess": "none"
 }

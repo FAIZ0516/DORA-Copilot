@@ -68,6 +68,7 @@ class ConversationRepository:
             state={
                 "workspace": workspace,
                 "project_scope": project_scope,
+                "dashboard_context": {},
                 "summary": "",
                 "turn_count": 0,
                 "last_context": {},
@@ -169,6 +170,7 @@ def serialize_conversation(
         "title": conversation.title,
         "workspace": state.get("workspace", "technical"),
         "project_scope": state.get("project_scope", {}),
+        "dashboard_context": state.get("dashboard_context", {}),
         "created_at": conversation.created_at,
         "updated_at": conversation.updated_at,
     }

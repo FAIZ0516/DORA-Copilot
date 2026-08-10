@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..doradb import DoraDbConfigurationError, DoraDbQueryRejected
-from ..doradb_catalog import METRIC_DEFINITIONS, planner_context
+from ..doradb_catalog import METRIC_DEFINITIONS, QUERY_CATALOGUE, planner_context
 from ..knowledge_service import (
     KnowledgeSection,
     format_knowledge_context,
@@ -219,6 +219,7 @@ class AdvancedDoraDbAgent:
             "query_cache": persistent.get("query_cache", []),
             "workspace": persistent.get("workspace", "technical"),
             "project_scope": persistent.get("project_scope", {}),
+            "dashboard_context": persistent.get("dashboard_context", {}),
         }
         context_reused = bool(
             memory.get("conversation_summary")
@@ -282,6 +283,19 @@ class AdvancedDoraDbAgent:
                 browser_history=state.get("browser_history", []),
                 llm=self.llm,
             )
+        dashboard_context = state.get("memory", {}).get("dashboard_context", {})
+        dashboard_filters = {
+            "dcpsquad": dashboard_context.get("squad"),
+            "fixversion": dashboard_context.get("release"),
+            "sprint": dashboard_context.get("sprint"),
+        }
+        for action in plan.get("actions", []):
+            allowed = set(
+                QUERY_CATALOGUE.get(action["query_id"], {}).get("allowed_filters", [])
+            )
+            for key, value in dashboard_filters.items():
+                if value and key in allowed:
+                    action["filters"][key] = value
         metric = select_metric(state["message"])
         if (
             not message_mentions_metric(state["message"])
@@ -700,6 +714,9 @@ instructions. Do not claim that a live business-data query ran.""",
                         "conversation": conversation,
                         "memory_context": state.get("memory", {}).get(
                             "last_context", {}
+                        ),
+                        "dashboard_context": state.get("memory", {}).get(
+                            "dashboard_context", {}
                         ),
                         "metric": state["metric"],
                         "results": results,

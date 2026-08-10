@@ -148,6 +148,30 @@ project key uses a separate cache entry. The refresh button requests
 `refresh=true`, executes every approved aggregate again, and replaces the
 cached snapshot. Dashboard responses never contain issue summaries or people.
 
+## Role dashboards
+
+ECHO now supports two operational entry roles while preserving the existing
+Technical/Business workspace behavior behind chat:
+
+- **Scrum Master** retrieves real distinct squad values and requires a squad
+  selection before opening the reusable Squad Detail Dashboard.
+- **Head of Department** opens the All-Squads Executive Dashboard and can drill
+  into the same Squad Detail Dashboard with filters and breadcrumb context
+  preserved.
+
+Project, release, sprint, Jira-created date range, squad, selected metric,
+dashboard view, and conversation ID are held in a lightweight shared React
+context. Dashboard-originated questions send this scope as structured
+`dashboard_context` metadata to `/api/chat`; the user question is not rewritten
+to carry hidden scope text.
+
+All role-dashboard values come from read-only, parameterized queries against
+the configured DoraDB. Attention labels are deterministic rules, not AI
+confidence. Metric meaning, formula, source fields, suggested questions, and
+supported roles come from the central registry in
+`backend/dashboard_registry.py`. The verified mapping and unsupported metrics
+are documented in `docs/dashboard-data-capabilities.md`.
+
 ## Approved DoraDB query tools
 
 - `database_schema_objects`
@@ -208,6 +232,12 @@ Open `http://localhost:5173`.
 - `GET /api/health`
 - `GET /api/projects`
 - `GET /api/jira-dashboard?project_key=DCPM&refresh=false`
+- `GET /api/dashboard/metrics`
+- `GET /api/dashboard/squads?project=DCPM`
+- `GET /api/dashboard/filters?project=DCPM&squad=TITAN`
+- `GET /api/dashboard/portfolio?project=DCPM`
+- `GET /api/dashboard/squad/{squad_name}?project=DCPM`
+- `GET /api/dashboard/issues?project=DCPM&squad=TITAN&page=1&page_size=20`
 - `GET /api/metrics`
 - `GET /api/query-catalogue`
 - `GET /api/audit/recent`

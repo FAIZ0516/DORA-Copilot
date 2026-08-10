@@ -21,6 +21,7 @@ import {
   Radar,
   Scatter,
 } from "react-chartjs-2";
+import { Component } from "react";
 
 ChartJS.register(
   ArcElement,
@@ -66,9 +67,46 @@ function normalizeChart(chart) {
     series: [{ key: "value", label: chart.title, unit: chart.unit || "" }],
     data: chart.labels.map((label, index) => ({
       label,
-      value: Number(chart.values[index] ?? 0),
+      value: Number(chart.values?.[index] ?? 0),
     })),
   };
+}
+
+const ALLOWED_CHART_TYPES = new Set(["bar", "horizontal_bar", "stacked_bar", "line", "area", "pie", "donut", "polar_area", "radar", "scatter", "table"]);
+
+export function validateChartSchema(rawChart) {
+  const chart = normalizeChart(rawChart);
+  if (!chart || typeof chart !== "object") return { valid: false, error: "No chart data was provided." };
+  if (!ALLOWED_CHART_TYPES.has(chart.type)) return { valid: false, error: "Unsupported chart type." };
+  if (typeof chart.title !== "string" || !chart.title.trim()) return { valid: false, error: "Chart title is missing." };
+  if (typeof chart.x_key !== "string" || !chart.x_key) return { valid: false, error: "Chart category key is missing." };
+  if (!Array.isArray(chart.series) || chart.series.length === 0 || chart.series.length > 8) return { valid: false, error: "Chart series are invalid." };
+  if (!Array.isArray(chart.data) || chart.data.length === 0 || chart.data.length > 200) return { valid: false, error: "Chart data points are invalid." };
+  const validSeries = chart.series.every((series) => series && typeof series.key === "string" && typeof series.label === "string");
+  if (!validSeries) return { valid: false, error: "Chart series definitions are invalid." };
+  const validRows = chart.data.every((row) => row && typeof row === "object" && chart.series.every((series) => Number.isFinite(Number(row[series.key]))));
+  if (!validRows) return { valid: false, error: "Chart values must be finite numbers." };
+  return { valid: true, chart: { ...chart, data: chart.data.map((row) => ({ ...row })) } };
+}
+
+function ChartTableFallback({ chart }) {
+  return (
+    <details className="chart-table-fallback">
+      <summary>View data table</summary>
+      <div><table><thead><tr><th>{chart.x_label || chart.x_key}</th>{chart.series.map((series) => <th key={series.key}>{series.label}</th>)}</tr></thead><tbody>
+        {chart.data.map((row, index) => <tr key={`${row[chart.x_key]}-${index}`}><th>{String(row[chart.x_key] ?? "")}</th>{chart.series.map((series) => <td key={series.key}>{formatValue(row[series.key], series.unit)}</td>)}</tr>)}
+      </tbody></table></div>
+    </details>
+  );
+}
+
+class ChartErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { failed: false }; }
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (this.state.failed) return <div className="chart-render-error" role="alert">The chart could not be rendered. Use the data table below.</div>;
+    return this.props.children;
+  }
 }
 
 function formatValue(value, unit = "") {
@@ -285,8 +323,11 @@ function renderChart(chart) {
 }
 
 export default function MetricChart({ chart: rawChart }) {
-  const chart = normalizeChart(rawChart);
-  if (!chart || chart.type === "table") return null;
+  if (!rawChart) return null;
+  const validation = validateChartSchema(rawChart);
+  if (!validation.valid) return <div className="chart-render-error" role="alert">Chart data was rejected safely: {validation.error}</div>;
+  const chart = validation.chart;
+  if (chart.type === "table") return <ChartTableFallback chart={chart} />;
   return (
     <figure className="metric-chart" aria-label={chart.title}>
       <figcaption>
@@ -294,11 +335,12 @@ export default function MetricChart({ chart: rawChart }) {
         <small>{chart.type.replaceAll("_", " ")}</small>
       </figcaption>
       <div className={`chart-canvas chart-canvas-${chart.type}`}>
-        {renderChart(chart)}
+        <ChartErrorBoundary>{renderChart(chart)}</ChartErrorBoundary>
       </div>
       <p className="chart-data-summary">
         {chart.data.length} validated data points. Hover or focus the chart for values.
       </p>
+      <ChartTableFallback chart={chart} />
     </figure>
   );
 }

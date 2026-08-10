@@ -1,30 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  ArrowUp,
-  AlertTriangle,
-  BriefcaseBusiness,
-  CheckCircle2,
-  ChevronDown,
-  CircleAlert,
-  Database,
-  Focus,
-  Gauge,
-  Mic,
-  MicOff,
-  Plus,
-  RotateCcw,
-  Sparkles,
-  Square,
-  Table2,
-  Users,
-  Volume2,
-  Workflow,
-} from "lucide-react";
+import { ArrowUp, CheckCircle2, CircleAlert, Copy, Mic, MicOff, RefreshCw, RotateCcw, Sparkles, Square, Volume2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import DataTable from "./DataTable";
 import MetricChart from "./MetricChart";
-import JiraDeliveryOverview from "./JiraDeliveryOverview";
-import { WORKSPACE_PLACEHOLDERS, WORKSPACE_SUGGESTIONS } from "../workspaceSuggestions";
+import RoleDashboard from "./RoleDashboard";
+import SuggestedQuestionChips from "./chat/SuggestedQuestionChips";
+import ConversationPanel from "./history/ConversationPanel";
+import ThreePanelWorkspace from "./layout/ThreePanelWorkspace";
+import { getRoleDashboardConfig } from "../config/roleDashboardConfig";
+import { useDashboardContext } from "../dashboardContext";
+import { usePanelLayout } from "../hooks/usePanelLayout";
+import { WORKSPACE_PLACEHOLDERS } from "../workspaceSuggestions";
 import {
   ACTIVE_CONVERSATION_KEY,
   archiveConversation,
@@ -35,40 +21,26 @@ import {
 } from "../services/conversations";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-
 const welcomeMessage = {
   id: "welcome",
   role: "assistant",
-  text:
-    "Hello. I’m your **ECHO DORA Copilot**. Ask about delivery data, Jira reporting, or DORA definitions in your own words.",
+  text: "Hello. I’m **Zara**, your delivery analysis and reporting assistant. Ask about the selected dashboard, delivery risks, Jira evidence, or management reporting in your own words.",
 };
 
 function makeMessage(role, text, extras = {}) {
-  return {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    role,
-    text,
-    ...extras,
-  };
+  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, role, text, createdAt: new Date().toISOString(), ...extras };
 }
-
-const SUGGESTION_ICONS = {
-  alert: AlertTriangle,
-  briefcase: BriefcaseBusiness,
-  database: Database,
-  focus: Focus,
-  gauge: Gauge,
-  table: Table2,
-  users: Users,
-  workflow: Workflow,
-};
 
 export default function Chat({
   projects = [],
   databaseConnected = false,
   selectedRole = "technical",
+  operationalRole = "scrum_master",
   onWorkspaceChange,
+  onRoleChange,
 }) {
+  const dashboard = useDashboardContext();
+  const layout = usePanelLayout();
   const [messages, setMessages] = useState([welcomeMessage]);
   const [input, setInput] = useState("");
   const [project, setProject] = useState("");
@@ -80,24 +52,22 @@ export default function Chat({
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState("");
   const [speakingId, setSpeakingId] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
   const endRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
   const audioRef = useRef(null);
   const audioRequestControllerRef = useRef(null);
   const audioUrlCacheRef = useRef(new Map());
+  const pendingDashboardContextRef = useRef(null);
+  const SpeechRecognition = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
 
-  const SpeechRecognition =
-    typeof window !== "undefined" &&
-    (window.SpeechRecognition || window.webkitSpeechRecognition);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [messages, isSending]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [messages, isSending]);
 
   useEffect(() => {
     if (projects.length && !projects.some((item) => item.key === project)) {
       setProject(projects[0].key);
+      dashboard.setSelectedProject(projects[0].key);
     }
   }, [project, projects]);
 
@@ -112,9 +82,7 @@ export default function Chat({
         setConversations(recent);
         setConversationStatus("ready");
         const savedId = window.localStorage.getItem(ACTIVE_CONVERSATION_KEY);
-        if (savedId && recent.some((item) => item.id === savedId)) {
-          await openConversation(savedId);
-        }
+        if (savedId && recent.some((item) => item.id === savedId)) await openConversation(savedId);
       } catch (error) {
         if (!active) return;
         setConversationError(error.message);
@@ -123,6 +91,14 @@ export default function Chat({
     }
     restore();
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => () => {
+    recognitionRef.current?.stop();
+    audioRequestControllerRef.current?.abort();
+    audioRef.current?.pause();
+    for (const url of audioUrlCacheRef.current.values()) URL.revokeObjectURL(url);
+    audioUrlCacheRef.current.clear();
   }, []);
 
   async function loadRecent() {
@@ -141,11 +117,21 @@ export default function Chat({
     setConversationStatus("loading");
     try {
       const conversation = await getConversation(id);
+      const restored = conversation.dashboard_context || {};
       setActiveConversationId(conversation.id);
+      dashboard.setConversationId(conversation.id);
       window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversation.id);
       setMessages(messagesFromConversation(conversation));
-      setProject(conversation.project_scope?.project_key || "");
+      setProject(conversation.project_scope?.project_key || "DCPM");
+      dashboard.setSelectedProject(conversation.project_scope?.project_key || "DCPM");
+      dashboard.setSelectedSquad(restored.squad || "");
+      dashboard.setSelectedRelease(restored.release || "");
+      dashboard.setSelectedSprint(restored.sprint || "");
+      dashboard.setDateRange({ from: restored.date_from || "", to: restored.date_to || "" });
+      if (restored.active_view) dashboard.setActiveView(restored.active_view);
+      if (restored.selected_metric) dashboard.setSelectedMetric(restored.selected_metric);
       onWorkspaceChange?.(conversation.workspace);
+      if (restored.role === "head_of_department" || restored.role === "scrum_master") onRoleChange?.(restored.role);
       setConversationStatus("ready");
       setConversationError("");
     } catch (error) {
@@ -154,30 +140,16 @@ export default function Chat({
     }
   }
 
-  useEffect(
-    () => () => {
-      recognitionRef.current?.stop();
-      audioRequestControllerRef.current?.abort();
-      audioRef.current?.pause();
-      for (const url of audioUrlCacheRef.current.values()) URL.revokeObjectURL(url);
-      audioUrlCacheRef.current.clear();
-    },
-    [],
-  );
-
-  async function sendMessage(rawText) {
+  async function sendMessage(rawText, dashboardOverride = null) {
     const text = rawText.trim();
     if (!text || isSending) return;
-    const history = messages
-      .filter((message) => message.id !== "welcome" && !message.error)
-      .slice(-12)
-      .map((message) => ({ role: message.role, content: message.text }));
-
+    const history = messages.filter((message) => message.id !== "welcome" && !message.error).slice(-12).map((message) => ({ role: message.role, content: message.text }));
+    const requestContext = dashboardOverride || pendingDashboardContextRef.current || dashboard.dashboardContext();
+    pendingDashboardContextRef.current = null;
     setMessages((current) => [...current, makeMessage("user", text)]);
     setInput("");
     setSpeechError("");
     setIsSending(true);
-
     try {
       const payload = await sendChat({
         message: text,
@@ -185,113 +157,114 @@ export default function Chat({
         workspace: selectedRole,
         project_key: project || null,
         history,
+        dashboard_context: requestContext,
       });
       const conversationId = payload.metadata?.conversation_id;
       if (conversationId && conversationId !== activeConversationId) {
         setActiveConversationId(conversationId);
+        dashboard.setConversationId(conversationId);
         window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversationId);
       }
-      setMessages((current) => [
-        ...current,
-        makeMessage("assistant", payload.answer, {
-          chart: payload.chart,
-          table: payload.table,
-          warnings: payload.warnings,
-          validation: payload.validation,
-          metadata: payload.metadata,
-        }),
-      ]);
+      setMessages((current) => [...current, makeMessage("assistant", payload.answer, {
+        chart: payload.chart,
+        table: payload.table,
+        warnings: payload.warnings,
+        validation: payload.validation,
+        metadata: payload.metadata,
+      })]);
       await loadRecent();
     } catch (error) {
-      setMessages((current) => [
-        ...current,
-        makeMessage(
-          "assistant",
-          `I couldn’t complete that request. ${error.message}`,
-          { error: true },
-        ),
-      ]);
+      setMessages((current) => [...current, makeMessage("assistant", `I couldn’t complete that request. ${error.message}`, { error: true })]);
     } finally {
       setIsSending(false);
     }
   }
 
-  async function clearConversation() {
-    stopAudio();
-    if (activeConversationId) {
-      const confirmed = window.confirm("Archive this conversation? Other recent conversations will remain available.");
-      if (!confirmed) return;
-      try {
-        await archiveConversation(activeConversationId);
-        await loadRecent();
-      } catch (error) {
-        setConversationError(error.message);
-        setConversationStatus("error");
-        return;
-      }
-    }
-    startNewConversation();
+  function stopAudio() {
+    audioRequestControllerRef.current?.abort();
+    audioRequestControllerRef.current = null;
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current = null; }
+    setSpeakingId(null);
   }
 
   function startNewConversation() {
     stopAudio();
     window.localStorage.removeItem(ACTIVE_CONVERSATION_KEY);
     setActiveConversationId(null);
+    dashboard.setConversationId(null);
     setMessages([welcomeMessage]);
     setInput("");
     setSpeechError("");
   }
 
+  async function clearConversation() {
+    if (activeConversationId && !window.confirm("Archive this conversation? Other recent conversations will remain available.")) return;
+    if (activeConversationId) {
+      try { await archiveConversation(activeConversationId); await loadRecent(); }
+      catch (error) { setConversationError(error.message); setConversationStatus("error"); return; }
+    }
+    startNewConversation();
+  }
+
+  async function archiveHistoryConversation(id) {
+    if (!window.confirm("Archive this conversation?")) return;
+    try {
+      await archiveConversation(id);
+      if (id === activeConversationId) startNewConversation();
+      await loadRecent();
+    } catch (error) {
+      setConversationError(error.message);
+      setConversationStatus("error");
+    }
+  }
+
+  function fillQuestion(question, dashboardOverride = null) {
+    setInput(question);
+    pendingDashboardContextRef.current = dashboardOverride;
+    layout.showPanel("chat");
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function navigateWorkspace(destination) {
+    if (destination === "assistant") {
+      layout.showPanel("chat");
+      window.requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
+    layout.showPanel("dashboard");
+    window.requestAnimationFrame(() => {
+      if (destination === "reports") {
+        document.getElementById("generate-report-button")?.click();
+      } else {
+        document.getElementById("dashboard-top")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  }
+
+  function changeRole(role) {
+    const nextRole = role === "head_of_department" ? "head_of_department" : "scrum_master";
+    onRoleChange?.(nextRole);
+    onWorkspaceChange?.(nextRole === "head_of_department" ? "business" : "technical");
+  }
+
   function toggleListening() {
     setSpeechError("");
-    if (!SpeechRecognition) {
-      setSpeechError("Voice input is not supported here. Chrome and Edge work best.");
-      return;
-    }
-    if (isListening) {
-      recognitionRef.current?.stop();
-      return;
-    }
+    if (!SpeechRecognition) { setSpeechError("Voice input is not supported here. Chrome and Edge work best."); return; }
+    if (isListening) { recognitionRef.current?.stop(); return; }
     const recognition = new SpeechRecognition();
     recognition.lang = navigator.language || "en-US";
     recognition.interimResults = true;
     recognition.continuous = false;
     recognition.onstart = () => setIsListening(true);
-    recognition.onresult = (event) => {
-      setInput(
-        Array.from(event.results)
-          .map((result) => result[0].transcript)
-          .join(""),
-      );
-    };
-    recognition.onerror = (event) => {
-      setSpeechError(
-        event.error === "not-allowed"
-          ? "Microphone permission was denied."
-          : "Voice input stopped unexpectedly.",
-      );
-    };
+    recognition.onresult = (event) => setInput(Array.from(event.results).map((result) => result[0].transcript).join(""));
+    recognition.onerror = (event) => setSpeechError(event.error === "not-allowed" ? "Microphone permission was denied." : "Voice input stopped unexpectedly.");
     recognition.onend = () => setIsListening(false);
     recognitionRef.current = recognition;
     recognition.start();
   }
 
-  function stopAudio() {
-    audioRequestControllerRef.current?.abort();
-    audioRequestControllerRef.current = null;
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current = null;
-    }
-    setSpeakingId(null);
-  }
-
   async function speak(message) {
-    if (speakingId === message.id) {
-      stopAudio();
-      return;
-    }
+    if (speakingId === message.id) { stopAudio(); return; }
     stopAudio();
     setSpeechError("");
     setSpeakingId(message.id);
@@ -300,22 +273,9 @@ export default function Chat({
       if (!audioUrl) {
         const controller = new AbortController();
         audioRequestControllerRef.current = controller;
-        const plainText = message.text
-          .replace(/\[(.*?)\]\(.*?\)/g, "$1")
-          .replace(/[#*_`>|[\]]/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 2000);
-        const response = await fetch(`${API_BASE}/api/tts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: plainText }),
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.detail || `Voice request failed with status ${response.status}`);
-        }
+        const plainText = message.text.replace(/\[(.*?)\]\(.*?\)/g, "$1").replace(/[#*_`>|[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
+        const response = await fetch(`${API_BASE}/api/tts`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: plainText }), signal: controller.signal });
+        if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.detail || `Voice request failed with status ${response.status}`); }
         audioUrl = URL.createObjectURL(await response.blob());
         audioUrlCacheRef.current.set(message.id, audioUrl);
         audioRequestControllerRef.current = null;
@@ -323,243 +283,80 @@ export default function Chat({
       const audio = new Audio(audioUrl);
       audioRef.current = audio;
       audio.onended = stopAudio;
-      audio.onerror = () => {
-        setSpeechError("The generated audio could not be played.");
-        stopAudio();
-      };
+      audio.onerror = () => { setSpeechError("The generated audio could not be played."); stopAudio(); };
       await audio.play();
     } catch (error) {
-      if (error.name === "AbortError") return;
-      setSpeechError(`Voice playback unavailable: ${error.message}`);
+      if (error.name !== "AbortError") setSpeechError(`Voice playback unavailable: ${error.message}`);
       stopAudio();
     }
   }
 
-  const isEmpty = !messages.some((message) => message.role === "user");
-  const suggestions = WORKSPACE_SUGGESTIONS[selectedRole] || WORKSPACE_SUGGESTIONS.technical;
-  const inputPlaceholder = WORKSPACE_PLACEHOLDERS[selectedRole] || WORKSPACE_PLACEHOLDERS.technical;
+  async function copyMessage(message) {
+    try {
+      await navigator.clipboard.writeText(message.text);
+      setCopiedId(message.id);
+      window.setTimeout(() => setCopiedId((current) => current === message.id ? null : current), 1600);
+    } catch { setSpeechError("The response could not be copied to the clipboard."); }
+  }
 
-  return (
-    <div className={`chat-panel chat-panel-workspace ${isEmpty ? "chat-panel-empty" : ""}`}>
-      <aside className="empty-chat-sidebar" aria-label="Recent conversations">
-        <div>
-          <p>Workspace</p>
-          <h3>Recent Conversations</h3>
-        </div>
-        <button className="empty-chat-sidebar-note" type="button" onClick={startNewConversation}>
-          <Plus size={16} aria-hidden="true" />
-          <div><strong>New conversation</strong><span>Start with a clean context.</span></div>
-        </button>
-        <div className="recent-conversation-list">
-          {conversationStatus === "loading" && <p role="status">Loading conversations...</p>}
-          {conversationStatus === "error" && (
-            <div className="recent-conversation-error" role="alert">
-              <span>{conversationError}</span>
-              <button type="button" onClick={loadRecent}>Retry</button>
-            </div>
-          )}
-          {conversationStatus === "ready" && conversations.length === 0 && (
-            <p>No saved conversations yet.</p>
-          )}
-          {conversations.map((conversation) => (
-            <button
-              className={conversation.id === activeConversationId ? "active" : ""}
-              key={conversation.id}
-              type="button"
-              onClick={() => openConversation(conversation.id)}
-              aria-current={conversation.id === activeConversationId ? "page" : undefined}
-            >
-              <strong>{conversation.title}</strong>
-              <span>{conversation.workspace} workspace</span>
-            </button>
-          ))}
-        </div>
-        <span className="empty-chat-role-label">{selectedRole} workspace</span>
-      </aside>
-      <div className="chat-toolbar">
-        <div className="project-picker">
-          <label htmlFor="project-select">Project scope</label>
-          <div className="select-wrap">
-            <select
-              id="project-select"
-              value={project}
-              onChange={(event) => setProject(event.target.value)}
-            >
-              {projects.map((item) => (
-                <option key={item.key || "all"} value={item.key}>
-                  {item.label} · {item.detail}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={16} aria-hidden="true" />
-          </div>
-        </div>
-        <div className="toolbar-actions">
-          <span className="data-freshness">
-            <CheckCircle2 size={15} />
-            {databaseConnected ? "DoraDB ready" : "DoraDB credentials required"}
-          </span>
-          <button className="clear-button" type="button" onClick={clearConversation}>
-            <RotateCcw size={15} /> Clear conversation
-          </button>
-        </div>
+  function retryLastMessage() {
+    const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
+    if (lastUserMessage) sendMessage(lastUserMessage.text);
+  }
+
+  const isEmpty = !messages.some((message) => message.role === "user");
+  const roleConfig = getRoleDashboardConfig(operationalRole);
+  const inputPlaceholder = WORKSPACE_PLACEHOLDERS[selectedRole] || WORKSPACE_PLACEHOLDERS.technical;
+  const latestAssistantId = [...messages].reverse().find((message) => message.role === "assistant" && message.id !== "welcome")?.id;
+
+  const historyPanel = <ConversationPanel conversations={conversations} status={conversationStatus} error={conversationError} activeConversationId={activeConversationId} operationalRole={operationalRole} onRoleChange={changeRole} onNew={startNewConversation} onOpen={openConversation} onArchive={archiveHistoryConversation} onRetry={loadRecent} onNavigate={navigateWorkspace} />;
+  const dashboardPanel = (
+    <div className="dashboard-panel-shell">
+      <RoleDashboard role={operationalRole} projectKey={project} projects={projects} databaseConnected={databaseConnected} onProjectChange={setProject} onAsk={fillQuestion} disabled={isSending} />
+    </div>
+  );
+  const chatPanel = (
+    <div className="echo-copilot-panel">
+      <div className="copilot-toolbar">
+        <div><Sparkles aria-hidden="true" /><span>Zara · {roleConfig.label} context</span></div>
+        <div><span className={`copilot-data-status ${databaseConnected ? "connected" : "offline"}`}><i aria-hidden="true" />{databaseConnected ? "DoraDB read-only" : "Data service offline"}</span><button type="button" onClick={clearConversation}><RotateCcw aria-hidden="true" /> Clear</button></div>
       </div>
 
-      <div className="message-list" aria-live="polite">
-        <section
-          className={`empty-chat-state ${isEmpty ? "" : "is-hidden"}`}
-          aria-hidden={!isEmpty}
-        >
-          <header className="empty-chat-greeting">
-            <p>Hello, Aisyah</p>
-            <h3>What are you looking for today?</h3>
-          </header>
-          <JiraDeliveryOverview
-            projectKey={project}
-            onPrompt={sendMessage}
-            disabled={isSending}
-          />
-          <div className="empty-chat-suggestions">
-            <p>Suggested Questions</p>
-            <div className="suggestion-card-grid">
-              {suggestions.map((suggestion, index) => (
-                (() => {
-                  const SuggestionIcon = SUGGESTION_ICONS[suggestion.icon];
-                  return <button
-                  key={suggestion.title}
-                  type="button"
-                  style={{ "--suggestion-index": index }}
-                  onClick={() => sendMessage(suggestion.prompt)}
-                  disabled={isSending}
-                  aria-label={`${suggestion.title}: ${suggestion.description}`}
-                >
-                  <span className="suggestion-icon" aria-hidden="true">
-                    <SuggestionIcon size={20} />
-                  </span>
-                  <span className="suggestion-copy">
-                    <strong>{suggestion.title}</strong>
-                    <span>{suggestion.description}</span>
-                  </span>
-                </button>;
-                })()
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <div className={`conversation-intro ${isEmpty ? "empty-chat-existing-hidden" : ""}`}>
-          <span className="intro-icon"><Sparkles size={25} /></span>
-          <div>
-            <h3>Your delivery intelligence agent</h3>
-            <p>Type or speak your question naturally. There is no required prompt template.</p>
-          </div>
-        </div>
-
-        {messages.map((message) => (
-          <article
-            className={`message ${message.role} ${message.error ? "message-error" : ""} ${isEmpty ? "empty-chat-existing-hidden" : ""}`}
-            key={message.id}
-          >
-            <div className="message-avatar" aria-hidden="true">
-              {message.role === "assistant" ? "AI" : "YOU"}
-            </div>
-            <div className="message-body">
-              <div className="message-meta">
-                <span>{message.role === "assistant" ? "DORA Copilot" : "You"}</span>
-                {message.role === "assistant" && (
-                  <button
-                    className="speak-button"
-                    type="button"
-                    onClick={() => speak(message)}
-                    aria-label={speakingId === message.id ? "Stop speaking" : "Read response aloud"}
-                  >
-                    {speakingId === message.id ? <Square size={13} /> : <Volume2 size={15} />}
-                  </button>
-                )}
-              </div>
-              <div className="message-content">
-                <ReactMarkdown>{message.text}</ReactMarkdown>
-              </div>
-              {message.warnings?.length > 0 && (
-                <div className="warning-panel">
-                  <CircleAlert size={17} />
-                  <div>
-                    <strong>Data note</strong>
-                    {message.warnings.map((warning) => <p key={warning}>{warning}</p>)}
-                  </div>
-                </div>
-              )}
+      <div className="copilot-message-list" aria-live="polite">
+        {isEmpty && <section className="copilot-empty-state"><span><Sparkles aria-hidden="true" /></span><p>Zara Assistant</p><h2>Understand what needs attention</h2><div>Ask about the current dashboard, explain a risk, or generate a report grounded in the selected scope.</div><SuggestedQuestionChips questions={roleConfig.initialQuestions} onSuggestionClick={fillQuestion} /></section>}
+        {!isEmpty && messages.map((message) => (
+          <article className={`copilot-message ${message.role} ${message.error ? "message-error" : ""}`} key={message.id}>
+            <div className="copilot-message-avatar" aria-hidden="true">{message.role === "assistant" ? "AI" : "YOU"}</div>
+            <div className="copilot-message-body">
+              <div className="copilot-message-meta"><span>{message.role === "assistant" ? "Zara" : "You"}</span><div>
+                {message.role === "assistant" && <button type="button" onClick={() => copyMessage(message)} aria-label="Copy response" title="Copy response"><Copy aria-hidden="true" /><span>{copiedId === message.id ? "Copied" : "Copy"}</span></button>}
+                {message.role === "assistant" && <button type="button" onClick={() => speak(message)} aria-label={speakingId === message.id ? "Stop speaking" : "Read response aloud"} title="Read response aloud">{speakingId === message.id ? <Square aria-hidden="true" /> : <Volume2 aria-hidden="true" />}</button>}
+              </div></div>
+              <div className="copilot-message-content"><ReactMarkdown>{message.text}</ReactMarkdown></div>
+              {message.warnings?.length > 0 && <div className="warning-panel"><CircleAlert aria-hidden="true" /><div><strong>Data note</strong>{message.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div></div>}
               <MetricChart chart={message.chart} />
               <DataTable table={message.table} />
-              {message.role === "assistant" && message.metadata?.analysis_steps > 0 && (
-                <div className="analysis-proof">
-                  <ShieldCheckIcon />
-                  <span>
-                    {message.metadata.answer_source === "ai-provider-unavailable"
-                      ? "Google AI Studio unavailable · no template substituted"
-                      : "Analyzed from DoraDB · AI answer checked"}
-                  </span>
-                </div>
-              )}
+              {message.error && <button className="message-retry-button" type="button" onClick={retryLastMessage}><RefreshCw aria-hidden="true" /> Retry last question</button>}
+              {message.role === "assistant" && message.metadata?.analysis_steps > 0 && <div className="analysis-proof"><CheckCircle2 aria-hidden="true" /><span>{message.metadata.answer_source === "ai-provider-unavailable" ? "AI provider unavailable · no substitute answer created" : "Analyzed from read-only DoraDB · answer checked"}</span></div>}
+              {message.id === latestAssistantId && !message.error && !isSending && <SuggestedQuestionChips label="Continue exploring" questions={roleConfig.followUpQuestions} onSuggestionClick={fillQuestion} />}
             </div>
           </article>
         ))}
-
-        {isSending && (
-          <div className="thinking" role="status">
-            <span /><span /><span />
-            <p>ECHO is reasoning, querying when needed, and validating the answer...</p>
-          </div>
-        )}
+        {isSending && <div className="thinking" role="status"><span /><span /><span /><p>Zara is analysing the current scope…</p></div>}
         <div ref={endRef} />
       </div>
 
-      <div className="composer-wrap">
+      <div className="copilot-composer-wrap">
         {speechError && <p className="speech-error" role="alert">{speechError}</p>}
-        <form className="composer" onSubmit={(event) => {
-          event.preventDefault();
-          sendMessage(input);
-        }}>
-          <textarea
-            ref={inputRef}
-            aria-label="Ask about your delivery metrics"
-            placeholder={inputPlaceholder}
-            rows="1"
-            value={input}
-            maxLength={2000}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                sendMessage(input);
-              }
-            }}
-          />
-          <button
-            className={`voice-button ${isListening ? "listening" : ""}`}
-            type="button"
-            onClick={toggleListening}
-            aria-label={isListening ? "Stop voice input" : "Start voice input"}
-          >
-            {isListening ? <MicOff size={20} /> : <Mic size={20} />}
-          </button>
-          <button
-            className="send-button"
-            type="submit"
-            disabled={!input.trim() || isSending}
-            aria-label="Send message"
-          >
-            <ArrowUp size={20} />
-          </button>
+        <form className="copilot-composer" onSubmit={(event) => { event.preventDefault(); sendMessage(input); }}>
+          <textarea ref={inputRef} aria-label="Ask about your delivery metrics" placeholder={inputPlaceholder} rows="1" value={input} maxLength={2000} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(input); } }} />
+          <button className={`voice-button ${isListening ? "listening" : ""}`} type="button" onClick={toggleListening} aria-label={isListening ? "Stop voice input" : "Start voice input"}>{isListening ? <MicOff aria-hidden="true" /> : <Mic aria-hidden="true" />}</button>
+          <button className="send-button" type="submit" disabled={!input.trim() || isSending} aria-label="Send message"><ArrowUp aria-hidden="true" /></button>
         </form>
-        <p className="composer-hint">
-          Enter to send · Shift + Enter for a new line · Follow-ups use structured session memory
-        </p>
+        <p>Enter to send · Shift + Enter for a new line</p>
       </div>
     </div>
   );
-}
 
-function ShieldCheckIcon() {
-  return <CheckCircle2 size={14} aria-hidden="true" />;
+  return <ThreePanelWorkspace layout={layout} history={historyPanel} dashboard={dashboardPanel} chat={chatPanel} />;
 }
