@@ -9,6 +9,17 @@ from typing import Any
 
 import httpx
 import truststore
+# Imported at module scope so `types` is in scope inside _complete_google
+# (it referenced types.GenerateContentConfig while the import lived only in
+# __init__, which raised NameError whenever the Google provider was used).
+# Guarded because google-genai is optional: DeepSeek is the default provider
+# and must not require this package to be installed for the app to start.
+try:  # pragma: no cover - import-time provider availability
+    from google import genai  # pyright: ignore[reportAttributeAccessIssue]
+    from google.genai import types
+except ImportError:  # pragma: no cover
+    genai = None  # type: ignore[assignment]
+    types = None  # type: ignore[assignment]
 
 from .config import Settings
 
@@ -35,9 +46,11 @@ class GenerativeAIClient:
         self.http_client: httpx.Client | None = None
 
         if settings.llm_provider == "google-ai-studio" and settings.gemini_configured:
-            from google import genai
-            from google.genai import types
-
+            if genai is None or types is None:
+                raise RuntimeError(
+                    "LLM_PROVIDER is google-ai-studio but the google-genai "
+                    "package is not installed. Install it or switch provider."
+                )
             ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             self.http_client = httpx.Client(
                 verify=ssl_context,

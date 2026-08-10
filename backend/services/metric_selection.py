@@ -61,8 +61,8 @@ def select_metric(message: str) -> MetricSelection:
     lowered = message.lower()
     for synonyms, metric in _METRICS:
         if any(synonym in lowered for synonym in synonyms):
-            return dict(metric)  # type: ignore[return-value]
-    return dict(_DEFAULT_METRIC)
+            return metric.copy()
+    return _DEFAULT_METRIC.copy()
 
 
 def message_mentions_metric(message: str) -> bool:
@@ -81,14 +81,14 @@ def select_metric_by_id(metric_id: str | None) -> MetricSelection:
 
     if metric_id:
         if metric_id == _DELIVERY_PERFORMANCE_METRIC["id"]:
-            return dict(_DELIVERY_PERFORMANCE_METRIC)
+            return _DELIVERY_PERFORMANCE_METRIC.copy()
         for _synonyms, metric in _METRICS:
             if metric["id"] == metric_id:
-                return dict(metric)  # type: ignore[return-value]
-    return dict(_DEFAULT_METRIC)
+                return metric.copy()
+    return _DEFAULT_METRIC.copy()
 
 
 def select_delivery_performance_metric() -> MetricSelection:
     """Return the holistic metric used for multi-metric recommendations."""
 
-    return dict(_DELIVERY_PERFORMANCE_METRIC)
+    return _DELIVERY_PERFORMANCE_METRIC.copy()

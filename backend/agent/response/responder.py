@@ -390,6 +390,9 @@ Response policy for this turn:
                         "memory_context": state.get("memory", {}).get(
                             "last_context", {}
                         ),
+                        "dashboard_context": state.get("memory", {}).get(
+                            "dashboard_context", {}
+                        ),
                         "metric": state["metric"],
                         "results": results,
                         "deterministic_analysis": state.get("analysis", {}),

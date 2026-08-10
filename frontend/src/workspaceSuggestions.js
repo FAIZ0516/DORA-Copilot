@@ -54,8 +54,8 @@ export const WORKSPACE_SUGGESTIONS = {
 };
 
 export const WORKSPACE_PLACEHOLDERS = {
-  business: "Ask about workload, delivery risks, trends, or management insights...",
-  technical: "Ask about tables, columns, data quality, SQL, or DORA definitions...",
+  business: "Ask Zara about portfolio risks, trends, or management actions...",
+  technical: "Ask Zara about sprint health, issues, risks, or reports...",
 };
 
 export function getSuggestionPrompt(workspace, index) {

@@ -121,6 +121,59 @@ _BASE_QUERIES = {
           AND BTRIM(j.dcpsquad) <> ''
         GROUP BY BTRIM(j.dcpsquad)
     """,
+    "jira_prioritized_open_bugs": """
+        SELECT
+            j.key AS jira_key,
+            COALESCE(NULLIF(BTRIM(j.priority), ''), 'Unknown') AS priority,
+            COALESCE(NULLIF(BTRIM(j.status), ''), 'Unknown') AS status,
+            COALESCE(NULLIF(BTRIM(j.status_category), ''), 'Unknown') AS status_category,
+            j.created,
+            CASE WHEN j.created IS NOT NULL
+                 THEN GREATEST(0, CURRENT_DATE - j.created::date) END AS age_days,
+            j.featurelink_key,
+            COALESCE((
+                SELECT STRING_AGG(BTRIM(release_value.value), ', ' ORDER BY BTRIM(release_value.value))
+                FROM json_array_elements_text(
+                    COALESCE(j.fixversions -> 'fixversions', '[]'::json)
+                ) AS release_value(value)
+            ), '') AS release_names,
+            COALESCE((
+                SELECT STRING_AGG(BTRIM(sprint_value.value ->> 'name'), ', ' ORDER BY BTRIM(sprint_value.value ->> 'name'))
+                FROM json_array_elements(
+                    COALESCE(j.sprints -> 'sprints', '[]'::json)
+                ) AS sprint_value(value)
+                WHERE BTRIM(COALESCE(sprint_value.value ->> 'name', '')) <> ''
+            ), '') AS sprint_names
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND LOWER(COALESCE(j.issuetype, '')) = 'bug'
+          AND j.resolved IS NULL
+          AND COALESCE(j.status_category, '') <> 'Done'
+          AND (
+              CAST(:dashboard_dcpsquad AS text) IS NULL
+              OR UPPER(BTRIM(j.dcpsquad)) = UPPER(CAST(:dashboard_dcpsquad AS text))
+          )
+          AND (
+              CAST(:dashboard_fixversion AS text) IS NULL
+              OR EXISTS (
+                  SELECT 1
+                  FROM json_array_elements_text(
+                      COALESCE(j.fixversions -> 'fixversions', '[]'::json)
+                  ) AS selected_release(value)
+                  WHERE BTRIM(selected_release.value) = CAST(:dashboard_fixversion AS text)
+              )
+          )
+          AND (
+              CAST(:dashboard_sprint AS text) IS NULL
+              OR EXISTS (
+                  SELECT 1
+                  FROM json_array_elements(
+                      COALESCE(j.sprints -> 'sprints', '[]'::json)
+                  ) AS selected_sprint(value)
+                  WHERE BTRIM(COALESCE(selected_sprint.value ->> 'name', '')) = CAST(:dashboard_sprint AS text)
+              )
+          )
+    """,
     "jira_issue_counts_by_status": """
         SELECT
             j.issuetype,
@@ -630,6 +683,7 @@ _FILTER_COLUMNS = {
     "database_squad_sources": {},
     "jira_distinct_squads": {},
     "jira_bug_counts_by_squad": {},
+    "jira_prioritized_open_bugs": {},
     "jira_issue_counts_by_status": {
         "issuetype": "approved.issuetype",
         "status": "approved.status",
@@ -695,6 +749,10 @@ _ORDER_BY = {
     ),
     "jira_distinct_squads": "approved.dcpsquad",
     "jira_bug_counts_by_squad": "approved.bug_count DESC, approved.dcpsquad",
+    "jira_prioritized_open_bugs": (
+        "CASE LOWER(approved.priority) WHEN 'high' THEN 0 WHEN 'medium' THEN 1 "
+        "WHEN 'low' THEN 2 ELSE 3 END, approved.age_days DESC NULLS LAST, approved.jira_key"
+    ),
     "jira_issue_counts_by_status": "approved.issue_count DESC, approved.status",
     "jira_unresolved_older_than_days": "approved.issue_count DESC, approved.status",
     "jira_backlog_by_status": "approved.issue_count DESC, approved.status",
@@ -796,7 +854,10 @@ def _normalize_filters(query_id: str, raw_filters: dict[str, Any]) -> dict[str, 
                 ) from exc
         elif key == "dcpsquad":
             value = str(raw_value).strip().upper()
-            if not re.fullmatch(r"[A-Z][A-Z0-9 _-]{1,40}", value):
+            # Length matches DashboardContext.squad (max_length=80) in
+            # schemas.py so a squad valid at the API boundary is not then
+            # rejected here. The charset allowlist is unchanged.
+            if not re.fullmatch(r"[A-Z][A-Z0-9 _-]{0,79}", value):
                 raise DoraDbQueryRejected("Invalid DoraDB squad")
             normalized[key] = value
         elif key == "jira_key":
@@ -892,6 +953,10 @@ def _build_statement(
         params["dcpsquad"] = filters["dcpsquad"]
     if query_id == "jira_unresolved_older_than_days":
         params["age_days"] = filters["age_days"]
+    if query_id == "jira_prioritized_open_bugs":
+        params["dashboard_dcpsquad"] = filters.get("dcpsquad")
+        params["dashboard_fixversion"] = filters.get("fixversion")
+        params["dashboard_sprint"] = filters.get("sprint")
     conditions: list[str] = []
     for key, column in _FILTER_COLUMNS[query_id].items():
         if key not in filters:

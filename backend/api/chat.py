@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
@@ -38,7 +39,21 @@ def chat(
     )
     if request.conversation_id and conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found.")
-    project_scope = {"project_key": request.project_key or settings.doradb_project_key}
+    # Dashboard scope arrives as structured context, never by rewriting the
+    # user's question to smuggle hidden scope text into it.
+    dashboard_context = (
+        request.dashboard_context.model_dump(mode="json", exclude_none=True)
+        if request.dashboard_context
+        else {}
+    )
+    active_project = (
+        dashboard_context.get("project")
+        or request.project_key
+        or settings.doradb_project_key
+    )
+    project_scope: dict[str, Any] = {"project_key": str(active_project).strip().upper()}
+    if dashboard_context:
+        project_scope["dashboard_context"] = dashboard_context
     if conversation is None:
         conversation = repository.create(
             user_id=user_id,
@@ -50,7 +65,30 @@ def chat(
     else:
         persisted_history = recent_history(conversation.messages)
     history = persisted_history or [item.model_dump() for item in request.history]
-    repository.add_message(conversation, role="user", content=request.message)
+    repository.add_message(
+        conversation,
+        role="user",
+        content=request.message,
+        structured_content={"metadata": {"dashboard_context": dashboard_context}},
+    )
+    agent_context = persistent_context(conversation.state or {})
+    agent_context["dashboard_context"] = dashboard_context
+    if dashboard_context:
+        # Seed the agent's active filters from the dashboard the user is
+        # looking at, so a question asked from a squad view is scoped to that
+        # squad without the user restating it.
+        last_context = dict(agent_context.get("last_context", {}))
+        filters = dict(last_context.get("filters", {}))
+        if dashboard_context.get("squad"):
+            filters["dcpsquad"] = dashboard_context["squad"]
+        if dashboard_context.get("release"):
+            filters["fixversion"] = dashboard_context["release"]
+        filters["project_key"] = project_scope["project_key"]
+        last_context["filters"] = filters
+        if dashboard_context.get("selected_metric"):
+            last_context["metric"] = dashboard_context["selected_metric"]
+        last_context["dashboard_context"] = dashboard_context
+        agent_context["last_context"] = last_context
     try:
         if settings.doradb_configured:
             with doradb_session() as real_session:
@@ -58,23 +96,24 @@ def chat(
                     request.message,
                     session_id=str(conversation.id),
                     history=history,
-                    persistent_context=persistent_context(conversation.state or {}),
+                    persistent_context=agent_context,
                     project_scope=project_scope,
                 )
         else:
-            # Safe conversation can still run through DeepSeek. Any plan that
-            # requires dataset evidence is rejected before query execution.
+            # Safe conversation can still run through the configured LLM. Any
+            # plan that requires dataset evidence is rejected before execution.
             result = DoraDbAgent(None).chat(
                 request.message,
                 session_id=str(conversation.id),
                 history=history,
-                persistent_context=persistent_context(conversation.state or {}),
+                persistent_context=agent_context,
                 project_scope=project_scope,
             )
         agent_persistence = result.pop("_persistence", {})
         result.setdefault("metadata", {})["conversation_id"] = str(conversation.id)
         result["metadata"]["workspace"] = request.workspace
         result["metadata"]["project_scope"] = project_scope
+        result["metadata"]["dashboard_context"] = dashboard_context
         repository.add_message(
             conversation,
             role="assistant",
@@ -101,6 +140,7 @@ def chat(
                 question=request.message,
                 answer=result["answer"],
                 agent_persistence=agent_persistence,
+                dashboard_context=dashboard_context,
             ),
         )
         return ChatResponse.model_validate(result)

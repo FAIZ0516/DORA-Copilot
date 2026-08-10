@@ -23,6 +23,7 @@ APPROVED_QUERY_IDS = {
     "database_squad_sources",
     "jira_distinct_squads",
     "jira_bug_counts_by_squad",
+    "jira_prioritized_open_bugs",
     "jira_issue_counts_by_status",
     "jira_unresolved_older_than_days",
     "jira_backlog_by_status",
@@ -73,6 +74,7 @@ ALLOWED_FILTERS = {
     "column_search",
     "age_days",
     "ageing_bucket",
+    "sprint",
 }
 
 QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
@@ -157,6 +159,25 @@ QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
         "default_limit": 100,
         "allowed_filters": ["project_key"],
         "expected_columns": ["dcpsquad", "bug_count"],
+    },
+    "jira_prioritized_open_bugs": {
+        "purpose": (
+            "Bounded open Jira bug evidence ranked by actual priority and calendar "
+            "age, exposing issue keys but no summary or people fields."
+        ),
+        "default_limit": 25,
+        "allowed_filters": ["project_key", "dcpsquad", "fixversion", "sprint"],
+        "expected_columns": [
+            "jira_key",
+            "priority",
+            "status",
+            "status_category",
+            "created",
+            "age_days",
+            "featurelink_key",
+            "release_names",
+            "sprint_names",
+        ],
     },
     "jira_issue_counts_by_status": {
         "purpose": "Non-sensitive Jira issue counts grouped by type and current status.",

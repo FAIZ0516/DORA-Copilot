@@ -249,6 +249,22 @@ def route_jira_request(message: str) -> AgentPlan | None:
             actions=actions,
         )
 
+    if "bug" in lowered and re.search(
+        r"\b(which|list|show|prioriti[sz]e|priority|highest|oldest|longest|investigate)\b",
+        lowered,
+    ):
+        return _plan(
+            mode="data",
+            intent=ANALYSIS,
+            reason="Retrieve bounded open bug records for transparent priority and age ranking.",
+            actions=[
+                _action(
+                    "jira_prioritized_open_bugs",
+                    reason="Return issue keys, actual priority, status, age, feature link, release, and sprint without issue text or people.",
+                )
+            ],
+        )
+
     if re.search(r"\bcount\b.*\bbugs?\b.*\bstatus", lowered):
         return _plan(
             mode="data",

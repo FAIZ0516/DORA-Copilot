@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -65,7 +66,7 @@ def _all_metrics_requested(question: str) -> bool:
 
 def _yearly_chart(
     rows: list[dict[str, Any]],
-    metric: dict[str, str],
+    metric: Mapping[str, object],
     question: str,
     requested_type: str,
 ) -> dict[str, Any]:
@@ -119,7 +120,9 @@ def _yearly_chart(
             "data": points,
         }
 
-    field = metric["field"]
+    field = str(metric["field"])
+    label = str(metric["label"])
+    unit = str(metric["unit"])
     points = [
         {"period": str(row["release_year"]), "value": float(row[field])}
         for row in rows
@@ -127,10 +130,10 @@ def _yearly_chart(
     ]
     return {
         "type": requested_type,
-        "title": f"{metric['label']} by year",
+        "title": f"{label} by year",
         "x_key": "period",
         "series": [
-            {"key": "value", "label": metric["label"], "unit": metric["unit"]}
+            {"key": "value", "label": label, "unit": unit}
         ],
         "data": points,
     }
@@ -140,7 +143,7 @@ def build_chart_spec(
     *,
     query_id: str,
     rows: list[dict[str, Any]],
-    metric: dict[str, str],
+    metric: Mapping[str, object],
     question: str,
 ) -> dict[str, Any] | None:
     """Map validated query rows to real chart coordinates and series."""
@@ -165,7 +168,7 @@ def build_chart_spec(
             ),
         }
         field, title, unit = detail_fields.get(
-            metric["id"],
+            str(metric["id"]),
             ("release_frequency", "Release frequency by release", "months"),
         )
         points = [

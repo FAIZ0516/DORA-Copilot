@@ -20,6 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ..config import settings
 from ..database.doradb import DoraDbConfigurationError, DoraDbQueryRejected
+from ..database.doradb_catalog import QUERY_CATALOGUE
 from ..knowledge_service import select_knowledge_sections
 from ..memory.memory import memory_store
 from ..memory.result_cache import (
@@ -153,6 +154,7 @@ class AgentOrchestrator:
             "query_cache": persistent.get("query_cache", []),
             "workspace": persistent.get("workspace", "technical"),
             "project_scope": persistent.get("project_scope", {}),
+            "dashboard_context": persistent.get("dashboard_context", {}),
         }
         context_reused = bool(
             memory.get("conversation_summary")
@@ -236,6 +238,24 @@ class AgentOrchestrator:
                 "reason": "No compatible cached evidence is available.",
                 "clarification": "",
             }
+        # Apply the dashboard's active scope (squad/release/sprint) to the
+        # planned queries. The user's question is deliberately NOT rewritten
+        # to carry hidden scope text; the scope arrives as structured
+        # `dashboard_context` and is applied here only where the selected
+        # query actually accepts that filter.
+        dashboard_context = state.get("memory", {}).get("dashboard_context", {}) or {}
+        dashboard_filters = {
+            "dcpsquad": dashboard_context.get("squad"),
+            "fixversion": dashboard_context.get("release"),
+            "sprint": dashboard_context.get("sprint"),
+        }
+        for action in plan.get("actions", []):
+            allowed = set(
+                QUERY_CATALOGUE.get(action["query_id"], {}).get("allowed_filters", [])
+            )
+            for key, value in dashboard_filters.items():
+                if value and key in allowed:
+                    action["filters"][key] = value
         metric = select_metric(state["message"])
         if (
             not message_mentions_metric(state["message"])
