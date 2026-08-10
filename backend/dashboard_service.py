@@ -10,7 +10,7 @@ from typing import Any, Callable
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .doradb import query_doradb
+from .database.doradb import query_doradb
 
 
 DashboardLoader = Callable[[], dict[str, Any]]

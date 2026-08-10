@@ -1,0 +1,352 @@
+"""Derives *how* the agent should communicate, kept separate from *what* it says.
+
+This is the Response Controller described in
+``AI_AGENT_PROJECT_RESTRUCTURING_GUIDE.md`` (Sections 20-41): a deterministic,
+testable module that turns the current message plus already-computed planning
+signals (intent, follow-up/cache state, validation) into one ``ResponsePolicy``.
+The responder (``orchestrator.py`` ``_analyze``/``_respond``/``_regenerate``) consults
+that policy instead of re-deriving tone/length/format/evidence rules ad hoc
+inside prompt strings.
+
+This module never calls the model and never touches the database. It only
+reads signals other deterministic layers (planner, result cache, validator)
+already computed, so it does not duplicate their detection logic -- see
+``backend.agent.planner`` for follow-up/context resolution and
+``backend.memory.result_cache`` for cache-reuse eligibility.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any, Literal, TypedDict
+
+from ..request_router import CLARIFICATION_REQUIRED, KNOWLEDGE_EXPLANATION
+
+
+Length = Literal["short", "normal", "detailed"]
+Format = Literal["paragraph", "bullets", "table", "chart_and_text", "structured_sections"]
+ExplanationLevel = Literal["layman", "standard", "technical", "executive"]
+EvidenceStyle = Literal[
+    "none_required", "brief_support", "metric_support", "detailed_evidence", "source_reference"
+]
+UncertaintyMode = Literal["normal", "explicit"]
+RecommendationMode = Literal["none", "evidence_based"]
+FollowUpType = Literal[
+    "none",
+    "deeper_explanation",
+    "comparison_extension",
+    "time_period_change",
+    "format_change",
+    "correction",
+    "challenge_verification",
+    "clarification",
+]
+LanguageHint = Literal["match_user", "ms"]
+
+# Stable product personality. Tone adapts to explicit requests; this baseline
+# never changes turn to turn (guide Section 40).
+PRODUCT_PERSONALITY = (
+    "professional, clear, calm, non-judgmental, evidence-first, helpful, "
+    "not overly verbose, not robotic"
+)
+
+# Guide Section 31: content is always ordered this way; it is a fixed
+# constant, not something derived per turn.
+PRIORITY_ORDER: tuple[str, ...] = (
+    "what answers the user's question",
+    "highest decision impact",
+    "strongest evidence",
+    "important risks/limitations",
+    "secondary detail",
+    "optional next steps",
+)
+
+
+class ResponsePolicy(TypedDict):
+    tone: str
+    length: Length
+    format: Format
+    explanation_level: ExplanationLevel
+    language: LanguageHint
+    is_follow_up: bool
+    follow_up_type: FollowUpType
+    context_reference: bool
+    evidence_style: EvidenceStyle
+    uncertainty_mode: UncertaintyMode
+    recommendation_mode: RecommendationMode
+    priority_order: tuple[str, ...]
+    suggest_next_action: bool
+
+
+_SHORT_REQUEST = re.compile(
+    r"\b(briefly|brief|in short|short answer|quick(?:ly)?|tl;?dr|one line|"
+    r"just the (?:answer|number)|only the answer)\b",
+    re.I,
+)
+_DETAILED_REQUEST = re.compile(
+    r"\b(detail(?:ed)?|in.?depth|thorough(?:ly)?|comprehensive|deep dive|"
+    r"explain (?:everything|fully|in full))\b",
+    re.I,
+)
+_TABLE_REQUEST = re.compile(
+    r"\b(table|tabular|raw data|evidence table|data rows?|records?|"
+    r"spreadsheet|csv)\b",
+    re.I,
+)
+_BULLET_REQUEST = re.compile(r"\b(bullet(?:s|ed)?(?: points?)?|as a list)\b", re.I)
+_PARAGRAPH_REQUEST = re.compile(
+    r"\b(as a paragraph|in paragraph form|no bullets|without bullet points|plain text)\b",
+    re.I,
+)
+_TECHNICAL_REQUEST = re.compile(r"\b(technical|under the hood|implementation detail)\b", re.I)
+_EXECUTIVE_REQUEST = re.compile(
+    r"\b(executive summary|for leadership|for management|high.?level summary)\b", re.I
+)
+_LAYMAN_REQUEST = re.compile(
+    r"\b(simply|in simple terms|explain like i'?m|non.?technical|plain english)\b", re.I
+)
+_CORRECTION = re.compile(
+    r"\b(that'?s (?:wrong|incorrect|not right)|that is (?:wrong|incorrect)|"
+    r"you'?re wrong|not correct|actually,? it'?s|i meant|correction:|"
+    r"no,? (?:it'?s|that'?s))\b",
+    re.I,
+)
+_CHALLENGE = re.compile(
+    r"\b(are you sure|double.?check|verify (?:that|this)|how do you know|"
+    r"prove it|what'?s your source|source\??$)\b",
+    re.I,
+)
+_REFRESH = re.compile(r"\b(current|latest|refresh|refreshed|rerun|re-run|updated)\b", re.I)
+_DEEPER = re.compile(r"\b(why|explain|elaborate|break\s*down|what do(?:es)? that mean)\b", re.I)
+_COMPARISON_EXTENSION = re.compile(
+    r"\b(compare (?:them|that|those)|which one|what about)\b", re.I
+)
+# Common Malay function words. Deliberately small and precision-first: a
+# false negative just falls back to mirroring the user's language via the
+# model prompt; a false positive would wrongly force a language switch.
+_MALAY_SIGNAL = re.compile(
+    r"\b(apa|macam mana|bagaimana|berapa|ada tak|boleh tak|tolong|"
+    r"terima kasih|kenapa|yang mana|squad mana|tak ada)\b",
+    re.I,
+)
+
+
+def _detect_length(message: str, *, intent: str, mode: str) -> Length:
+    if _SHORT_REQUEST.search(message):
+        return "short"
+    if _DETAILED_REQUEST.search(message):
+        return "detailed"
+    if mode == "conversation" and intent in {"greeting", "help"}:
+        return "short"
+    if mode == "out_of_scope":
+        return "short"
+    if intent in {"recommendation", "comparison", "anomaly"}:
+        return "normal"
+    return "normal"
+
+
+def _detect_format(message: str, *, intent: str) -> Format:
+    if _TABLE_REQUEST.search(message) or intent in {"issue_listing", "comparison"}:
+        # A comparison across consistent metrics reads best as a table
+        # (guide Section 30); an explicit table request always wins.
+        return "table"
+    if _PARAGRAPH_REQUEST.search(message):
+        return "paragraph"
+    if _BULLET_REQUEST.search(message):
+        return "bullets"
+    if intent == "discovery":
+        return "bullets"
+    return "paragraph"
+
+
+def _detect_explanation_level(message: str) -> ExplanationLevel:
+    if _EXECUTIVE_REQUEST.search(message):
+        return "executive"
+    if _TECHNICAL_REQUEST.search(message):
+        return "technical"
+    if _LAYMAN_REQUEST.search(message):
+        return "layman"
+    return "standard"
+
+
+def _detect_tone(message: str) -> str:
+    if _EXECUTIVE_REQUEST.search(message):
+        return "executive-facing"
+    if _TECHNICAL_REQUEST.search(message):
+        return "technical"
+    return "analytical"
+
+
+def _detect_follow_up(
+    message: str,
+    *,
+    is_follow_up: bool,
+    cache_reason: str,
+    plan_intent: str,
+) -> tuple[bool, FollowUpType]:
+    if _CORRECTION.search(message):
+        return True, "correction"
+    if plan_intent == CLARIFICATION_REQUIRED:
+        return False, "none"
+    if not is_follow_up:
+        return False, "none"
+    if _CHALLENGE.search(message):
+        return True, "challenge_verification"
+    if _TABLE_REQUEST.search(message) or _BULLET_REQUEST.search(message) or _PARAGRAPH_REQUEST.search(message):
+        return True, "format_change"
+    if cache_reason == "explicit_refresh" or _REFRESH.search(message):
+        return True, "time_period_change"
+    if _COMPARISON_EXTENSION.search(message):
+        return True, "comparison_extension"
+    if _DEEPER.search(message):
+        return True, "deeper_explanation"
+    return True, "deeper_explanation"
+
+
+def _detect_evidence_style(
+    *,
+    mode: str,
+    intent: str,
+    has_results: bool,
+    follow_up_type: FollowUpType,
+) -> EvidenceStyle:
+    if follow_up_type == "challenge_verification":
+        return "detailed_evidence"
+    if mode == "out_of_scope":
+        return "none_required"
+    if mode == "conversation" and intent in {"greeting", "help"}:
+        return "none_required"
+    if intent == KNOWLEDGE_EXPLANATION:
+        return "source_reference"
+    if mode == "data" and has_results:
+        return "detailed_evidence" if intent == "recommendation" else "metric_support"
+    if mode == "conversation":
+        return "brief_support"
+    return "brief_support"
+
+
+def _detect_uncertainty(
+    *,
+    warnings: list[str],
+    results: list[dict[str, Any]],
+) -> UncertaintyMode:
+    if warnings:
+        return "explicit"
+    if results and all(int(result.get("row_count", 0)) == 0 for result in results):
+        return "explicit"
+    return "normal"
+
+
+def _detect_language(message: str) -> LanguageHint:
+    return "ms" if _MALAY_SIGNAL.search(message) else "match_user"
+
+
+def derive_policy(
+    message: str,
+    *,
+    plan: dict[str, Any],
+    cache_reason: str = "",
+    query_result_reused: bool = False,
+    results: list[dict[str, Any]] | None = None,
+    warnings: list[str] | None = None,
+) -> ResponsePolicy:
+    """Compute the per-turn response policy.
+
+    ``plan`` is the planner's :class:`AgentPlan`. ``cache_reason`` and
+    ``query_result_reused`` come from ``result_cache.choose_cache_action``,
+    which already decided whether this turn reuses a prior result -- that
+    decision *is* the follow-up signal; this function only classifies its
+    sub-type and derives style from it, it does not re-detect follow-ups.
+    """
+
+    mode = str(plan.get("mode", ""))
+    intent = str(plan.get("intent", ""))
+    results = results or []
+    warnings = warnings or []
+
+    is_follow_up, follow_up_type = _detect_follow_up(
+        message,
+        is_follow_up=query_result_reused or bool(cache_reason == "eligible_follow_up"),
+        cache_reason=cache_reason,
+        plan_intent=intent,
+    )
+    has_results = bool(results) and any(result.get("rows") for result in results)
+
+    return {
+        "tone": _detect_tone(message),
+        "length": _detect_length(message, intent=intent, mode=mode),
+        "format": _detect_format(message, intent=intent),
+        "explanation_level": _detect_explanation_level(message),
+        "language": _detect_language(message),
+        "is_follow_up": is_follow_up,
+        "follow_up_type": follow_up_type,
+        "context_reference": is_follow_up,
+        "evidence_style": _detect_evidence_style(
+            mode=mode, intent=intent, has_results=has_results, follow_up_type=follow_up_type
+        ),
+        "uncertainty_mode": _detect_uncertainty(warnings=warnings, results=results),
+        "recommendation_mode": (
+            "evidence_based" if intent == "recommendation" and has_results else "none"
+        ),
+        "priority_order": PRIORITY_ORDER,
+        "suggest_next_action": mode == "data" and follow_up_type not in {"format_change", "correction"},
+    }
+
+
+def describe_policy(policy: ResponsePolicy) -> str:
+    """Render the policy as compact natural-language guidance for the prompt."""
+
+    lines = [
+        f"Product personality (always stable): {PRODUCT_PERSONALITY}.",
+        f"Requested tone for this turn: {policy['tone']}.",
+        f"Answer length: {policy['length']}.",
+        f"Answer format: {policy['format'].replace('_', ' ')}.",
+        f"Explanation level: {policy['explanation_level']}.",
+        f"Evidence style: {policy['evidence_style'].replace('_', ' ')}.",
+    ]
+    if policy["is_follow_up"]:
+        lines.append(
+            f"This message is a follow-up ({policy['follow_up_type'].replace('_', ' ')}). "
+            "Reuse the relevant prior conclusion, do not repeat the full previous "
+            "answer, and answer only the new information need."
+        )
+    else:
+        lines.append("This is a new request; do not assume unstated prior context.")
+    if policy["follow_up_type"] == "correction":
+        lines.append(
+            "The user is correcting a prior statement. Accept the correction if "
+            "appropriate, update accordingly, and do not defend the earlier answer. "
+            "If the correction conflicts with the validated data, say so and explain "
+            "the conflict instead of silently agreeing."
+        )
+    if policy["uncertainty_mode"] == "explicit":
+        lines.append(
+            "State plainly what is known, what is missing, and how that affects the "
+            "conclusion. Do not invent precision."
+        )
+    else:
+        lines.append("The evidence is sufficient; do not add unnecessary uncertainty disclaimers.")
+    if policy["recommendation_mode"] == "evidence_based":
+        lines.append("Base every recommendation directly on the supplied evidence.")
+    else:
+        lines.append("Do not volunteer recommendations unless the user asked for them.")
+    lines.append(
+        "Respond in Bahasa Melayu."
+        if policy["language"] == "ms"
+        else "Respond in the same language the user used for this message."
+    )
+    lines.append(
+        "Offer at most one or two concise, specific next steps."
+        if policy["suggest_next_action"]
+        else "Do not append a suggested next action to this answer."
+    )
+    return "\n".join(f"- {line}" for line in lines)
+
+
+__all__ = [
+    "PRIORITY_ORDER",
+    "PRODUCT_PERSONALITY",
+    "ResponsePolicy",
+    "derive_policy",
+    "describe_policy",
+]

@@ -1,281 +1,255 @@
-# DORA Copilot — Master Instruction File
+# AGENTS.md — Developer Guide for DORA Copilot
 
-> **Read by both the IDE coding assistant AND the DeepSeek chatbot at runtime.**
-> Every rule in this file is binding. No exceptions without explicit user override.
-
----
-
-## ⚠️ RESPONSE PROTOCOL (ACTIVE — DO NOT SKIP)
-
-**Before answering ANY user prompt — including greetings, follow-ups, clarifications, and code tasks — you MUST begin your response with exactly:**
-
-```
-YES ,I,M ZARA.
-```
-
-This is a non-negotiable, always-on directive. No exceptions for brevity, casual tone, or conversational flow. The phrase must appear verbatim as the first line of every response, before any other text, code block, or tool output commentary.
+> **This file is for the coding agent/IDE working on this repository
+> (Claude Code, Codex, or a human).** It is durable development guidance:
+> layout, stack, commands, conventions, and boundaries.
+>
+> It is **not** loaded into the chatbot's runtime prompt. The AI assistant's
+> persona, standard operating procedure, guardrails, and response templates
+> live in [`backend/agent/INSTRUCTIONS.md`](backend/agent/INSTRUCTIONS.md),
+> which `instruction_loader.py` reads live on every chat request. Keep these
+> two files separate: editing this one changes how the repo is developed;
+> editing that one changes what real users see immediately.
 
 ---
 
-## 1. Identity & Persona
+## 1. Project purpose
 
-You are **DORA Copilot**, an AI assistant embedded in a DORA Intelligence dashboard. You have direct read-only access to a live PostgreSQL database called **DoraDB** containing Jira issue data and DORA delivery metrics for the **DCPM** project.
+A FastAPI + React conversational AI application ("DORA Copilot") that answers
+questions about a real, read-only PostgreSQL database (**DoraDB**) holding
+Jira issue data and DORA delivery metrics for the **DCPM** project. DeepSeek
+(with a Google AI Studio / Ollama fallback) provides generative planning and
+natural-language responses; every factual claim must be backed by an approved,
+parameterized query executed in the same session.
 
-Your voice is:
-- **Analytical** — you ground every claim in queried evidence, never fabrication.
-- **Honest** — you state limitations, missing data, and uncertainty clearly.
-- **Concise** — you answer the question directly, then add context only if it adds value.
-- **Helpful** — you guide users toward better questions when their request is ambiguous.
+## 2. Repository layout
 
----
-
-## 2. Knowledge Base — Required Reading
-
-Before answering ANY data question, you must understand these reference documents:
-
-### 2.1 Jira Issues Table Guide
-
-**File:** `backend/knowledge/jira_issues.md`
-
-This is the authoritative reference for `public.tbl_gdt_dte_jira_issues` — the main Jira issue snapshot table. It documents:
-- All 26 columns with data types, nullability, and business meanings
-- JSON column structures (fixversions, labels, issuelinks, sprints, subtasks)
-- Related materialized views and logical relationships
-- Data quality findings (missing squad: 63,481 rows, missing progress_pct: 64,874, etc.)
-- Safe exploration queries and interpretation rules
-- The 30 rules for AI assistants (Section 15 of the guide)
-
-**You MUST apply all 30 AI assistant rules from Section 15 of jira_issues.md.** The most critical rules are:
-
-1. Use `public.tbl_gdt_dte_jira_issues` with exact column names from the guide
-2. Use `key` for human-facing issue references, `id` only for technical joins
-3. `Done` status category includes Cancelled and Rejected — it is an end-state, NOT automatic success
-4. `resolved - created` is calendar issue resolution duration, NOT cycle time or DORA lead time
-5. Story points, due dates, severity, descriptions, and status history DO NOT EXIST in this table
-6. All timestamps are `timestamp without time zone` — timezone is unknown
-7. JSON columns need `json_array_length(column -> 'inner_key') > 0` checks, not just `IS NOT NULL`
-8. Never expose summary, reporter, assignee, root_cause, or how_to_fix text unless authorized
-9. Always state date ranges, filters, and null handling when presenting numbers
-10. Check for `resolved < created` (invalid intervals) before calculating durations
-
-### 2.2 Data Dictionary
-
-**File:** `backend/context/data_dictionary.yaml`
-
-Defines governed dimensions (project, squad, release year, release, issue type, status, metric) and their runtime business meanings. Current dimension values are discovered dynamically from DoraDB — never hard-code them.
-
----
-
-## 3. Standard Operating Procedure — How to Handle EVERY Request
-
-Follow this workflow for **every** user message. Do not skip steps.
-
-### Step 1: Classify the Request
-
-Determine what the user is asking for:
-
-| Category | Examples | Action |
-|---|---|---|
-| **Greeting / Small Talk** | "Hello", "How are you?" | Respond briefly, then offer to help with data. |
-| **Data Question** | "How many bugs?", "Show open work by squad" | Go to Step 2 — QUERY THE DATABASE. |
-| **Dashboard Click** | User clicks a KPI card or breakdown bar | The frontend sends a prompt — treat as a data question. |
-| **Explanation Request** | "What does status_category mean?" | Answer from jira_issues.md knowledge. |
-| **Out of Scope** | Writes, deletes, credential requests | Refuse politely with reason. |
-
-### Step 2: Query the Database FIRST
-
-**CRITICAL RULE: You MUST query the database before giving any data answer.** Never answer from memory, assumption, or training data. Every factual claim must be backed by a query result from THIS session.
-
-#### Available Query Tools
-
-You have access to these approved, read-only query IDs. Use them via the planner (no raw SQL):
-
-**Discovery queries** (find what values exist):
-- `list_dimension_values` — List current values for any governed dimension (projects, squads, years, releases, issue types, statuses, metrics). REQUIRED FILTER: `dimension`.
-
-**Jira issue queries** (query the main Jira table):
-- `jira_dashboard_kpis` — Total issues, open work, impeded, missing squad counts
-- `jira_dashboard_status_categories` — Issues grouped by status category (To Do, In Progress, Done)
-- `jira_dashboard_issue_types` — Issues grouped by issue type (Bug, Story, Task, Feature, etc.)
-- `jira_dashboard_open_ageing` — Open issues grouped by age bucket (<30, 30-60, 61-90, >90 days)
-- `jira_dashboard_data_quality` — Missing squad, assignee, invalid resolution counts
-- `jira_open_work_breakdown` — Open work by type, priority, and squad
-- `jira_impeded_breakdown` — Impeded/blocked issues by type, priority, and age
-- `jira_issue_counts_by_status` — Count issues by detailed status
-- `jira_bug_counts_by_squad` — Bug distribution across squads
-- `jira_bug_resolution_trend` — Bug creation vs resolution over time
-- `jira_unresolved_older_than_days` — Find unresolved issues older than N days
-- `jira_backlog_by_status` — Backlog composition by status
-- `jira_distinct_squads` — List all squads with Jira data
-
-**DORA metrics queries** (delivery performance):
-- `dora_metrics_by_year` — DORA metrics (release frequency, change failure rate, lead time, cycle time) by release year
-- `dora_metrics_by_squad` — DORA metrics broken down by squad
-- `dora_metrics_release_detail` — Per-release DORA metric details
-- `feature_vs_release_frequency` — Feature counts vs release frequency
-- `feature_vs_user_story` — Feature to user story mapping
-- `story_to_feature_ratio` — User story to feature ratio analysis
-
-**Database schema queries** (explore table structure):
-- `database_schema_objects` — List tables and views
-- `database_table_presence` — Check if a table exists
-- `database_columns` — List columns for a table
-- `database_metric_columns` — Find metric-related columns
-- `database_squad_sources` — Find squad-related data sources
-
-#### How to Query
-
-1. **Pick the right query ID** based on what the user is asking
-2. **Set appropriate filters** — always include `project_key` (default: "DCPM"), add dimension-specific filters as needed
-3. **Respect limits** — default limit is 50-100 rows depending on query
-4. **Use multiple queries if needed** — e.g., get KPIs + status breakdown for a complete picture
-
-### Step 3: Analyze the Results
-
-- Check if results are empty — state this clearly, don't invent data
-- Check for nulls and data quality issues
-- Apply the interpretation rules from jira_issues.md
-- Identify patterns, trends, anomalies
-- Calculate derived metrics only from returned values
-
-### Step 4: Compose Your Answer
-
-Structure every data answer with:
-1. **Direct answer** — answer the question in the first sentence
-2. **Supporting evidence** — the specific numbers from the query
-3. **Context** — date range, filters applied, project scope
-4. **Limitations** — what the data CANNOT tell you (missing data, snapshot nature, etc.)
-5. **Next steps** (optional) — suggest related questions the user might ask
-
----
-
-## 4. Interpretation Rules — How to Read the Data Correctly
-
-These rules prevent common mistakes. Apply them to every response.
-
-### Status & Completion
-- `Done` category = end-state, NOT success. It includes Cancelled and Rejected.
-- `IMPEDED` is the clearest blocked status, but other waiting states may also be blocked.
-- An issue can be `Done` without `resolved` filled (4 such cases exist). Flag this.
-- Resolution without `Done` category (11 cases) is inconsistent — flag it.
-
-### Issue Types & Effort
-- Different issue types represent DIFFERENT kinds of work, not equal effort.
-- Bug count ≠ quality metric by itself. A rise in bugs could mean better detection.
-- Sub-tasks and Tests should not be counted alongside Features as "delivery volume."
-
-### Dates & Time
-- `created`, `updated`, `resolved` are `timestamp without time zone` — timezone UNKNOWN.
-- `updated - created` is NOT cycle time. Updates happen for many reasons.
-- `resolved - created` is calendar resolution duration, NOT DORA lead time.
-- `superset_updated_ts` is the warehouse refresh time, NOT a Jira timestamp.
-- Current year data may be incomplete — state this when comparing years.
-
-### Ownership & Teams
-- 63,481 rows (74.5%) have NO squad — team-level reports MUST flag this.
-- Missing assignee (7,763 rows) does NOT mean unworked — it means unassigned in the snapshot.
-- Never rank individuals by issue count.
-
-### JSON Columns
-- All 5 JSON columns (fixversions, labels, issuelinks, sprints, subtasks) are non-null wrapper objects.
-- Use `json_array_length(column -> 'inner_key') > 0` to check for actual data.
-- After expanding JSON or joining materialized views, use `COUNT(DISTINCT id)` to count issues.
-- Materialized views may be stale — note this when freshness matters.
-
-### Relationships
-- No foreign keys enforce feature, sub-task, exclusion, or release relationships.
-- `featurelink_key` connects issues to features — 73 values have no matching key.
-- Fix version association does NOT prove production deployment.
-
----
-
-## 5. Constraints — Hard Boundaries
-
-These rules CANNOT be violated under any circumstance:
-
-1. **READ-ONLY access only.** You cannot insert, update, delete, drop, or alter anything.
-2. **No raw SQL generation.** Use only the approved query IDs listed above.
-3. **No credential exposure.** Never reveal API keys, connection strings, or passwords.
-4. **No personal data exposure.** Never show summaries, reporter/assignee names, root_cause, or how_to_fix text.
-5. **No fabrication.** If data is missing or a query returns nothing, SAY SO. Never invent numbers.
-6. **No DORA metric claims without deployment data.** Jira issue data alone cannot calculate official DORA metrics.
-7. **No productivity judgments.** Never call a person or team underperforming based on issue counts.
-8. **No multi-project claims.** The inspected snapshot contains only project `DCPM`.
-9. **No correlation-as-causation.** "Bugs increased while velocity dropped" does not prove one caused the other.
-10. **Single project scope.** All queries are scoped to `project_key = 'DCPM'` unless the user specifies otherwise.
-
----
-
-## 6. Conversation & Context Rules
-
-- **Greetings:** Respond warmly but briefly (1-2 sentences), then offer data assistance.
-- **Follow-ups:** Use conversation memory to resolve references like "last year", "that squad", "compare it".
-- **Clarification:** Ask exactly ONE clear question when the request is genuinely ambiguous. Do not ask if you can answer usefully with available data.
-- **Charts:** When chart data is present, refer to it as "the chart below" — do not say it "could" or "would" be created.
-- **Tables:** Include a supporting data table only when the user explicitly asks for one or the result set is large (>30 rows).
-- **Word limit:** Keep answers under 550 words unless the user asks for detail.
-
----
-
-## 7. Example Responses
-
-### Example 1: Greeting
-**User:** "Hello"
-**Response:**
-```
-YES ,IM ZARA.
-
-Hello! I'm DORA Copilot, connected to the DCPM project database. I can help you explore Jira issues, delivery metrics, squad workloads, and trends. What would you like to know?
+```text
+AGENTS.md                          # this file — IDE/development guidance only
+.codex/                            # captured reference notes (not project-specific)
+frontend/                          # React 18 + Vite chat UI
+backend/
+  main.py                          # FastAPI app + middleware/lifespan — composition root only
+  config.py                        # typed Settings, loaded from .env
+  schemas.py                       # Pydantic API request/response contracts
+  conversation_context.py          # persisted per-conversation summary/cache builder
+  conversation_repository.py       # conversation/message persistence (SQLAlchemy)
+  dashboard_service.py             # cached Jira dashboard aggregates (REST, non-chat)
+  knowledge_service.py             # verified Jira documentation lookup
+  knowledge/jira_issues.md         # the verified documentation itself
+  llm.py                           # multi-provider LLM client (DeepSeek/Gemini/Ollama)
+  tts.py                           # ElevenLabs TTS with monthly quota accounting
+  doradb_agent.py                  # thin backward-compatible re-export of the agent
+  context/
+    data_dictionary.yaml           # governed dimension definitions (loaded at runtime)
+  api/                             # FastAPI routers — request handling lives here
+    dependencies.py, conversations.py, chat.py, dashboard.py, system.py, tts.py
+  tools/                           # capabilities the agent may call
+    query_execution.py             # the one tool: run an approved DoraDB query
+  services/                        # deterministic, reusable business/domain logic
+    chart_generation.py, comparison.py, trend_analysis.py, anomaly_detection.py,
+    filter_extraction.py, intent_matching.py, metric_selection.py,
+    entity_grounding.py, dimension_discovery.py
+  database/                        # data access, isolated from AI behavior
+    db.py                          # writable runtime DB (conversations, TTS usage)
+    doradb.py                      # read-only DoraDB engine + approved parameterized SQL
+    doradb_catalog.py              # approved query/metric catalogue (metadata, no SQL)
+  memory/                          # conversation state, top-level (not agent-only)
+    memory.py                      # bounded in-process session memory (LRU)
+    result_cache.py                # per-conversation query-result reuse/follow-up eligibility
+  agent/                           # the governed LangGraph agent
+    INSTRUCTIONS.md                # RUNTIME system prompt (see warning above)
+    instruction_loader.py          # reads INSTRUCTIONS.md + skills live, every request
+    agent_definition.py            # AdvancedDoraDbAgent: builds/configures the graph
+    context.py                     # RuntimeContext — one chat turn's application state
+    orchestrator.py                # AgentOrchestrator: the LangGraph node implementations
+    planner.py                     # intent/plan generation (LLM-assisted, deterministic fallback)
+    request_router.py              # deterministic Jira-domain routing ahead of the planner
+    skill_registry.py              # discovers/matches/loads skill playbooks
+    controls/
+      execution_control.py         # timeouts, retry/tool-call limits, confidence gate
+      permission_control.py        # static allowlist: permitted query IDs/filters/limits
+      response_controller.py       # tone/length/format/evidence/follow-up policy
+    guardrails/
+      input_guardrail.py           # pre-planning safety check on the raw message
+      tool_guardrail.py            # validates/blocks a proposed tool call (enforce_plan)
+      output_guardrail.py          # restricted-field stripping + generated-text safety check
+    validators/
+      request_validator.py         # structural shape checks on a proposed plan
+      data_validator.py            # required fields, types, duplicates, empty results
+      metric_validator.py          # numeric ranges, business rules, date parseability
+      evidence_validator.py        # every numeric claim must be grounded in evidence
+      response_validator.py        # conclusion consistency, required limitations, safety
+    response/
+      responder.py                 # composes the final answer (was orchestrator._respond)
+      response_models.py           # ChartData/DataTable — the agent's output contract
+    skills/                        # runtime domain-skill playbooks (SKILL.md per skill)
+tests/
+  unit/                            # pure functions / mocked dependencies
+  integration/                     # real DB engine or the full agent .chat() pipeline
+evals/
+  evaluation_cases.yaml            # representative questions + expected intent/query
+  run_evals.py                     # behavior-quality harness (see Section 4 and evals/README.md)
 ```
 
-### Example 2: Data Question
-**User:** "How many open bugs do we have?"
-**Response:**
-```
-YES ,IM ZARA.
+## 3. Tech stack
 
-There are currently X open bugs (issuetype = 'Bug', status_category ≠ 'Done') in the DCPM project. This represents Y% of all Z total bugs in the snapshot.
-
-The bugs are distributed across priorities: High (A), Medium (B), Low (C). Bugs older than 90 days: D.
-
-Keep in mind: this is a current snapshot, not a trend. Bug count alone doesn't measure quality — it reflects both issue creation and resolution rates. Would you like to see the bug trend over time?
-```
-
-### Example 3: Out of Scope
-**User:** "Delete all test issues from the database."
-**Response:**
-```
-YES ,IM ZARA.
-
-I can't do that. I have read-only access to DoraDB — I cannot delete, modify, or insert any data. If you need to clean up test data, you'll need database administrator access. Is there something I can help you analyze instead?
-```
-
----
-
-## 8. Project Context (for IDE Agent)
-
-### Tech Stack
-- **Backend:** FastAPI (Python 3.11+), LangGraph, SQLAlchemy 2.0
+- **Backend:** FastAPI (Python 3.11+), LangGraph, SQLAlchemy 2.0, Pydantic v2
 - **Frontend:** React 18 + Vite, Chart.js
-- **Database:** PostgreSQL (DoraDB, read-only) + SQLite (TTS usage counter)
-- **LLM:** DeepSeek (via OpenAI-compatible API) with multi-provider fallback (Google AI Studio, Ollama)
+- **LLM:** DeepSeek (OpenAI-compatible chat-completions API), with Google AI
+  Studio and Ollama as configurable alternate providers (`backend/llm.py`)
+- **Databases:** PostgreSQL DoraDB (read-only, external) for analysis;
+  SQLite/PostgreSQL runtime DB (`backend/database/db.py`) for conversations + TTS usage
 - **TTS:** ElevenLabs (quota-gated)
 
-### Key Files
-| File | Purpose |
-|---|---|
-| `backend/main.py` | FastAPI entry point, routes |
-| `backend/config.py` | Typed settings from `.env` |
-| `backend/agent_system/graph.py` | LangGraph agent workflow |
-| `backend/agent_system/planner.py` | Intent planning + query selection |
-| `backend/doradb_catalog.py` | Approved query catalogue + metric definitions |
-| `backend/doradb.py` | Database connection + query execution |
-| `backend/knowledge/jira_issues.md` | Jira table reference guide |
-| `backend/context/data_dictionary.yaml` | Dimension definitions |
+## 4. Architecture — where each responsibility lives
 
-### Architecture Rules
-1. DoraDB is strictly read-only — enforced at connection level
-2. Credentials never reach the LLM or frontend
-3. DeepSeek is the primary planner; deterministic routing is fallback only
-4. All dimension values discovered dynamically — never hard-coded
-5. `.env` is git-ignored; use `.env.example` as template
+| Responsibility | Lives in |
+|---|---|
+| API / chat interface | `backend/api/` (routers), `backend/main.py` (composition root) |
+| Runtime agent instructions (system prompt) | `backend/agent/INSTRUCTIONS.md`, read by `instruction_loader.py` |
+| Runtime task-specific skills | `backend/agent/skills/<name>/SKILL.md`, matched/loaded by `skill_registry.py` |
+| Planning / intent routing | `backend/agent/planner.py`, `request_router.py` |
+| Runtime agent definition | `backend/agent/agent_definition.py` |
+| Runtime context | `backend/agent/context.py` (`RuntimeContext`) |
+| Orchestration (node implementations) | `backend/agent/orchestrator.py` (`AgentOrchestrator`) |
+| Response composition | `backend/agent/response/responder.py` |
+| Response control (tone/length/format/evidence/follow-up) | `backend/agent/controls/response_controller.py` |
+| Execution control (timeouts, retry/tool-call limits, approval) | `backend/agent/controls/execution_control.py` |
+| Permission control (static query/filter allowlist) | `backend/agent/controls/permission_control.py` |
+| Input guardrail | `backend/agent/guardrails/input_guardrail.py` |
+| Tool guardrail (blocks disallowed/malformed tool calls) | `backend/agent/guardrails/tool_guardrail.py` (`enforce_plan`) |
+| Output guardrail (restricted-field stripping + leak check) | `backend/agent/guardrails/output_guardrail.py` |
+| Tools + approved query catalogue | `backend/tools/query_execution.py`, `backend/database/doradb_catalog.py` |
+| Data access (parameterized, read-only SQL) | `backend/database/doradb.py`, `db.py` |
+| Domain/business logic (deterministic analytics) | `backend/services/*.py` |
+| Validation (request/data/metric/evidence/response) | `backend/agent/validators/*.py` |
+| Conversation state / memory | `backend/memory/*.py`, `backend/conversation_context.py`, `conversation_repository.py` |
+| Tracing / observability | `backend/agent/audit.py`, `/api/audit/recent`, `response_policy`/`input_guardrail` in every turn's metadata |
+| Testing | `tests/unit/`, `tests/integration/` |
+| Agent behavior evaluation | `evals/` (informational, not pytest-gated — see `evals/README.md`) |
+| AI IDE dev skills (Codex/coding workflows) | none yet — see Section 8 before adding any |
+
+This mapping is the source of truth. Do not create a parallel module for a
+responsibility that already lives somewhere on this list — move or improve
+the existing one instead.
+
+## 5. Runtime vs IDE instruction separation
+
+This project used to load the entire root `AGENTS.md` directly into the
+chatbot's system prompt (including this developer-facing content), and stored
+its runtime skill playbooks under `.codex/skills/`, a location conventionally
+reserved for IDE-discoverable development skills. Both were restructured:
+
+- **Runtime system prompt** → `backend/agent/INSTRUCTIONS.md` (persona,
+  standard operating procedure, skill-trigger table, steering, guardrails,
+  validation checklist, response templates, out-of-context policy). Read live
+  by `instruction_loader.py` on every request.
+- **Runtime domain skills** → `backend/agent/skills/<name>/SKILL.md`
+  (19 Jira/DORA playbooks). Discovered, matched to the current message, and
+  loaded by `skill_registry.py`, which `response/responder.py` calls (via
+  `instruction_loader.load_system_instructions`) on every turn. `skill_registry.py`
+  was added because the original scan only ever pulled a skill's
+  `name`/`description` into the prompt and discarded its body — the model
+  never actually received the matched skill's query IDs, interpretation
+  rules, response template, or common mistakes despite `INSTRUCTIONS.md`
+  §2 saying to "load and follow" it. Matching is deterministic (regex per
+  skill, tested in `tests/unit/test_skill_registry.py`), not left to the
+  model to re-derive from the routing table every turn.
+- **This file** → durable IDE/development guidance only. Never read by the
+  running application.
+
+When adding to either instruction file, put durable engineering guidance
+here and product/persona/policy behavior in `INSTRUCTIONS.md`. Do not merge
+them back into one file.
+
+## 6. Commands
+
+```powershell
+# Backend
+.\.venv\Scripts\Activate.ps1
+uvicorn backend.main:app --reload --port 8000
+.\.venv\Scripts\python.exe -m pytest tests -q
+.\.venv\Scripts\python.exe evals\run_evals.py
+
+# Frontend
+Set-Location frontend
+npm run dev
+npm run build
+npm test
+```
+
+Or use the VS Code workspace task: `Terminal -> Run Task -> DORA: Start All`
+(see `DORA-Copilot.code-workspace`).
+
+## 7. Coding conventions
+
+- **No arbitrary SQL.** All DoraDB access goes through the approved,
+  parameterized query catalogue in `database/doradb_catalog.py` + `doradb.py`.
+  Adding a new query means adding a catalogue entry and a static SQL
+  template, never string-built SQL.
+- **Guardrails and validation are enforced in code**, not only in
+  `INSTRUCTIONS.md` prose. `guardrails/tool_guardrail.py` allowlists tools/
+  filters/limits; `validators/*.py` check metric ranges and evidence
+  grounding deterministically. Prompt text is a second layer, not the only
+  layer.
+- **One deterministic implementation per calculation.** Business logic
+  (comparisons, trends, anomaly detection, chart specs, filter extraction)
+  lives once in `backend/services/`, reused by both the planner and the
+  responder — never recompute the same thing in a prompt.
+- Keep new state on `AgentState` (`agent/state.py`) typed, not stringly keyed.
+- Prefer extending an existing module over adding a new one; only split when
+  a file mixes genuinely unrelated responsibilities or needs different tests
+  — most `controls/`/`guardrails/`/`validators/` files here are intentionally
+  small and single-purpose; don't further fragment them without a real new
+  responsibility to isolate.
+- `backend/agent/orchestrator.py`'s `AgentOrchestrator` and
+  `agent_definition.py`'s `AdvancedDoraDbAgent(AgentOrchestrator)` split node
+  *behavior* from agent *configuration*; `response/responder.py` is a
+  separate `Responder` object (not a method on the agent) so it can be
+  constructed and tested with just an LLM client, no graph required.
+
+## 8. Adding a Codex/IDE development skill
+
+`.agents/` and `.codex/skills/` are reserved for **coding-workflow** skills
+(e.g. "add-api-endpoint", "database-migration", "security-review") — reusable
+development recipes, not product behavior. This project does not currently
+have any; don't create placeholder ones. Add a skill only when a development
+workflow is genuinely repeated, has a clear trigger, and benefits from a
+fixed sequence. Domain/product skills (Jira/DORA playbooks) belong in
+`backend/agent/skills/`, not here.
+
+## 9. Security expectations
+
+- DoraDB connections are opened with `default_transaction_read_only=on` and a
+  statement timeout; never remove this.
+- Only `APPROVED_QUERY_IDS` in `database/doradb_catalog.py` may execute;
+  filters are normalized and validated per-query in
+  `database/doradb.py::_normalize_filters`, and re-validated independently by
+  `guardrails/tool_guardrail.py` before that.
+- Credentials (`DEEPSEEK_API_KEY`, `DORADB_PASSWORD`, `ELEVENLABS_API_KEY`,
+  etc.) live only in `.env` (git-ignored). Never log them, never send them to
+  the model, never add them to `INSTRUCTIONS.md` or any skill file.
+- `backend/context/data_dictionary.yaml` is the only file under
+  `backend/context/` that production code loads (`doradb_catalog.py`). Don't
+  add speculative YAML config there that nothing reads.
+- The unsafe-request guardrail (`services/intent_matching.py::_UNSAFE`) is a
+  regex heuristic, not exhaustive — see `evals/README.md` for known gaps
+  (e.g. credential-request phrasing) before assuming it catches everything.
+
+## 10. Definition of done / how to verify a change
+
+1. `.\.venv\Scripts\python.exe -m pytest tests -q` passes.
+2. If you touched `frontend/`, `npm run build` (and `npm test` if relevant)
+   passes.
+3. If you changed agent behavior (planner, control, guardrail, validator,
+   response_controller, orchestrator), add or update a test under
+   `tests/unit/` or `tests/integration/` — don't rely on manual chat testing
+   alone. Consider running `evals\run_evals.py` too if you touched intent
+   classification or planning.
+4. If you changed `backend/agent/INSTRUCTIONS.md` or any file under
+   `backend/agent/skills/`, treat it as a product change: the effect
+   is live on the next chat request, not just on redeploy.
+5. No new duplicate implementation of an agent runner, planner, guardrail,
+   validator, or query catalogue was introduced — reuse or extend the modules
+   listed in Section 4.

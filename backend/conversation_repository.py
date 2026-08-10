@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import Conversation, ConversationMessage
+from .database.db import Conversation, ConversationMessage
 
 
 WORKSPACES = {"business", "technical"}

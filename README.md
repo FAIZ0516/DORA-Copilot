@@ -4,6 +4,11 @@ A FastAPI and React conversational AI application for the real local PostgreSQL
 DoraDB database. DeepSeek provides generative planning and natural-language
 responses. There is no synthetic Jira project mode and no local LLM runtime.
 
+> **Architecture docs:** [`AGENTS.md`](AGENTS.md) is the developer/IDE guide
+> (layout, stack, conventions). [`backend/agent/INSTRUCTIONS.md`](backend/agent/INSTRUCTIONS.md)
+> is the live runtime system prompt read by the chatbot on every request —
+> the two are intentionally separate files.
+
 ## Runtime architecture
 
 ```text
@@ -17,7 +22,8 @@ User question
   -> parameterized read-only PostgreSQL execution
   -> result validation and one controlled repair
   -> deterministic comparison, trend, anomaly, chart, and table skills
-  -> DeepSeek evidence synthesis
+  -> response policy derivation (tone, length, format, evidence, follow-up type)
+  -> DeepSeek evidence synthesis, guided by that policy
   -> answer consistency validation
   -> privacy-safe audit metadata
 ```
@@ -110,7 +116,8 @@ Open `http://localhost:5173`.
 ## Validation
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest backend\tests -q
+.\.venv\Scripts\python.exe -m pytest tests -q
+.\.venv\Scripts\python.exe evals\run_evals.py
 Set-Location frontend
 npm run build
 ```

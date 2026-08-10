@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .db import TTSUsage
+from .database.db import TTSUsage
 
 
 class TTSNotConfiguredError(RuntimeError):

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .agent_system.result_cache import build_cache_entry
+from .memory.result_cache import build_cache_entry
 from .config import settings
-from .db import ConversationMessage
+from .database.db import ConversationMessage
 
 
 def recent_history(messages: list[ConversationMessage]) -> list[dict[str, str]]:

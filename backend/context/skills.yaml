@@ -1,9 +1,0 @@
-{
-  "pipeline": [
-    "entity_grounding", "context_resolution", "intent_matching",
-    "filter_extraction", "metric_selection",
-    "query_execution", "comparison", "trend_analysis",
-    "anomaly_detection", "chart_generation", "summarisation"
-  ],
-  "controls": ["plan_validation", "result_validation", "answer_validation"]
-}

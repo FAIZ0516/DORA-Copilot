@@ -6,6 +6,11 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
+# ChartData/DataTable are the agent response layer's own output contract
+# (backend/agent/response/response_models.py); re-exported here so the API
+# layer's ChatResponse can reference them without a second definition.
+from .agent.response.response_models import ChartData, ChartSeries, DataTable
+
 
 class ChatHistoryItem(BaseModel):
     """One bounded conversation turn supplied by the browser."""
@@ -37,45 +42,6 @@ class ChatRequest(BaseModel):
     @classmethod
     def normalize_project(cls, value: str | None) -> str | None:
         return value.strip().upper() if value else None
-
-
-class ChartSeries(BaseModel):
-    key: str
-    label: str
-    unit: str = ""
-
-
-class ChartData(BaseModel):
-    type: Literal[
-        "bar",
-        "horizontal_bar",
-        "stacked_bar",
-        "line",
-        "area",
-        "pie",
-        "donut",
-        "scatter",
-        "radar",
-        "polar_area",
-        "table",
-        "metric_card",
-    ]
-    title: str
-    x_key: str | None = None
-    x_label: str | None = None
-    point_label_key: str | None = None
-    series: list[ChartSeries] = Field(default_factory=list)
-    data: list[dict[str, Any]] = Field(default_factory=list)
-    labels: list[str] = Field(default_factory=list)
-    values: list[float] = Field(default_factory=list)
-    unit: str = ""
-
-
-class DataTable(BaseModel):
-    title: str
-    columns: list[dict[str, str]]
-    rows: list[dict[str, Any]]
-    truncated: bool = False
 
 
 class ChatResponse(BaseModel):

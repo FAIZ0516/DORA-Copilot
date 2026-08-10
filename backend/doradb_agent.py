@@ -1,10 +1,10 @@
 """Compatibility imports for the governed DoraDB agent."""
 
-from .agent_system.graph import AdvancedDoraDbAgent
-from .agent_system.planner import deterministic_plan
-from .doradb import DoraDbQueryRejected
-from .skills.chart_generation import build_chart_spec
-from .skills.metric_selection import select_metric
+from .agent.agent_definition import AdvancedDoraDbAgent
+from .agent.planner import deterministic_plan
+from .database.doradb import DoraDbQueryRejected
+from .services.chart_generation import build_chart_spec
+from .services.metric_selection import select_metric
 
 DoraDbAgent = AdvancedDoraDbAgent
 

@@ -1,5 +1,5 @@
 {
-  "include": ["backend"],
+  "include": ["backend", "tests", "evals"],
   "exclude": ["frontend", ".venv"],
   "pythonVersion": "3.10",
   "typeCheckingMode": "basic",
