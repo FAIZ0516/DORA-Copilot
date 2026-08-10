@@ -100,6 +100,27 @@ class ConversationMessage(Base):
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
 
+class ZaraWorkflow(Base):
+    """A saved Zara workflow definition in the writable runtime store."""
+
+    __tablename__ = "zara_workflows"
+    __table_args__ = TABLE_ARGS
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    definition: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
 engine_options: dict[str, object] = {"pool_pre_ping": True}
 if settings.database_url.startswith("sqlite"):
     engine_options["connect_args"] = {"check_same_thread": False}
