@@ -157,3 +157,71 @@ def test_explicit_length_and_explanation_requests_are_honored() -> None:
         plan=_plan("conversation", "knowledge_explanation"),
     )
     assert technical_policy["explanation_level"] == "technical"
+
+
+def test_policy_always_carries_plain_language_rules() -> None:
+    """Every rendered policy must carry the plain-language rules, because
+    describe_policy() is injected into every LLM call in the app -- data
+    answers, follow-ups, knowledge answers and error explanations alike."""
+
+    from backend.agent.controls.response_controller import describe_policy
+
+    rendered = describe_policy(
+        derive_policy("list all squad", plan=_plan("data", "data_retrieval"))
+    ).lower()
+    assert "delivery manager" in rendered
+    assert "database administrator" in rendered
+    assert "dcpsquad" in rendered  # named as an example of what NOT to say
+    assert "plumbing" in rendered
+
+
+def test_domain_noun_table_is_not_treated_as_a_format_request() -> None:
+    """Regression: this app's domain is full of database tables, so a bare
+    'table' in the question must not switch the answer format to a table."""
+
+    for message in [
+        "What does the Jira issues table represent, and what does one row mean?",
+        "What tables exist in the database?",
+        "explain the table structure",
+    ]:
+        policy = derive_policy(message, plan=_plan("data", "metric_lookup"))
+        assert policy["format"] != "table", message
+
+
+def test_policy_always_carries_structure_rules() -> None:
+    """describe_policy() reaches every LLM call, so layout rules must ride
+    along with every answer, not just the main data prompt."""
+
+    from backend.agent.controls.response_controller import describe_policy
+
+    rendered = describe_policy(
+        derive_policy("list all the squad", plan=_plan("data", "DATA_RETRIEVAL"))
+    ).lower()
+    assert "one-sentence direct answer" in rendered
+    assert "markdown bullet list" in rendered
+    assert "wall of text" in rendered
+
+
+def test_enumeration_requests_use_bullets_for_live_intent_names() -> None:
+    """Regression: _detect_format only knew the retired lowercase planner
+    intents ("discovery"), so every live uppercase intent fell through to
+    "paragraph" and 21-item lists were rendered as inline comma prose."""
+
+    for intent in ["DATA_RETRIEVAL", "LIST_SQUADS", "DATABASE_METADATA"]:
+        policy = derive_policy("list all the squad", plan=_plan("data", intent))
+        assert policy["format"] == "bullets", intent
+
+    # Legacy lowercase vocabulary must keep working too.
+    assert derive_policy(
+        "list all squads", plan=_plan("data", "discovery")
+    )["format"] == "bullets"
+
+
+def test_non_enumeration_question_stays_paragraph() -> None:
+    """An explanatory question must not be forced into a bullet list."""
+
+    policy = derive_policy(
+        "What does the Jira issues table represent, and what does one row mean?",
+        plan=_plan("conversation", "KNOWLEDGE_EXPLANATION"),
+    )
+    assert policy["format"] == "paragraph"

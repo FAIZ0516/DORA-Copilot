@@ -50,6 +50,54 @@ PRODUCT_PERSONALITY = (
     "not overly verbose, not robotic"
 )
 
+# Speak to a delivery manager, not a DBA. These are appended to *every*
+# rendered policy (see describe_policy), so they apply to every LLM call in
+# the app -- data answers, follow-ups, knowledge answers, and error
+# explanations alike. They exist here rather than buried in one prompt
+# because the same rule was previously stated only in the main data prompt
+# and was routinely ignored: answers leaked "dcpsquad field", "fixversion
+# linkage", "column-definition document", "63,481 rows" at the user.
+PLAIN_LANGUAGE_RULES: tuple[str, ...] = (
+    "Write for a delivery manager, not a database administrator. Never name "
+    "raw database columns, tables, views, fields, query IDs, or file names in "
+    "the answer -- say 'squad' not 'the dcpsquad field', 'release' not "
+    "'fixversion', 'the data' not 'the snapshot table'.",
+    "Do not describe internal mechanics: no mention of joins, linkage, "
+    "mappings being populated, schema, extraction, or how the query was "
+    "built. Report what is or is not known, not the plumbing behind it.",
+    "Express gaps in human terms. Quantify a share only when the evidence "
+    "includes a valid denominator; otherwise give the known count and explain "
+    "what the gap means for the answer's reliability.",
+    "Lead with the answer in one plain sentence, then only the context that "
+    "changes how the user should act on it. Cut caveats that don't change a "
+    "decision.",
+    "Sound like a helpful colleague: warm, direct, and confident about what "
+    "the data does show. Do not lecture, and do not pile on disclaimers.",
+)
+
+# How the answer is laid out on screen. Separate from PLAIN_LANGUAGE_RULES
+# (which governs *wording*) because this governs *shape*, and both are
+# appended to every rendered policy. Without these the model emitted one
+# undifferentiated prose blob -- 21 squad names run together inside a
+# sentence -- which is unreadable even when every word is correct.
+STRUCTURE_RULES: tuple[str, ...] = (
+    "Open with a one-sentence direct answer. No preamble, no restating the "
+    "question.",
+    "Never run a set of values together inside a sentence. Any enumeration of "
+    "three or more items (squads, statuses, years, releases, types) must be a "
+    "markdown bullet list, one item per line.",
+    "Keep paragraphs to three sentences or fewer, and put a blank line "
+    "between them. A wall of text is a failed answer even if it is accurate.",
+    "When an answer has genuinely distinct parts, label them with short bold "
+    "headers on their own line (for example **Evidence**, **Worth knowing**, "
+    "**Next step**). Use only the headers that carry real content -- never "
+    "emit an empty or padded section.",
+    "Put supporting numbers next to what they describe, not in a separate "
+    "recital of figures.",
+    "Prefer the shortest layout that stays clear: a two-sentence answer needs "
+    "no headers at all.",
+)
+
 # Guide Section 31: content is always ordered this way; it is a fixed
 # constant, not something derived per turn.
 PRIORITY_ORDER: tuple[str, ...] = (
@@ -89,8 +137,18 @@ _DETAILED_REQUEST = re.compile(
     re.I,
 )
 _TABLE_REQUEST = re.compile(
-    r"\b(table|tabular|raw data|evidence table|data rows?|records?|"
-    r"spreadsheet|csv)\b",
+    # Deliberately requires an explicit *format* request ("as a table",
+    # "make it a table"), not a bare "table"/"tabular" -- this app's domain
+    # is full of database tables, so "what does the Jira issues table
+    # represent" must not be misread as a formatting instruction the way a
+    # bare `\btable\b` match previously did (it told the LLM "Answer
+    # format: table" and produced an unreadable table for a prose answer).
+    r"\b(?:make (?:it|this)|put (?:it|this)(?: in)?|show (?:it|this)|"
+    r"display (?:it|this)|format (?:it|this))\s+(?:as\s+)?a\s+table\b"
+    r"|\bas a table\b|\bin a table\b|\bin tabular form(?:at)?\b|"
+    r"\btable format\b|\bas tabular\b"
+    r"|\braw data\b|\bevidence table\b|\bdata rows?\b|\brecords?\b|"
+    r"\bspreadsheet\b|\bcsv\b",
     re.I,
 )
 _BULLET_REQUEST = re.compile(r"\b(bullet(?:s|ed)?(?: points?)?|as a list)\b", re.I)
@@ -145,8 +203,31 @@ def _detect_length(message: str, *, intent: str, mode: str) -> Length:
     return "normal"
 
 
+# Intent vocabularies have changed over time (the old deterministic planner
+# emitted lowercase names like "discovery"; the model planner and Jira router
+# emit uppercase ones like DATA_RETRIEVAL/LIST_SQUADS). Matching on intent
+# alone silently rotted -- every live intent fell through to "paragraph", so
+# the bullets/table branches were unreachable and 21-item lists were rendered
+# as inline comma prose. Intent is still consulted, case-insensitively, but
+# the message shape is now the primary signal because it doesn't depend on a
+# vocabulary that keeps moving.
+_LIST_INTENTS = frozenset(
+    {"discovery", "list_squads", "list_values", "data_retrieval", "database_metadata"}
+)
+_TABLE_INTENTS = frozenset({"issue_listing", "comparison"})
+_ENUMERATION_REQUEST = re.compile(
+    r"\b(?:list|enumerate)\b"
+    r"|\bwhat\s+\w+\s+(?:exist|are\s+there)\b"
+    r"|\bshow\s+(?:me\s+)?(?:all|every)\b"
+    r"|\ball\s+(?:the\s+)?(?:squads?|teams?|statuses|status|years?|releases?|"
+    r"types?|values?|projects?)\b",
+    re.I,
+)
+
+
 def _detect_format(message: str, *, intent: str) -> Format:
-    if _TABLE_REQUEST.search(message) or intent in {"issue_listing", "comparison"}:
+    normalized = intent.strip().lower()
+    if _TABLE_REQUEST.search(message) or normalized in _TABLE_INTENTS:
         # A comparison across consistent metrics reads best as a table
         # (guide Section 30); an explicit table request always wins.
         return "table"
@@ -154,7 +235,7 @@ def _detect_format(message: str, *, intent: str) -> Format:
         return "paragraph"
     if _BULLET_REQUEST.search(message):
         return "bullets"
-    if intent == "discovery":
+    if _ENUMERATION_REQUEST.search(message) and normalized in _LIST_INTENTS:
         return "bullets"
     return "paragraph"
 
@@ -340,10 +421,14 @@ def describe_policy(policy: ResponsePolicy) -> str:
         if policy["suggest_next_action"]
         else "Do not append a suggested next action to this answer."
     )
+    lines.extend(PLAIN_LANGUAGE_RULES)
+    lines.extend(STRUCTURE_RULES)
     return "\n".join(f"- {line}" for line in lines)
 
 
 __all__ = [
+    "PLAIN_LANGUAGE_RULES",
+    "STRUCTURE_RULES",
     "PRIORITY_ORDER",
     "PRODUCT_PERSONALITY",
     "ResponsePolicy",

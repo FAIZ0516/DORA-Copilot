@@ -9,15 +9,19 @@ from typing import Any
 
 _DIMENSION_STOP_WORDS = {
     "all",
+    "any",
     "available",
     "do",
     "does",
+    "each",
     "every",
     "existing",
     "have",
     "is",
     "known",
     "listed",
+    "our",
+    "per",
     "recorded",
     "that",
     "the",
@@ -26,6 +30,7 @@ _DIMENSION_STOP_WORDS = {
     "what",
     "which",
     "who",
+    "your",
     "you",
 }
 
@@ -123,7 +128,12 @@ def extract_filters(message: str, *, project_key: str = "DCPM") -> dict[str, Any
         ("task", "Task"),
         ("test", "Test"),
     ):
-        if token in lowered:
+        excluded = re.search(
+            rf"\b(?:other\s+than|except|excluding|without|not)\s+"
+            rf"(?:\w+\s+){{0,2}}{re.escape(token)}",
+            lowered,
+        )
+        if token in lowered and excluded is None:
             filters["issuetype"] = value
             break
     if match := re.search(r"\bstatus\s+(?:is\s+)?[\"']?([A-Za-z][A-Za-z ]{1,30})", message, re.I):

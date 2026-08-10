@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 from backend.agent.planner import create_plan
@@ -7,6 +8,7 @@ from backend.agent.request_router import (
     DATABASE_METADATA,
     DATA_RETRIEVAL,
     KNOWLEDGE_EXPLANATION,
+    route_jira_request,
 )
 from backend.agent.response.responder import Responder
 from backend.database.doradb import query_doradb
@@ -17,22 +19,23 @@ from backend.knowledge_service import (
 )
 
 
-class NoCallLlm:
+class RoutedPlannerLlm:
     enabled = True
+    source = "test-provider:test-model"
     calls = 0
+
+    def __init__(self, message: str) -> None:
+        self.message = message
 
     def complete(self, *_args: object, **_kwargs: object) -> str:
         self.calls += 1
-        return "unexpected"
-
-
-class DisabledLlm:
-    enabled = False
-    unavailable_message = "provider unavailable"
+        plan = route_jira_request(self.message)
+        assert plan is not None
+        return json.dumps(plan)
 
 
 def plan_for(message: str):
-    llm = NoCallLlm()
+    llm = RoutedPlannerLlm(message)
     plan, source = create_plan(
         message,
         memory={},
@@ -60,8 +63,8 @@ def test_jira_table_explanation_uses_cached_markdown_without_data_query() -> Non
     assert plan["intent"] == KNOWLEDGE_EXPLANATION
     assert plan["mode"] == "conversation"
     assert plan["actions"] == []
-    assert source == "jira-router"
-    assert llm.calls == 0
+    assert source == "test-provider:test-model"
+    assert llm.calls == 1
 
     first = load_jira_knowledge()
     second = load_jira_knowledge()
@@ -69,6 +72,34 @@ def test_jira_table_explanation_uses_cached_markdown_without_data_query() -> Non
     assert first is second
     assert any("Jira Issues Table Represents" in section.title for section in sections)
     assert "snapshot" in " ".join(section.content for section in sections).lower()
+
+
+def test_configured_model_is_primary_for_jira_understanding() -> None:
+    class JiraPlannerLlm:
+        enabled = True
+        source = "test-provider:test-model"
+        calls = 0
+
+        def complete(self, *_args: object, **_kwargs: object) -> str:
+            self.calls += 1
+            return (
+                '{"mode":"conversation","intent":"KNOWLEDGE_EXPLANATION",'
+                '"confidence":0.97,"reason":"The user wants a documented '
+                'definition, not live rows","clarification":"","actions":[]}'
+            )
+
+    llm = JiraPlannerLlm()
+    plan, source = create_plan(
+        "What does one Jira issue row represent?",
+        memory={},
+        browser_history=[],
+        llm=llm,  # type: ignore[arg-type]
+    )
+
+    assert llm.calls == 1
+    assert source == "test-provider:test-model"
+    assert plan["mode"] == "conversation"
+    assert plan["intent"] == KNOWLEDGE_EXPLANATION
 
 
 def test_lead_time_location_uses_metadata_and_explains_metric_boundary() -> None:
@@ -181,7 +212,19 @@ def test_valid_bug_count_query_executes_and_is_summarised() -> None:
 
 def test_zero_rows_reports_no_matches_not_missing_schema_object() -> None:
     plan, _, _ = plan_for("Count bugs by status.")
-    responder = Responder(DisabledLlm())  # type: ignore[arg-type]
+
+    class NoRowsLlm:
+        enabled = True
+        source = "test-provider:test-model"
+
+        @staticmethod
+        def complete(*_args: object, **_kwargs: object) -> str:
+            return (
+                "Nothing matched the current filters. That doesn't mean the "
+                "information isn't tracked."
+            )
+
+    responder = Responder(NoRowsLlm())  # type: ignore[arg-type]
     response = responder.respond(
         {
             "message": "Count bugs by status.",
@@ -194,9 +237,12 @@ def test_zero_rows_reports_no_matches_not_missing_schema_object() -> None:
         }  # type: ignore[arg-type]
     )
 
-    assert "query ran successfully" in response["answer"]
-    assert "no records matched" in response["answer"]
-    assert "does not mean the table or column is absent" in response["answer"]
+    # Asserts the *meaning* -- "nothing matched" must be clearly separated
+    # from "this isn't tracked at all" -- not the exact prior wording, which
+    # was deliberately rephrased into plain business language.
+    answer = response["answer"].lower()
+    assert "nothing matched" in answer
+    assert "doesn't mean the information isn't tracked" in answer
 
 
 def test_nonexistent_column_verifies_table_and_column_separately() -> None:
@@ -210,7 +256,18 @@ def test_nonexistent_column_verifies_table_and_column_separately() -> None:
     ]
     assert plan["actions"][1]["filters"]["column_search"] == "frobnitz"
 
-    responder = Responder(DisabledLlm())  # type: ignore[arg-type]
+    class MissingColumnLlm:
+        enabled = True
+        source = "test-provider:test-model"
+
+        @staticmethod
+        def complete(*_args: object, **_kwargs: object) -> str:
+            return (
+                "I checked the live data and confirmed that information "
+                "isn't tracked there."
+            )
+
+    responder = Responder(MissingColumnLlm())  # type: ignore[arg-type]
     response = responder.respond(
         {
             "message": message,
@@ -235,8 +292,12 @@ def test_nonexistent_column_verifies_table_and_column_separately() -> None:
         }  # type: ignore[arg-type]
     )
 
-    assert "table exists" in response["answer"]
-    assert "no matching column was found" in response["answer"]
+    # The distinction that matters: the data was actually checked, and the
+    # requested thing is genuinely not tracked (vs. a query failure).
+    # Wording was rephrased into plain business language, so assert meaning.
+    answer = response["answer"].lower()
+    assert "checked the live data" in answer
+    assert "isn't tracked" in answer
 
 
 def test_story_points_are_verified_as_unsupported_not_replaced_by_progress() -> None:

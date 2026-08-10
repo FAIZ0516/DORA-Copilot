@@ -1590,6 +1590,10 @@ a {
 }
 
 .message-content table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
 }
 

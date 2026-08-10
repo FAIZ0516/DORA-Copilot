@@ -34,6 +34,66 @@ from .state import AgentPlan, QueryAction
 
 
 RUNTIME_INSTRUCTIONS_PATH = Path(__file__).resolve().parent / "INSTRUCTIONS.md"
+AI_PLANNER_UNAVAILABLE = "AI_PLANNER_UNAVAILABLE"
+
+# Clarifications the model (or the filter guard) raised *deliberately* --
+# recovery must not paper over these. "unknown_entity" means the user named
+# something that genuinely isn't in the catalogue; asking is the correct
+# answer, and silently substituting a generic listing would be worse.
+_INTENTIONAL_CLARIFICATIONS = frozenset({"unknown_entity", "model_plan_incomplete"})
+
+
+def _planner_unavailable(reason: str) -> AgentPlan:
+    """Fail closed when the model cannot provide a usable semantic plan."""
+
+    return {
+        "mode": "clarification",
+        "intent": AI_PLANNER_UNAVAILABLE,
+        "confidence": 1.0,
+        "actions": [],
+        "reason": reason,
+        "clarification": "",
+    }
+
+
+def _deterministic_recovery(message: str, plan: AgentPlan) -> tuple[AgentPlan, str] | None:
+    """Recover when the model asked an unnecessary clarifying question.
+
+    The model stays the semantic interpreter. This fires in exactly one
+    situation: the model understood the request well enough to answer
+    coherently but returned ``mode="clarification"`` with no actions for a
+    request the deterministic router unambiguously recognizes. Observed
+    live -- "LIST SQUAD" produced clarification/0 actions while the
+    equivalent "list all the squad" produced a correct data plan, so the
+    model is simply flaky here. The planner prompt already instructs
+    "NEVER set mode='conversation' for a data question"; prompt text alone
+    did not hold, which is why this backstop is in code.
+
+    Deliberately narrow -- it never:
+      * touches ``mode="conversation"`` (a deliberate semantic choice, e.g.
+        CAPABILITY_EXPLANATION/KNOWLEDGE_EXPLANATION -- answering "what data
+        can I get?" with a data query would be wrong);
+      * touches ``mode="out_of_scope"`` (a safety decision);
+      * runs when the model produced a usable data plan;
+      * runs when the model/planner failed outright (malformed, invalid, or
+        provider down) -- those fail closed, because a broken interpreter
+        means we cannot trust that keyword routing answers the *asked*
+        question;
+      * overrides an intentional clarification (see the set above);
+      * invents a query the deterministic router doesn't already recognize.
+    """
+
+    if plan["mode"] != "clarification":
+        return None
+    if plan["intent"] in _INTENTIONAL_CLARIFICATIONS:
+        return None
+    route = route_jira_request(message)
+    if route is None or route["mode"] != "data" or not route["actions"]:
+        return None
+    recovered = enforce_plan(route)
+    if recovered["mode"] != "data" or not recovered["actions"]:
+        return None
+    return recovered, "deterministic-recovery"
 
 
 def _load_planner_guidance() -> str:
@@ -435,30 +495,32 @@ def create_plan(
 ) -> tuple[AgentPlan, str]:
     """Let DeepSeek interpret the request, then validate its proposed actions.
 
-    The deterministic plan is deliberately a fallback, not the primary router.
-    It still blocks unsafe database requests before a cloud call and keeps
-    the application useful when the provider is unavailable.
+    The configured model is the semantic interpreter. Deterministic code may
+    block an unsafe request or reject an invalid model-selected tool, but it
+    must not replace failed model understanding with a keyword-selected query.
     """
 
     entity_catalogue = entity_catalogue or {}
     grounding = grounding or resolve_entities(message, entity_catalogue)
 
-    jira_route = route_jira_request(message)
-    if jira_route is not None:
-        return enforce_plan(jira_route), "jira-router"
-
-    fallback = deterministic_plan(
-        message,
-        memory,
-        entity_catalogue=entity_catalogue,
-        grounding=grounding,
-    )
-    if fallback["mode"] == "conversation":
-        return enforce_plan(fallback), "conversation"
-    if fallback["intent"] == "unsafe_request":
-        return enforce_plan(fallback), "scope-guard"
+    baseline_intent = classify_intent(message)
+    if baseline_intent["name"] == "out_of_scope":
+        return enforce_plan(
+            {
+                "mode": "out_of_scope",
+                "intent": "unsafe_request",
+                "confidence": 1.0,
+                "actions": [],
+                "reason": "The deterministic input guardrail blocked the request.",
+                "clarification": "",
+            }
+        ), "scope-guard"
     if not llm.enabled:
-        return enforce_plan(fallback), "deterministic"
+        # Fail closed: with no working interpreter we cannot confirm that a
+        # keyword-matched query answers the question actually asked.
+        return _planner_unavailable("The configured AI planner is unavailable."), (
+            "ai-provider-unavailable"
+        )
 
     supplied_history = browser_history or [
         {"role": "user", "content": str(item.get("user", ""))}
@@ -475,6 +537,21 @@ def create_plan(
         {
             "conversation_summary": str(memory.get("conversation_summary", ""))[:3000],
             "last_context": memory.get("last_context", {}),
+            "available_cached_evidence": (
+                {
+                    "query_ids": memory.get("query_cache", [])[-1].get("query_ids", []),
+                    "row_count": memory.get("query_cache", [])[-1].get("row_count", 0),
+                    "generated_at": memory.get("query_cache", [])[-1].get(
+                        "generated_at", ""
+                    ),
+                    "complete": memory.get("query_cache", [])[-1].get(
+                        "complete", False
+                    ),
+                }
+                if memory.get("query_cache")
+                and isinstance(memory.get("query_cache", [])[-1], dict)
+                else None
+            ),
         },
         default=str,
     )
@@ -495,6 +572,11 @@ The control layer will reject tools, filters, and limits outside this catalogue.
 Never emit SQL.
 
 Planning principles:
+- Treat questions about what kinds of data, metrics, reports, or analyses are
+  available as capability explanations, not requests for current database
+  values. Use mode=conversation with intent CAPABILITY_EXPLANATION and no
+  actions. Explain the approved capabilities directly; do not require a
+  squad, release, or year unless the user asks to retrieve actual values.
 - For requests asking what values exist or are available, use
   list_dimension_values with exactly one governed dimension. Do not use a
   metrics query to list dimension values.
@@ -520,6 +602,15 @@ Planning principles:
   that", "what does that term mean", "compare it", or "make a chart for it".
 - Use mode=conversation only when no database evidence is required. Never
   promise that a query will happen later.
+- If the request is a semantic follow-up that can be answered completely from
+  the available cached evidence, use mode=conversation, intent exactly
+  FOLLOW_UP_ON_EXISTING_RESULT, and no actions. Do not use this intent for a
+  new topic, changed filter, refresh request, or question requiring new data.
+- For Jira documentation or definition questions that need no live data, use
+  mode=conversation and intent exactly KNOWLEDGE_EXPLANATION. For live schema
+  checks use DATABASE_METADATA; for safe Jira aggregates use DATA_RETRIEVAL or
+  ANALYSIS. These intent names let downstream evidence handling load the right
+  verified context.
 - Chart requests are safe data requests.
 - Use mode=out_of_scope for writes, secrets, harmful requests, or questions
   unrelated to DoraDB, DORA, Jira, releases, and software delivery. Never mark
@@ -539,31 +630,28 @@ Planning principles:
         temperature=settings.llm_planner_temperature,
     )
     parsed = _parse_json(raw) if raw else None
-    if not parsed:
-        return enforce_plan(fallback), "deterministic-fallback"
+    if not parsed or "mode" not in parsed or "intent" not in parsed:
+        # Fail closed rather than keyword-routing a request the model never
+        # actually interpreted (see test_malformed_model_plan_...).
+        return _planner_unavailable("The AI planner returned an unusable plan."), (
+            "ai-planner-unavailable"
+        )
 
     try:
         mode = str(parsed.get("mode", "data"))
         if mode not in {"data", "conversation", "clarification", "out_of_scope"}:
             raise ValueError("invalid mode")
         actions: list[QueryAction] = []
-        base_filters = (
-            {
-                key: value
-                for key, value in fallback["actions"][0]["filters"].items()
-                # Discovery identity belongs to the generative planner. The
-                # deterministic dimension is reserved for fallback only.
-                if key != "dimension"
-            }
-            if fallback["mode"] == "data" and fallback["actions"]
-            else {
-                **extract_filters(
-                    message,
-                    project_key=settings.doradb_project_key,
-                ),
-                **grounding.get("filters", {}),
-            }
-        )
+        # Deterministic extraction may ground literal values from the prompt,
+        # but it never chooses the intent or query. The model remains the only
+        # semantic planner.
+        base_filters = {
+            **extract_filters(
+                message,
+                project_key=settings.doradb_project_key,
+            ),
+            **grounding.get("filters", {}),
+        }
         rejected_entity_filters: list[str] = [
             f"{key}={value}"
             for key, value in base_filters.items()
@@ -602,10 +690,10 @@ Planning principles:
             )
         plan: AgentPlan = {
             "mode": mode,  # type: ignore[typeddict-item]
-            "intent": str(parsed.get("intent") or fallback["intent"])[:100],
+            "intent": str(parsed["intent"])[:100],
             "confidence": max(0.0, min(1.0, float(parsed.get("confidence", 0.75)))),
             "actions": actions,
-            "reason": str(parsed.get("reason") or fallback["reason"])[:300],
+            "reason": str(parsed.get("reason") or "Model-generated plan")[:300],
             "clarification": str(parsed.get("clarification") or "")[:300],
         }
 
@@ -624,40 +712,13 @@ Planning principles:
                 ),
             }
 
-        # A model cannot discard a request already grounded in live data or
-        # structured conversation context merely because its phrasing is terse.
-        if plan["mode"] == "out_of_scope" and (
-            fallback["mode"] != "out_of_scope"
-            or grounding.get("has_matches")
-            or _references_previous_answer(message, memory)
-        ):
-            plan = {
-                **plan,
-                "mode": "conversation",
-                "actions": [],
-                "intent": "context_follow_up",
-                "reason": "The request is grounded in the governed domain or prior context.",
-            }
-
-        # An explicit request for data must execute now. If the model omitted a
-        # usable action, the conservative allowlisted fallback supplies it.
-        if (
-            _requires_dataset_action(message)
-            and (plan["mode"] != "data" or not plan["actions"])
-            and fallback["mode"] == "data"
-            and plan["intent"] != "unknown_entity"
-        ):
-            plan = fallback
-
         planner_source = getattr(
             llm,
             "source",
             settings.llm_source,
         )
         if (
-            fallback["mode"] == "data"
-            and fallback["actions"]
-            and "dcpsquad" in fallback["actions"][0]["filters"]
+            "dcpsquad" in base_filters
             and (
                 plan["mode"] != "data"
                 or not any(
@@ -666,21 +727,25 @@ Planning principles:
                 )
             )
         ):
-            # A named squad is an explicit user constraint. The model may add
-            # supporting actions, but it cannot silently widen to all squads.
-            plan = fallback
-            planner_source = "deterministic-context-repair"
+            # A named squad is an explicit grounded constraint. Reject a plan
+            # that drops it, but do not choose a replacement query in code.
+            plan = {
+                **plan,
+                "mode": "clarification",
+                "intent": "model_plan_incomplete",
+                "actions": [],
+                "reason": "The model plan did not preserve the named squad.",
+                "clarification": "",
+            }
 
         controlled = enforce_plan(plan)
-        if (
-            controlled["mode"] == "clarification"
-            and plan["mode"] == "data"
-            and fallback["mode"] == "data"
-        ):
-            # Invalid model tools never execute. Prefer a known-safe fallback
-            # rather than presenting a generic control-layer clarification.
-            controlled = enforce_plan(fallback)
-            return controlled, "deterministic-safety-fallback"
-        return controlled, planner_source
+        # The model produced a syntactically valid plan that still cannot
+        # answer the question (e.g. it asked a clarifying question about an
+        # unambiguous "list all the squads"). Recover only if the
+        # deterministic router clearly recognizes the request.
+        recovery = _deterministic_recovery(message, controlled)
+        return recovery or (controlled, planner_source)
     except (TypeError, ValueError):
-        return enforce_plan(fallback), "deterministic-fallback"
+        return _planner_unavailable("The AI planner returned an invalid plan."), (
+            "ai-planner-unavailable"
+        )

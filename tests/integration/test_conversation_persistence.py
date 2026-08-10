@@ -2,6 +2,46 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from backend.agent.agent_definition import AdvancedDoraDbAgent
+
+
+class _EchoFactsLlm:
+    """A deterministic stand-in LLM: echoes the supplied computed facts as
+    plain text instead of calling a real provider, so tests that exercise
+    the follow-up path stay fast and offline. Real wording/tone is a
+    provider concern verified separately (e.g. tests/unit/test_advanced_system.py);
+    these integration tests only need the *facts* to survive the trip."""
+
+    enabled = True
+    source = "test-provider:echo"
+
+    @staticmethod
+    def complete(_system_prompt: str, user_prompt: str, **_kwargs: object) -> str:
+        import json
+
+        if not user_prompt.lstrip().startswith("{"):
+            return (
+                '{"mode":"conversation",'
+                '"intent":"FOLLOW_UP_ON_EXISTING_RESULT",'
+                '"confidence":0.99,"reason":"The user is asking about the '
+                'available cached evidence.","clarification":"","actions":[]}'
+            )
+        payload = json.loads(user_prompt)
+        facts = payload.get("computed_facts") or {}
+        if "distinct_squad_count" in facts:
+            text = (
+                f"I found {facts['distinct_squad_count']} "
+                "distinct non-empty squad values."
+            )
+            if facts.get("missing_squad_rows"):
+                text += (
+                    f" There are also {facts['missing_squad_rows']} Jira rows "
+                    "without a populated squad value, so this list is not "
+                    "complete coverage."
+                )
+            return text
+        if "squad_methodology_note" in facts:
+            return facts["squad_methodology_note"]
+        return "The previous result is still available."
 from backend.agent.request_router import route_jira_request
 from backend.memory.result_cache import build_cache_entry, choose_cache_action
 from backend.conversation_context import update_persistent_state
@@ -58,7 +98,10 @@ def test_new_conversation_does_not_delete_previous_and_archive_is_scoped():
 def test_follow_up_reuses_fresh_result_without_database_query():
     entry = cache_entry()
     assert entry is not None
-    result = AdvancedDoraDbAgent(None).chat(
+    agent = AdvancedDoraDbAgent(None)
+    agent.llm = _EchoFactsLlm()  # type: ignore[assignment]
+    agent.responder.llm = agent.llm
+    result = agent.chat(
         "How many did you find?", session_id="conversation-cache-test",
         persistent_context={"query_cache": [entry]},
         project_scope={"project_key": "DCPM"},
@@ -83,7 +126,12 @@ def test_squad_follow_up_does_not_count_schema_source_rows():
             },
         ],
     )
-    result = AdvancedDoraDbAgent(None).chat(
+    agent = AdvancedDoraDbAgent(None)
+    agent.llm = _EchoFactsLlm()  # type: ignore[assignment]
+    agent.responder.llm = agent.llm  # the compiled graph already holds this
+    # Responder instance; mutate its llm attribute rather than replacing
+    # the Responder object, which the graph's node bindings wouldn't see.
+    result = agent.chat(
         "How many did you find?", session_id="multi-result-cache-test",
         persistent_context={"query_cache": [entry]},
         project_scope={"project_key": "DCPM"},
@@ -104,6 +152,16 @@ def test_refresh_and_changed_scope_invalidate_reuse():
     )
     assert refresh.action == "refresh"
     assert changed.action == "none" and changed.reason == "scope_changed"
+
+
+def test_semantic_follow_up_can_reuse_cache_without_keyword_match():
+    decision = choose_cache_action(
+        "Could you expand on the number you just gave me?",
+        memory={"query_cache": [cache_entry()]},
+        project_scope={"project_key": "DCPM"},
+        semantic_follow_up=True,
+    )
+    assert decision.action == "reuse"
 
 
 def test_zero_rows_are_not_cached_and_sensitive_fields_are_removed():

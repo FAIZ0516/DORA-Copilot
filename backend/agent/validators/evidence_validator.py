@@ -10,6 +10,23 @@ import json
 import re
 from typing import Any
 
+_NUMBER = re.compile(r"(?<![\w-])-?\d[\d,]*(?:\.\d+)?")
+
+
+def _number_value(token: str) -> float:
+    return float(token.replace(",", ""))
+
+
+def _is_markdown_list_index(answer: str, match: re.Match[str]) -> bool:
+    """Distinguish ``1. item`` from a numeric claim in prose."""
+
+    if match.group(0).startswith("-"):
+        return False
+    line_start = answer.rfind("\n", 0, match.start()) + 1
+    if answer[line_start : match.start()].strip():
+        return False
+    return bool(re.match(r"[.)]\s", answer[match.end() :]))
+
 
 def find_unsupported_numbers(
     answer: str,
@@ -24,21 +41,32 @@ def find_unsupported_numbers(
         {"results": results, "deterministic_analysis": analysis or {}}, default=str
     )
     evidence_numbers = [
-        float(token)
+        _number_value(match.group(0))
         for source in (evidence_text, question)
-        for token in re.findall(r"(?<![\w-])-?\d+(?:\.\d+)?", source)
+        for match in _NUMBER.finditer(source)
     ]
-    answer_numbers = set(re.findall(r"(?<![\w-])-?\d+(?:\.\d+)?", answer))
+    answer_numbers = {
+        match.group(0)
+        for match in _NUMBER.finditer(answer)
+        if not _is_markdown_list_index(answer, match)
+    }
 
     def supported(token: str) -> bool:
-        value = float(token)
-        return any(
-            abs(value - evidence) <= 0.011 or abs(abs(value) - abs(evidence)) <= 0.011
-            for evidence in evidence_numbers
-        )
+        value = _number_value(token)
+        decimals = len(token.rsplit(".", 1)[1]) if "." in token else 0
+        for evidence in evidence_numbers:
+            if abs(value - evidence) <= 0.011 or abs(abs(value) - abs(evidence)) <= 0.011:
+                return True
+            # A model may reasonably present a validated decimal at lower
+            # precision. Compare at exactly the precision it chose rather
+            # than allowing one arbitrary unsupported number through.
+            if (
+                round(evidence, decimals) == value
+                or round(abs(evidence), decimals) == abs(value)
+            ):
+                return True
+        return False
 
-    # Markdown list indices and rounded values can be legitimate; the caller
-    # only fails validation when more than one unsupported claim appears.
     return sorted(token for token in answer_numbers if not supported(token))
 
 

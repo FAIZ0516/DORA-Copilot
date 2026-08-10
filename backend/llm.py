@@ -327,10 +327,12 @@ class GenerativeAIClient:
                 if json_mode
                 else self.settings.deepseek_response_max_tokens
             ),
+            # Constrained JSON planning is more reliable when the model spends
+            # its output budget on the JSON object instead of private reasoning.
             "thinking": {
                 "type": (
                     "enabled"
-                    if self.settings.deepseek_thinking_enabled
+                    if self.settings.deepseek_thinking_enabled and not json_mode
                     else "disabled"
                 )
             },
@@ -338,42 +340,67 @@ class GenerativeAIClient:
         if json_mode:
             request["response_format"] = {"type": "json_object"}
         try:
-            response = self.http_client.post("chat/completions", json=request)
-            if response.status_code in {401, 403}:
+            # DeepSeek can occasionally return HTTP 200 with reasoning metadata
+            # but no final content. Retry that narrow failure once, with thinking
+            # disabled, while keeping the model as the semantic decision-maker.
+            for attempt in range(2):
+                response = self.http_client.post("chat/completions", json=request)
+                if response.status_code in {401, 403}:
+                    self.last_error = (
+                        "DeepSeek rejected the configured API key. Update "
+                        "DEEPSEEK_API_KEY and try again."
+                    )
+                    return None
+                if response.status_code == 402:
+                    self.last_error = (
+                        "The DeepSeek account has insufficient balance. Add credit and "
+                        "try again."
+                    )
+                    return None
+                if response.status_code == 429:
+                    self.last_error = (
+                        "DeepSeek is rate-limiting requests right now. Please try again "
+                        "shortly."
+                    )
+                    return None
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    raise ValueError("DeepSeek chat response must be an object")
+                choices = payload.get("choices", [])
+                if not isinstance(choices, list) or not choices:
+                    raise ValueError("DeepSeek chat response has no choices")
+                choice = choices[0]
+                if not isinstance(choice, dict):
+                    raise ValueError("DeepSeek chat choice must be an object")
+                message = choice.get("message", {})
+                content = message.get("content") if isinstance(message, dict) else None
+                if isinstance(content, str) and content.strip():
+                    self.last_model = self.settings.deepseek_model
+                    return content.strip()
+
+                reasoning = (
+                    message.get("reasoning_content")
+                    if isinstance(message, dict)
+                    else None
+                )
+                logger.warning(
+                    "DeepSeek model %s returned empty content on attempt %s/2 "
+                    "(finish_reason=%s, reasoning_chars=%s)",
+                    self.settings.deepseek_model,
+                    attempt + 1,
+                    choice.get("finish_reason", "unknown"),
+                    len(reasoning) if isinstance(reasoning, str) else 0,
+                )
+                if attempt == 0:
+                    request["thinking"] = {"type": "disabled"}
+                    continue
+
                 self.last_error = (
-                    "DeepSeek rejected the configured API key. Update "
-                    "DEEPSEEK_API_KEY and try again."
+                    "I couldn't complete that request just now. Your question is "
+                    "valid, so please try again."
                 )
                 return None
-            if response.status_code == 402:
-                self.last_error = (
-                    "The DeepSeek account has insufficient balance. Add credit and "
-                    "try again."
-                )
-                return None
-            if response.status_code == 429:
-                self.last_error = (
-                    "DeepSeek is rate-limiting requests right now. Please try again "
-                    "shortly."
-                )
-                return None
-            response.raise_for_status()
-            payload = response.json()
-            if not isinstance(payload, dict):
-                raise ValueError("DeepSeek chat response must be an object")
-            choices = payload.get("choices", [])
-            if not isinstance(choices, list) or not choices:
-                raise ValueError("DeepSeek chat response has no choices")
-            message = choices[0].get("message", {})
-            content = message.get("content") if isinstance(message, dict) else None
-            if not isinstance(content, str) or not content.strip():
-                self.last_error = (
-                    "DeepSeek returned an empty response. I did not substitute a "
-                    "fabricated answer."
-                )
-                return None
-            self.last_model = self.settings.deepseek_model
-            return content.strip()
         except httpx.TimeoutException:
             self.last_error = (
                 f"DeepSeek timed out while using model "

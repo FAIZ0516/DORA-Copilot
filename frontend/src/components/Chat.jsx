@@ -21,6 +21,7 @@ import {
   Workflow,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import DataTable from "./DataTable";
 import MetricChart from "./MetricChart";
 import JiraDeliveryOverview from "./JiraDeliveryOverview";
@@ -478,7 +479,7 @@ export default function Chat({
                 )}
               </div>
               <div className="message-content">
-                <ReactMarkdown>{message.text}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
               </div>
               {message.warnings?.length > 0 && (
                 <div className="warning-panel">

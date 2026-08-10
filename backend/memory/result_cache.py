@@ -57,6 +57,7 @@ def choose_cache_action(
     *,
     memory: dict[str, Any],
     project_scope: dict[str, Any],
+    semantic_follow_up: bool | None = None,
 ) -> CacheDecision:
     entries = memory.get("query_cache", [])
     if not isinstance(entries, list) or not entries:
@@ -82,7 +83,9 @@ def choose_cache_action(
         return CacheDecision("none", reason="filter_changed")
     if REFRESH_PATTERN.search(message):
         return CacheDecision("refresh", entry=entry, reason="explicit_refresh")
-    if not FOLLOW_UP_PATTERN.search(message):
+    if semantic_follow_up is False:
+        return CacheDecision("none", reason="standalone_request")
+    if semantic_follow_up is None and not FOLLOW_UP_PATTERN.search(message):
         return CacheDecision("none", reason="standalone_request")
 
     query_ids = set(entry.get("query_ids", []))

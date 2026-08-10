@@ -16,8 +16,10 @@ import re
 import time
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from ..config import settings
-from ..database.doradb import DoraDbConfigurationError
+from ..database.doradb import DoraDbConfigurationError, DoraDbQueryRejected
 from ..knowledge_service import select_knowledge_sections
 from ..memory.memory import memory_store
 from ..memory.result_cache import (
@@ -177,10 +179,23 @@ class AgentOrchestrator:
         # blocking behavior -- classify_intent()'s out_of_scope routing
         # below still owns that -- it makes the verdict observable.
         input_guardrail = check_input(state["message"])
+        plan, source = create_plan(
+            state["message"],
+            memory=state["memory"],
+            browser_history=state.get("browser_history", []),
+            llm=self.llm,
+        )
+        model_source = getattr(self.llm, "source", "")
+        model_planned = bool(model_source) and source == model_source
         decision = choose_cache_action(
             state["message"],
             memory=state["memory"],
             project_scope=state.get("project_scope", {}),
+            semantic_follow_up=(
+                plan["intent"] == FOLLOW_UP_ON_EXISTING_RESULT
+                if model_planned
+                else None
+            ),
         )
         cached_results: list[dict[str, Any]] = []
         if decision.action == "reuse" and decision.entry:
@@ -208,18 +223,19 @@ class AgentOrchestrator:
                     "clarification": "",
                 }
                 source = "conversation-cache-refresh"
-            else:
-                plan, source = create_plan(
-                    state["message"], memory=state["memory"],
-                    browser_history=state.get("browser_history", []), llm=self.llm,
-                )
-        else:
-            plan, source = create_plan(
-                state["message"],
-                memory=state["memory"],
-                browser_history=state.get("browser_history", []),
-                llm=self.llm,
-            )
+        elif plan["intent"] == FOLLOW_UP_ON_EXISTING_RESULT:
+            # The model understood this as a follow-up, but the deterministic
+            # cache compatibility checks found no safe reusable evidence.
+            # Ask for clarification rather than answering from an empty cache
+            # or silently selecting a keyword-based replacement query.
+            plan = {
+                **plan,
+                "mode": "clarification",
+                "intent": "model_plan_incomplete",
+                "actions": [],
+                "reason": "No compatible cached evidence is available.",
+                "clarification": "",
+            }
         metric = select_metric(state["message"])
         if (
             not message_mentions_metric(state["message"])
@@ -286,19 +302,35 @@ class AgentOrchestrator:
     def _execute(self, state: AgentState) -> dict[str, Any]:
         ensure_within_deadline(state["started_at"])
         if state.get("db_session") is None:
-            raise DoraDbConfigurationError(
-                "DoraDB credentials are required for dataset analysis. "
-                "Configure DORADB_USER and DORADB_PASSWORD in .env."
-            )
-        results = [
-            execute_approved_query(
-                state["db_session"],
-                query_id=action["query_id"],
-                filters=action["filters"],
-                limit=action["limit"],
-            )
-            for action in state["plan"]["actions"]
-        ]
+            return {
+                "results": [],
+                "database_error": (
+                    "DoraDB credentials are required for dataset analysis. "
+                    "Configure DORADB_USER and DORADB_PASSWORD in .env."
+                ),
+                "database_query_executed": False,
+            }
+        try:
+            results = [
+                execute_approved_query(
+                    state["db_session"],
+                    query_id=action["query_id"],
+                    filters=action["filters"],
+                    limit=action["limit"],
+                )
+                for action in state["plan"]["actions"]
+            ]
+        except (DoraDbConfigurationError, DoraDbQueryRejected, SQLAlchemyError) as exc:
+            # A database failure is not a code bug: let the graph continue to
+            # `respond`, where the LLM composes an honest, guardrail-compliant
+            # explanation instead of aborting the whole request with a raw
+            # HTTP error the user never sees "thought through" at all.
+            logger.warning("DoraDB query failed during execute: %s", exc)
+            return {
+                "results": [],
+                "database_error": "The DoraDB database is temporarily unavailable.",
+                "database_query_executed": False,
+            }
         if settings.app_env == "development":
             logger.info("DATABASE_QUERY_EXECUTED session_id=%s", state["session_id"])
             for action, result in zip(state["plan"]["actions"], results):
@@ -343,19 +375,28 @@ class AgentOrchestrator:
 
         ensure_within_deadline(state["started_at"])
         if state.get("db_session") is None:
-            raise DoraDbConfigurationError(
-                "DoraDB credentials are required for dataset analysis."
-            )
-        repaired: list[dict[str, Any]] = []
-        for action in state["plan"]["actions"]:
-            repaired.append(
+            return {
+                "results": [],
+                "database_error": "DoraDB credentials are required for dataset analysis.",
+                "repair_count": state.get("repair_count", 0) + 1,
+            }
+        try:
+            repaired: list[dict[str, Any]] = [
                 execute_approved_query(
                     state["db_session"],
                     query_id=action["query_id"],
                     filters=action["filters"],
                     limit=min(action["limit"], 100),
                 )
-            )
+                for action in state["plan"]["actions"]
+            ]
+        except (DoraDbConfigurationError, DoraDbQueryRejected, SQLAlchemyError) as exc:
+            logger.warning("DoraDB query failed during repair: %s", exc)
+            return {
+                "results": [],
+                "database_error": "The DoraDB database is temporarily unavailable.",
+                "repair_count": state.get("repair_count", 0) + 1,
+            }
         return {
             "results": repaired,
             "repair_count": state.get("repair_count", 0) + 1,
@@ -441,11 +482,15 @@ class AgentOrchestrator:
     def _validate_answer(self, state: AgentState) -> dict[str, Any]:
         if state.get("answer_source") in {
             "ai-provider-unavailable",
-            "conversation-cache",
             "live-data",
             "metadata",
             "verified-documentation",
         }:
+            validation = {"valid": True, "unsupported_numbers": [], "warning_missing": False}
+        elif state.get("database_error"):
+            # There is no query evidence to check numbers against by
+            # definition -- the query never ran. Evidence-grounding
+            # validation doesn't apply here.
             validation = {"valid": True, "unsupported_numbers": [], "warning_missing": False}
         elif state["plan"]["mode"] != "data":
             validation = {"valid": True, "unsupported_numbers": [], "warning_missing": False}
@@ -489,6 +534,7 @@ class AgentOrchestrator:
             "control": public_policy(),
             "response_policy": state.get("response_policy", {}),
             "input_guardrail": state.get("input_guardrail", {}),
+            "database_error": state.get("database_error", ""),
             "evidence_sources": state.get("evidence_sources", []),
             "knowledge_sections": [
                 item["title"] for item in state.get("knowledge_sections", [])
@@ -507,7 +553,10 @@ class AgentOrchestrator:
                 "query_ids": query_ids,
                 "warnings": state.get("warnings", []),
             }
-            if state["plan"]["mode"] in {"data", "clarification"}
+            if (
+                state["plan"]["mode"] in {"data", "clarification"}
+                and not state.get("database_error")
+            )
             else prior_context
         )
         memory_store.remember(

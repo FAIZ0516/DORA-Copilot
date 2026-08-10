@@ -44,6 +44,7 @@ class AgentState(TypedDict, total=False):
     database_query_executed: bool
     cache_reason: str
     input_guardrail: dict[str, Any]
+    database_error: str
     plan: AgentPlan
     response_policy: dict[str, Any]
     knowledge_sections: list[dict[str, str]]

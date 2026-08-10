@@ -35,7 +35,7 @@ def load_response_protocol_phrase() -> str:
     """Extract the response phrase from the runtime instructions at request time.
 
     Reads the RESPONSE PROTOCOL section, extracts ONLY the phrase inside the
-    ``` code block (e.g. "YES ,IM ZARA."), and returns it. Reading on every
+    ``` code block (e.g. "Yes, I'm Zara."), and returns it. Reading on every
     call means edits to INSTRUCTIONS.md take effect immediately.
     """
     try:

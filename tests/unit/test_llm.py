@@ -69,7 +69,7 @@ def test_deepseek_configuration_drives_common_provider_properties() -> None:
     assert settings.llm_response_temperature == 0.3
 
 
-def test_deepseek_chat_sends_thinking_json_and_token_controls() -> None:
+def test_deepseek_json_planning_disables_thinking_and_sets_token_controls() -> None:
     captured: dict[str, object] = {}
     authorization = ""
 
@@ -118,9 +118,69 @@ def test_deepseek_chat_sends_thinking_json_and_token_controls() -> None:
     ]
     assert captured["temperature"] == 0
     assert captured["max_tokens"] == 1600
-    assert captured["thinking"] == {"type": "enabled"}
+    assert captured["thinking"] == {"type": "disabled"}
     assert captured["response_format"] == {"type": "json_object"}
     assert client.source == "deepseek:deepseek-v4-flash"
+
+
+def test_deepseek_retries_empty_content_with_thinking_disabled() -> None:
+    requests: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        if len(requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "finish_reason": "length",
+                            "message": {
+                                "reasoning_content": "private reasoning",
+                                "content": "",
+                            },
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "Friendly answer"}}]},
+        )
+
+    client = GenerativeAIClient(deepseek_settings())
+    replace_http_client(
+        client,
+        httpx.MockTransport(handler),
+        base_url="https://api.deepseek.com/",
+    )
+
+    assert client.complete("system", "question") == "Friendly answer"
+    assert len(requests) == 2
+    assert requests[0]["thinking"] == {"type": "enabled"}
+    assert requests[1]["thinking"] == {"type": "disabled"}
+    assert client.last_error is None
+
+
+def test_deepseek_repeated_empty_content_returns_friendly_error() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": ""}}]},
+        )
+
+    client = GenerativeAIClient(deepseek_settings())
+    replace_http_client(
+        client,
+        httpx.MockTransport(handler),
+        base_url="https://api.deepseek.com/",
+    )
+
+    assert client.complete("system", "question") is None
+    assert client.unavailable_message == (
+        "I couldn't complete that request just now. Your question is valid, so "
+        "please try again."
+    )
 
 
 def test_deepseek_authentication_error_is_safe_and_actionable() -> None:

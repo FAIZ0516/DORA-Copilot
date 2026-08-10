@@ -1,4 +1,8 @@
-"""Deterministic routing for Jira knowledge, metadata, and safe data requests."""
+"""Legacy deterministic Jira routes for offline tests and compatibility.
+
+Runtime request understanding is model-first in :mod:`backend.agent.planner`;
+this module no longer short-circuits the configured AI planner.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +15,7 @@ from .state import AgentPlan, QueryAction
 
 DATABASE_METADATA = "DATABASE_METADATA"
 KNOWLEDGE_EXPLANATION = "KNOWLEDGE_EXPLANATION"
+CAPABILITY_EXPLANATION = "CAPABILITY_EXPLANATION"
 DATA_RETRIEVAL = "DATA_RETRIEVAL"
 ANALYSIS = "ANALYSIS"
 CLARIFICATION_REQUIRED = "CLARIFICATION_REQUIRED"
@@ -80,7 +85,7 @@ def _column_search(message: str) -> str | None:
 
 
 def route_jira_request(message: str) -> AgentPlan | None:
-    """Return a governed Jira route before the general DORA planner runs."""
+    """Return the legacy governed Jira route for offline compatibility."""
 
     lowered = " ".join(message.lower().split())
 
@@ -363,6 +368,7 @@ def route_jira_request(message: str) -> AgentPlan | None:
 
 __all__ = [
     "ANALYSIS",
+    "CAPABILITY_EXPLANATION",
     "CLARIFICATION_REQUIRED",
     "DATABASE_METADATA",
     "DATA_RETRIEVAL",

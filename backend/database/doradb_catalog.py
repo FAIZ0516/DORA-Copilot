@@ -58,6 +58,7 @@ LARGE_QUERY_REQUIRED_FILTERS = {
     "jira_key",
 }
 ALLOWED_FILTERS = {
+    "dimension",
     "release_year",
     "release_date",
     "fixversion",
@@ -396,6 +397,16 @@ METRIC_DEFINITIONS = {
     ),
 }
 
+SQUAD_CAPABILITY_BOUNDARY = """Authoritative squad-reporting boundary:
+- Across all squads, the only currently approved cross-squad aggregate is bug
+  volume, plus the distinct squad list and missing-squad coverage.
+- For one named squad, the approved tools can return yearly DORA release
+  metrics and feature/issue-to-release relationships when the query's required
+  narrowing filter is supplied.
+- Status, ageing, priority, assignee, impediment, and sprint reports are not
+  currently grouped or filterable by squad. Never present them as supported
+  per-squad reports."""
+
 
 def planner_context() -> str:
     """Return a compact steering prompt derived from the approved catalogue."""
@@ -422,4 +433,6 @@ Rules:
   narrowing filter: release_year, fixversion/release_name, issuetype, or jira_key.
 - Use at most two query actions: one primary query and one justified drill-down.
 - A chart request is read-only and safe.
-- Never produce SQL. Return only approved query IDs and structured filters."""
+- Never produce SQL. Return only approved query IDs and structured filters.
+
+{SQUAD_CAPABILITY_BOUNDARY}"""

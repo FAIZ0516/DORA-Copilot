@@ -73,7 +73,7 @@ def validate_answer(
     temporal_errors = find_temporal_errors(answer)
     restricted_field_leaks = check_response_safety(answer)
     valid = (
-        len(unsupported) <= 1
+        not unsupported
         and not warning_missing
         and not temporal_errors
         and not restricted_field_leaks

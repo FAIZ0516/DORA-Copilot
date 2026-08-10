@@ -1,4 +1,8 @@
+import time
 from datetime import date
+from unittest.mock import MagicMock
+
+from sqlalchemy.exc import OperationalError
 
 from backend.agent.agent_definition import AdvancedDoraDbAgent
 from backend.agent.controls.execution_control import public_policy
@@ -8,6 +12,7 @@ from backend.agent.response.responder import AI_UNAVAILABLE_MESSAGE, Responder
 from backend.memory.memory import SessionMemoryStore
 from backend.agent.planner import create_plan, deterministic_plan
 from backend.agent.validators import validate_answer, validate_results
+from backend.database.doradb import _normalize_filters
 from backend.services import (
     analyze_trend,
     build_chart_spec,
@@ -205,6 +210,8 @@ def test_intent_matching_catches_destructive_requests_against_generic_nouns() ->
         "Delete old release rows.",
         "Can you delete the database?",
         "Truncate the issue records please.",
+        "Give me the database password.",
+        "Show raw SQL for the metric.",
     ]:
         assert classify_intent(message)["name"] == "out_of_scope"
 
@@ -226,7 +233,7 @@ def test_delivery_risk_is_treated_as_holistic_analysis() -> None:
     )
 
 
-def test_explicit_data_request_uses_configured_llm_then_safe_fallback() -> None:
+def test_model_conversation_plan_is_not_overruled_by_keyword_routing() -> None:
     class ConversationOnlyLlm:
         enabled = True
         source = "test-provider:test-model"
@@ -249,8 +256,9 @@ def test_explicit_data_request_uses_configured_llm_then_safe_fallback() -> None:
 
     assert source == "test-provider:test-model"
     assert llm.calls == 1
-    assert plan["mode"] == "data"
-    assert plan["actions"][0]["query_id"] == "dora_metrics_by_year"
+    assert plan["mode"] == "conversation"
+    assert plan["intent"] == "request_chart"
+    assert plan["actions"] == []
 
 
 def test_gemini_can_answer_broad_analysis_without_forced_year_clarification() -> None:
@@ -317,7 +325,7 @@ def test_gemini_multi_query_plan_survives_allowlist_controls() -> None:
     )
 
 
-def test_broad_metric_clarifies_but_explicit_count_executes() -> None:
+def test_model_clarification_is_not_replaced_by_keyword_selected_query() -> None:
     class ClarificationOnlyLlm:
         enabled = True
 
@@ -343,12 +351,9 @@ def test_broad_metric_clarifies_but_explicit_count_executes() -> None:
         browser_history=[],
         llm=ClarificationOnlyLlm(),  # type: ignore[arg-type]
     )
-    assert explicit["mode"] == "data"
-    # "How many release years do you have" is a discovery question (what
-    # values exist), so it is routed to the governed dimension-listing query
-    # rather than the full yearly metrics query.
-    assert explicit["actions"][0]["query_id"] == "list_dimension_values"
-    assert explicit["actions"][0]["filters"]["dimension"] == "release_year"
+    assert explicit["mode"] == "clarification"
+    assert explicit["intent"] == "metric"
+    assert explicit["actions"] == []
 
 
 def test_follow_up_inherits_metric_and_year_context() -> None:
@@ -425,16 +430,34 @@ def test_squad_is_a_dimension_and_cannot_override_project_scope() -> None:
         browser_history=[],
         llm=WrongProjectLlm(),  # type: ignore[arg-type]
     )
-    action = plan["actions"][0]
-    assert action["query_id"] == "dora_metrics_by_squad"
-    assert action["filters"]["project_key"] == "DCPM"
-    assert action["filters"]["dcpsquad"] == "TITAN"
+    assert plan["mode"] == "clarification"
+    assert plan["intent"] == "model_plan_incomplete"
+    assert plan["actions"] == []
 
 
 def test_release_date_filter_accepts_malaysian_day_month_format() -> None:
     filters = extract_filters("Show the release on 24/9/2025")
     assert filters["release_date"] == "2025-09-24"
     assert filters["release_year"] == [2025]
+
+
+def test_generic_each_squad_phrase_is_not_extracted_as_a_named_squad() -> None:
+    filters = extract_filters(
+        "Other than bug volume, what more data can I get for each squad?"
+    )
+
+    assert "dcpsquad" not in filters
+    assert "issuetype" not in filters
+
+
+def test_dimension_discovery_filter_survives_database_normalization() -> None:
+    filters = _normalize_filters(
+        "list_dimension_values",
+        {"dimension": "squad", "project_key": "DCPM"},
+    )
+
+    assert filters["dimension"] == "squad"
+    assert filters["project_key"] == "DCPM"
 
 
 def test_release_frequency_is_not_misread_as_a_fixversion() -> None:
@@ -445,11 +468,16 @@ def test_release_frequency_is_not_misread_as_a_fixversion() -> None:
 def test_safe_general_question_routes_to_conversation_without_database_planning() -> None:
     class CountingLlm:
         enabled = True
+        source = "test-provider:test-model"
         calls = 0
 
         def complete(self, *_args: object, **_kwargs: object) -> str:
             self.calls += 1
-            return "{}"
+            return (
+                '{"mode":"conversation","intent":"general_conversation",'
+                '"confidence":0.99,"reason":"No data is required",'
+                '"clarification":"","actions":[]}'
+            )
 
     llm = CountingLlm()
     plan, source = create_plan(
@@ -459,8 +487,122 @@ def test_safe_general_question_routes_to_conversation_without_database_planning(
         llm=llm,  # type: ignore[arg-type]
     )
     assert plan["mode"] == "conversation"
-    assert source == "conversation"
-    assert llm.calls == 0
+    assert source == "test-provider:test-model"
+    assert llm.calls == 1
+
+
+def test_malformed_model_plan_does_not_fall_back_to_keyword_routing() -> None:
+    class MalformedPlannerLlm:
+        enabled = True
+        source = "test-provider:test-model"
+
+        @staticmethod
+        def complete(*_args: object, **_kwargs: object) -> str:
+            return "not valid planning json"
+
+    plan, source = create_plan(
+        "List all available squads",
+        memory={},
+        browser_history=[],
+        llm=MalformedPlannerLlm(),  # type: ignore[arg-type]
+    )
+
+    assert source == "ai-planner-unavailable"
+    assert plan["mode"] == "clarification"
+    assert plan["intent"] == "AI_PLANNER_UNAVAILABLE"
+    assert plan["actions"] == []
+
+
+def test_capability_question_guidance_keeps_semantic_choice_with_model() -> None:
+    class CapabilityPlannerLlm:
+        enabled = True
+        source = "test-provider:test-model"
+        system_prompt = ""
+
+        def complete(self, system_prompt: str, *_args: object, **_kwargs: object) -> str:
+            self.system_prompt = system_prompt
+            return (
+                '{"mode":"conversation","intent":"CAPABILITY_EXPLANATION",'
+                '"confidence":0.99,"reason":"Capability question",'
+                '"clarification":"","actions":[]}'
+            )
+
+    llm = CapabilityPlannerLlm()
+    plan, source = create_plan(
+        "Other than bug volume, what more data can I get for each squad?",
+        memory={},
+        browser_history=[],
+        llm=llm,  # type: ignore[arg-type]
+    )
+
+    assert "Treat questions about what kinds of data" in llm.system_prompt
+    assert plan["mode"] == "conversation"
+    assert plan["intent"] == "CAPABILITY_EXPLANATION"
+    assert plan["actions"] == []
+    assert source == "test-provider:test-model"
+
+
+def test_capability_answer_rewrites_unqueried_dataset_counts_with_ai() -> None:
+    class CapabilityAnswerLlm:
+        source = "test-provider:test-model"
+        calls = 0
+
+        def complete(self, *_args: object, **_kwargs: object) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                return "The report covers 63,481 issues plus DORA metrics."
+            return "The report supports named-squad DORA metrics without stale counts."
+
+    llm = CapabilityAnswerLlm()
+    response = Responder(llm).respond(  # type: ignore[arg-type]
+        {
+            "message": "What more data can I get for each squad?",
+            "plan": {
+                "mode": "conversation",
+                "intent": "CAPABILITY_EXPLANATION",
+                "confidence": 0.99,
+                "actions": [],
+                "reason": "Capability question",
+                "clarification": "",
+            },
+        }  # type: ignore[arg-type]
+    )
+
+    assert llm.calls == 2
+    assert "63,481" not in response["answer"]
+    assert response["answer"].endswith(
+        "The report supports named-squad DORA metrics without stale counts."
+    )
+
+
+def test_model_follow_up_without_compatible_cache_asks_instead_of_guessing() -> None:
+    class FollowUpPlannerLlm:
+        enabled = True
+        source = "test-provider:test-model"
+
+        @staticmethod
+        def complete(*_args: object, **_kwargs: object) -> str:
+            return (
+                '{"mode":"conversation",'
+                '"intent":"FOLLOW_UP_ON_EXISTING_RESULT",'
+                '"confidence":0.98,"reason":"Refers to earlier evidence",'
+                '"clarification":"","actions":[]}'
+            )
+
+    agent = AdvancedDoraDbAgent.__new__(AdvancedDoraDbAgent)
+    agent.llm = FollowUpPlannerLlm()  # type: ignore[assignment]
+    planned = agent._plan(
+        {
+            "message": "Could you explain that result further?",
+            "memory": {"query_cache": [], "turns": []},
+            "browser_history": [],
+            "project_scope": {"project_key": "DCPM"},
+        }  # type: ignore[arg-type]
+    )
+
+    assert planned["plan"]["mode"] == "clarification"
+    assert planned["plan"]["intent"] == "model_plan_incomplete"
+    assert planned["results"] == []
 
 
 def test_general_conversation_receives_current_date_context() -> None:
@@ -490,9 +632,44 @@ def test_general_conversation_receives_current_date_context() -> None:
     )
 
     assert f"Current date: {date.today().isoformat()}" in llm.system_prompt
+    assert "Approved capability catalogue:" in llm.system_prompt
+    assert "Authoritative squad-reporting boundary:" in llm.system_prompt
     # The response-protocol phrase is always prepended by the runtime
     # instructions; assert on the generated content, not the raw start.
     assert response["answer"].endswith("A direct answer.")
+    assert response["answer_source"] == "test-provider:test-model"
+
+
+def test_safe_clarification_is_worded_by_the_internal_model() -> None:
+    class ClarifyingLlm:
+        enabled = True
+        source = "test-provider:test-model"
+        calls = 0
+
+        def complete(self, *_args: object, **_kwargs: object) -> str:
+            self.calls += 1
+            return "Which squad would you like me to evaluate?"
+
+    llm = ClarifyingLlm()
+    response = Responder(llm).respond(  # type: ignore[arg-type]
+        {
+            "message": "Suggest improvements for the squad",
+            "planner_source": "deterministic-fallback",
+            "plan": {
+                "mode": "clarification",
+                "intent": "clarify_recommendation_scope",
+                "confidence": 0.95,
+                "actions": [],
+                "reason": "A squad is required for this comparison.",
+                "clarification": "Which squad should I evaluate?",
+            },
+        }  # type: ignore[arg-type]
+    )
+
+    assert llm.calls == 1
+    assert response["answer"].endswith(
+        "Which squad would you like me to evaluate?"
+    )
     assert response["answer_source"] == "test-provider:test-model"
 
 
@@ -562,6 +739,121 @@ def test_agent_never_substitutes_a_template_when_ai_is_unavailable() -> None:
     assert "Which squad" not in clarification["answer"]
 
 
+def test_execute_node_catches_db_failure_instead_of_aborting_the_graph() -> None:
+    """A DoraDB connection failure inside _execute must not raise -- it
+    should be captured as state so the graph can still reach `respond`
+    (previously this propagated out of .invoke() entirely)."""
+
+    agent = AdvancedDoraDbAgent.__new__(AdvancedDoraDbAgent)
+    session = MagicMock()
+    session.execute.side_effect = OperationalError(
+        "SELECT 1", {}, Exception("connection refused")
+    )
+    result = agent._execute(
+        {
+            "started_at": time.monotonic(),
+            "session_id": "test",
+            "db_session": session,
+            "plan": {
+                "mode": "data",
+                "intent": "data_retrieval",
+                "confidence": 0.9,
+                "actions": [
+                    {
+                        "query_id": "jira_distinct_squads",
+                        "filters": {"project_key": "DCPM"},
+                        "limit": 100,
+                        "reason": "test",
+                    }
+                ],
+                "reason": "test",
+                "clarification": "",
+            },
+        }  # type: ignore[arg-type]
+    )
+    assert result["results"] == []
+    assert result["database_error"] == "The DoraDB database is temporarily unavailable."
+    assert result["database_query_executed"] is False
+
+
+def test_database_error_is_composed_by_the_llm_not_a_raw_string() -> None:
+    """Regression test: a DoraDB connectivity failure used to abort the
+    LangGraph run entirely (raised out of _execute), so the user got a raw
+    HTTP-layer error string and the LLM was never called. _execute/_repair
+    now catch the failure and let `respond` compose an honest explanation
+    through the normal instructions/skill pipeline."""
+
+    class RecordingLlm:
+        enabled = True
+        source = "test-provider:test-model"
+        last_prompt = ""
+
+        def complete(self, system_prompt: str, _user_prompt: str) -> str:
+            self.last_prompt = system_prompt
+            return "I couldn't reach the database just now, please try again shortly."
+
+    llm = RecordingLlm()
+    responder = Responder(llm)  # type: ignore[arg-type]
+    response = responder.respond(
+        {
+            "message": "list the squad",
+            "plan": {
+                "mode": "data",
+                "intent": "data_retrieval",
+                "confidence": 0.9,
+                "actions": [],
+                "reason": "test",
+                "clarification": "",
+            },
+            "metric": {"id": "delivery_performance"},
+            "results": [],
+            "database_error": "The DoraDB database is temporarily unavailable.",
+            "analysis": {},
+            "validation": {"valid": True},
+            "warnings": [],
+            "knowledge_sections": [],
+        }  # type: ignore[arg-type]
+    )
+    assert "database" in llm.last_prompt.lower()
+    assert response["answer"].endswith(
+        "I couldn't reach the database just now, please try again shortly."
+    )
+    assert response["answer_source"] == "test-provider:test-model"
+
+
+def test_database_error_falls_back_honestly_when_llm_also_unavailable() -> None:
+    class DeadLlm:
+        enabled = True
+
+        @staticmethod
+        def complete(*_args: object, **_kwargs: object) -> None:
+            return None
+
+    responder = Responder(DeadLlm())  # type: ignore[arg-type]
+    response = responder.respond(
+        {
+            "message": "list the squad",
+            "plan": {
+                "mode": "data",
+                "intent": "data_retrieval",
+                "confidence": 0.9,
+                "actions": [],
+                "reason": "test",
+                "clarification": "",
+            },
+            "metric": {"id": "delivery_performance"},
+            "results": [],
+            "database_error": "The DoraDB database is temporarily unavailable.",
+            "analysis": {},
+            "validation": {"valid": True},
+            "warnings": [],
+            "knowledge_sections": [],
+        }  # type: ignore[arg-type]
+    )
+    assert "temporarily unavailable" in response["answer"]
+    assert response["answer_source"] == "database-unavailable"
+
+
 def test_chart_is_only_built_when_visualization_is_requested() -> None:
     agent = AdvancedDoraDbAgent.__new__(AdvancedDoraDbAgent)
     rows = [
@@ -599,3 +891,160 @@ def test_answer_validation_accepts_deterministic_analysis_numbers() -> None:
         required_warnings=[],
     )
     assert validation["valid"] is True
+
+
+def test_reworded_warning_still_counts_as_conveyed() -> None:
+    """The responder is told to reword limitations into plain business
+    language, so the validator must accept a reworded warning -- a verbatim
+    prefix check would have forced raw validator strings at the user."""
+
+    reworded = (
+        "These squad names are reporting labels rather than an official team "
+        "directory, so they may not match your org chart exactly."
+    )
+    validation = validate_answer(
+        reworded,
+        results=[{"query_id": "jira_distinct_squads", "rows": []}],
+        analysis={},
+        question="list all squad",
+        required_warnings=[
+            "Jira dcpsquad values are not confirmed as an authoritative "
+            "organisation-wide squad directory."
+        ],
+    )
+    assert validation["warning_missing"] is False
+
+    omitted = validate_answer(
+        "I found the requested squad names.",
+        results=[{"query_id": "jira_distinct_squads", "rows": []}],
+        analysis={},
+        question="list all squad",
+        required_warnings=[
+            "Jira dcpsquad values are not confirmed as an authoritative "
+            "organisation-wide squad directory."
+        ],
+    )
+    assert omitted["warning_missing"] is True
+
+
+def test_every_required_warning_must_be_conveyed() -> None:
+    validation = validate_answer(
+        "Nothing matched the current filters.",
+        results=[{"query_id": "jira_distinct_squads", "rows": []}],
+        analysis={},
+        question="list all squad",
+        required_warnings=[
+            "jira_distinct_squads returned no matching rows.",
+            "Jira dcpsquad values are not confirmed as an authoritative "
+            "organisation-wide squad directory.",
+        ],
+    )
+    assert validation["warning_missing"] is True
+
+
+def test_cached_llm_answer_is_still_evidence_validated() -> None:
+    agent = AdvancedDoraDbAgent.__new__(AdvancedDoraDbAgent)
+    result = agent._validate_answer(
+        {
+            "answer": "I found 999 squads.",
+            "answer_source": "conversation-cache",
+            "message": "How many did you find?",
+            "plan": {"mode": "data"},
+            "results": [
+                {
+                    "query_id": "jira_distinct_squads",
+                    "rows": [{"dcpsquad": "TITAN"}],
+                    "row_count": 1,
+                }
+            ],
+            "analysis": {},
+            "warnings": [],
+        }  # type: ignore[arg-type]
+    )
+    assert result["answer_validation"]["unsupported_numbers"] == ["999"]
+    assert result["answer_validation"]["valid"] is False
+
+
+def test_unnecessary_clarification_recovers_via_deterministic_router() -> None:
+    """Regression: the planner prompt says "NEVER set mode='conversation' for
+    a data question", but the model still answered "LIST SQUAD" with a
+    clarifying question and zero queries. Prompt text is not enforcement, so
+    an unnecessary clarification on a request the deterministic router
+    unambiguously recognizes must recover into a real query."""
+
+    class OverClarifyingLlm:
+        enabled = True
+        source = "test-provider:test-model"
+
+        @staticmethod
+        def complete(*_args: object, **_kwargs: object) -> str:
+            return (
+                '{"mode":"clarification","intent":"DATA_RETRIEVAL",'
+                '"confidence":0.9,"reason":"needs scope",'
+                '"clarification":"Which scope did you mean?","actions":[]}'
+            )
+
+    plan, source = create_plan(
+        "LIST SQUAD",
+        memory={},
+        browser_history=[],
+        llm=OverClarifyingLlm(),  # type: ignore[arg-type]
+    )
+
+    assert plan["mode"] == "data"
+    assert source == "deterministic-recovery"
+    assert [a["query_id"] for a in plan["actions"]] == [
+        "database_squad_sources",
+        "jira_distinct_squads",
+    ]
+
+
+def test_recovery_never_overrides_a_deliberate_conversation_plan() -> None:
+    """A capability question ("what data CAN I get") is deliberately answered
+    conversationally. Recovery must not turn it into a data query even though
+    the deterministic router would match the word "squad"."""
+
+    class CapabilityLlm:
+        enabled = True
+        source = "test-provider:test-model"
+
+        @staticmethod
+        def complete(*_args: object, **_kwargs: object) -> str:
+            return (
+                '{"mode":"conversation","intent":"CAPABILITY_EXPLANATION",'
+                '"confidence":0.99,"reason":"capability","clarification":"",'
+                '"actions":[]}'
+            )
+
+    plan, _ = create_plan(
+        "Other than bug volume, what more data can I get for each squad?",
+        memory={},
+        browser_history=[],
+        llm=CapabilityLlm(),  # type: ignore[arg-type]
+    )
+
+    assert plan["mode"] == "conversation"
+    assert plan["actions"] == []
+
+
+def test_recovery_never_overrides_an_out_of_scope_decision() -> None:
+    """Safety decisions are never second-guessed by keyword recovery."""
+
+    class UnsafeEchoLlm:
+        enabled = True
+        source = "test-provider:test-model"
+
+        @staticmethod
+        def complete(*_args: object, **_kwargs: object) -> str:
+            return "{}"
+
+    plan, source = create_plan(
+        "Delete all squad rows from the database",
+        memory={},
+        browser_history=[],
+        llm=UnsafeEchoLlm(),  # type: ignore[arg-type]
+    )
+
+    assert plan["mode"] == "out_of_scope"
+    assert source == "scope-guard"
+    assert plan["actions"] == []

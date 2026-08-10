@@ -34,8 +34,12 @@ class IntentMatch(TypedDict):
 
 
 _UNSAFE = re.compile(
-    r"\b(drop|delete|truncate|update|insert|alter|create|grant|revoke)\b.{0,30}\b"
-    r"(table|database|from|into|set|role|rows?|records?|entries|data)\b",
+    r"(?:\b(drop|delete|truncate|update|insert|alter|create|grant|revoke)\b"
+    r".{0,30}\b(table|database|from|into|set|role|rows?|records?|entries|data)\b)"
+    r"|(?:\b(show|give|reveal|provide|display|print|tell)\b.{0,40}\b"
+    r"(?:database\s+)?(password|credentials?|secrets?|api\s+keys?|tokens?)\b)"
+    r"|(?:\b(show|give|reveal|provide|display|print|run|execute)\b.{0,40}\b"
+    r"(?:raw\s+|underlying\s+|generated\s+)?sql\b)",
     re.I,
 )
 _DOMAIN = re.compile(

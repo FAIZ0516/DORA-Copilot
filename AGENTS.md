@@ -63,8 +63,8 @@ backend/
     agent_definition.py            # AdvancedDoraDbAgent: builds/configures the graph
     context.py                     # RuntimeContext — one chat turn's application state
     orchestrator.py                # AgentOrchestrator: the LangGraph node implementations
-    planner.py                     # intent/plan generation (LLM-assisted, deterministic fallback)
-    request_router.py              # deterministic Jira-domain routing ahead of the planner
+  planner.py                     # model-first intent/plan generation with controlled fallbacks
+  request_router.py              # legacy deterministic Jira route definitions (not primary runtime understanding)
     skill_registry.py              # discovers/matches/loads skill playbooks
     controls/
       execution_control.py         # timeouts, retry/tool-call limits, confidence gate
