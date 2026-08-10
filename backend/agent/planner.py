@@ -40,7 +40,14 @@ AI_PLANNER_UNAVAILABLE = "AI_PLANNER_UNAVAILABLE"
 # recovery must not paper over these. "unknown_entity" means the user named
 # something that genuinely isn't in the catalogue; asking is the correct
 # answer, and silently substituting a generic listing would be worse.
-_INTENTIONAL_CLARIFICATIONS = frozenset({"unknown_entity", "model_plan_incomplete"})
+# Only `unknown_entity` belongs here: it means the user named something that
+# genuinely isn't in the catalogue, so asking is the correct answer.
+# `model_plan_incomplete` was previously listed too, which was wrong -- it
+# means the model FAILED to produce a usable plan (e.g. it dropped a named
+# squad), which is precisely when the deterministic router should take over.
+# Skipping it made questions like "list all the squad and show the values
+# available for each" return a clarifying question with zero queries.
+_INTENTIONAL_CLARIFICATIONS = frozenset({"unknown_entity"})
 
 
 def _planner_unavailable(reason: str) -> AgentPlan:
