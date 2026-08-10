@@ -219,6 +219,20 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## Zara Data Workspace
+
+Open `http://localhost:5173/zara-workspace` after starting both services. Zara
+discovers only approved `enp` and `public` DoraDB sources, executes Prepare
+workflows through the read-only database connection, and builds Visualize chart
+aggregations from the same prepared workflow. Development, backup, temporary,
+writable assistant, complex JSON, and sensitive Jira text or identity fields
+are not exposed to the workspace.
+
+The backend provides dataset, schema, and value discovery; bounded workflow
+previews; chart queries and recommendations; and saved workflow storage. Keep
+`DORADB_USER` configured as a PostgreSQL SELECT-only account. Zara never writes
+to DoraDB; saved workflow definitions use the separate writable runtime store.
+
 ## API routes
 
 - `POST /api/chat`
@@ -238,6 +252,14 @@ Open `http://localhost:5173`.
 - `GET /api/dashboard/portfolio?project=DCPM`
 - `GET /api/dashboard/squad/{squad_name}?project=DCPM`
 - `GET /api/dashboard/issues?project=DCPM&squad=TITAN&page=1&page_size=20`
+- `GET /api/datasets`
+- `GET /api/datasets/{dataset_id}/schema`
+- `GET /api/datasets/{dataset_id}/values/{column_name}`
+- `POST /api/workflows/run`
+- `POST /api/workflows`
+- `PUT /api/workflows/{workflow_id}`
+- `POST /api/visualizations/query`
+- `POST /api/visualizations/recommend`
 - `GET /api/metrics`
 - `GET /api/query-catalogue`
 - `GET /api/audit/recent`

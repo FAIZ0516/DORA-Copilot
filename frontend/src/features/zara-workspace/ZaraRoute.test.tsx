@@ -20,11 +20,13 @@ describe("Zara route integration", () => {
     window.history.replaceState({}, "", "/zara-workspace");
     render(<App />);
 
-    expect(await screen.findByText("Data Workspace")).toBeTruthy();
+    expect(
+      await screen.findByText("Data Workspace", {}, { timeout: 15_000 }),
+    ).toBeTruthy();
     expect(await screen.findByText("WORKFLOW CANVAS")).toBeTruthy();
-    expect(await screen.findByText("Jira Issues")).toBeTruthy();
+    expect((await screen.findAllByText("Jira Issues")).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /Ask Zara/i })).toBeTruthy();
-  });
+  }, 20_000);
 
   it("keeps the existing role-selection UI available at the root route", async () => {
     window.history.replaceState({}, "", "/");

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any
@@ -21,7 +22,7 @@ from .agent_system.memory import memory_store
 from .config import settings
 from .conversation_context import persistent_context, recent_history, update_persistent_state
 from .conversation_repository import ConversationRepository, serialize_conversation, serialize_message
-from .db import get_db, init_db
+from .db import ZaraWorkflow, get_db, init_db
 from .dashboard_registry import ATTENTION_THRESHOLDS, UNSUPPORTED_METRICS, public_metric_registry
 from .dashboard_service import (
     ISSUE_SORT_FIELDS,
@@ -62,6 +63,19 @@ from .tts import (
     TTSQuotaExceededError,
     create_audio_stream,
 )
+from .zara_workspace import (
+    VisualizationQueryRequest,
+    VisualizationRecommendRequest,
+    WorkflowDefinition,
+    WorkflowRunRequest,
+    ZaraWorkspaceError,
+    get_dataset_schema,
+    get_dataset_values,
+    list_datasets,
+    query_visualization,
+    recommend_visualizations,
+    run_workflow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +100,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "PATCH"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["Content-Type", "X-Development-Session"],
 )
 
@@ -100,6 +114,93 @@ def development_session(
     if not re.fullmatch(r"[A-Za-z0-9._:-]{8,120}", cleaned):
         raise HTTPException(status_code=400, detail="Invalid development session identifier.")
     return cleaned
+
+
+def _zara_read(operation: Callable[[Session], Any]) -> Any:
+    """Run one Zara operation against the governed read-only DoraDB session."""
+
+    try:
+        with doradb_session() as real_session:
+            return operation(real_session)
+    except ZaraWorkspaceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DoraDbConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        logger.warning("Zara DoraDB operation failed: %s", exc)
+        raise HTTPException(
+            status_code=503, detail="DoraDB could not complete the workspace request."
+        ) from exc
+
+
+@app.get("/api/datasets")
+def zara_datasets() -> list[dict[str, Any]]:
+    return _zara_read(list_datasets)
+
+
+@app.get("/api/datasets/{dataset_id}/schema")
+def zara_dataset_schema(dataset_id: str) -> dict[str, Any]:
+    return _zara_read(lambda session: get_dataset_schema(session, dataset_id))
+
+
+@app.get("/api/datasets/{dataset_id}/values/{column_name}")
+def zara_dataset_values(dataset_id: str, column_name: str) -> dict[str, list[Any]]:
+    return _zara_read(
+        lambda session: get_dataset_values(session, dataset_id, column_name)
+    )
+
+
+@app.post("/api/workflows/run")
+def zara_run_workflow(request: WorkflowRunRequest) -> dict[str, Any]:
+    return _zara_read(lambda session: run_workflow(session, request))
+
+
+@app.post("/api/visualizations/query")
+def zara_query_visualization(request: VisualizationQueryRequest) -> dict[str, Any]:
+    return _zara_read(lambda session: query_visualization(session, request))
+
+
+@app.post("/api/visualizations/recommend")
+def zara_recommend_visualizations(
+    request: VisualizationRecommendRequest,
+) -> dict[str, list[dict[str, Any]]]:
+    return _zara_read(lambda session: recommend_visualizations(session, request))
+
+
+@app.post("/api/workflows")
+def zara_save_workflow(
+    workflow: WorkflowDefinition,
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> dict[str, Any]:
+    saved = ZaraWorkflow(user_id=user_id, name=workflow.name, definition={})
+    session.add(saved)
+    session.flush()
+    definition = workflow.model_dump(mode="json")
+    definition["id"] = str(saved.id)
+    saved.definition = definition
+    session.commit()
+    return definition
+
+
+@app.put("/api/workflows/{workflow_id}")
+def zara_update_workflow(
+    workflow_id: UUID,
+    workflow: WorkflowDefinition,
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> dict[str, Any]:
+    if workflow.id is not None and workflow.id != workflow_id:
+        raise HTTPException(status_code=400, detail="Workflow ID does not match the URL.")
+    saved = session.get(ZaraWorkflow, workflow_id)
+    if saved is None or saved.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Workflow not found.")
+    definition = workflow.model_dump(mode="json")
+    definition["id"] = str(workflow_id)
+    saved.name = workflow.name
+    saved.definition = definition
+    session.commit()
+    return definition
 
 
 @app.post("/api/conversations", response_model=ConversationSummaryResponse)
