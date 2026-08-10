@@ -89,6 +89,31 @@ def route_jira_request(message: str) -> AgentPlan | None:
 
     lowered = " ".join(message.lower().split())
 
+    # DORA metrics across every squad. dora_metrics_by_squad only returns one
+    # squad per call and the per-turn tool-call budget is small, so an
+    # "all squads" question answered that way silently covers one or two
+    # squads and makes the rest look like they have no data.
+    if re.search(
+        r"\b(all|every|each|per)\s+(the\s+)?squads?\b|\bsquad[- ]by[- ]squad\b|"
+        r"\bcompare\s+(the\s+)?squads?\b|\bacross\s+(all\s+)?squads?\b",
+        lowered,
+    ) and re.search(
+        r"\bdora\b|\bmetric|\bdelivery\b|\brelease frequency\b|\blead time\b|"
+        r"\bcycle time\b|\bchange failure\b|\bperformance\b",
+        lowered,
+    ):
+        return _plan(
+            mode="data",
+            intent=ANALYSIS,
+            reason="Compare governed DORA measures across every squad in one query.",
+            actions=[
+                _action(
+                    "dora_metrics_all_squads",
+                    reason="Return yearly DORA measures for every squad at once.",
+                )
+            ],
+        )
+
     if "current jira issue composition" in lowered:
         return _plan(
             mode="data",

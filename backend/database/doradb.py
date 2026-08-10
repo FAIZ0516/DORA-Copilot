@@ -472,6 +472,86 @@ _BASE_QUERIES = {
         FROM dora AS d
         LEFT JOIN issue_counts AS i USING (release_year)
     """,
+    # Same measures as dora_metrics_by_squad, but grouped by squad so every
+    # squad comes back in ONE query. dora_metrics_by_squad is parameterized
+    # to a single :dcpsquad, and agent_max_tool_calls is 2, so an
+    # "all squads" question could previously only ever see 1-2 squads and
+    # the assistant correctly refused to invent the rest.
+    "dora_metrics_all_squads": """
+        WITH squad_issue_versions AS (
+            SELECT
+                BTRIM(j.dcpsquad) AS dcpsquad,
+                j.key AS jira_key,
+                j.issuetype,
+                jsonb_array_elements_text(
+                    COALESCE(
+                        j.fixversions::jsonb -> 'fixversions',
+                        '[]'::jsonb
+                    )
+                ) AS fixversion
+            FROM public.tbl_gdt_dte_jira_issues AS j
+            WHERE j.project_key = :project_key
+              AND j.dcpsquad IS NOT NULL
+              AND BTRIM(j.dcpsquad) <> ''
+        ),
+        squad_release_versions AS (
+            SELECT DISTINCT dcpsquad, fixversion
+            FROM squad_issue_versions
+            WHERE fixversion <> ''
+        ),
+        dora AS (
+            SELECT
+                squad.dcpsquad,
+                f.release_year::integer AS release_year,
+                COUNT(*) AS release_count,
+                ROUND(AVG(f.major_release_freq), 2)
+                    AS release_frequency_months,
+                ROUND(AVG(f.outcome_rating) * 100, 2)
+                    AS change_failure_rate_pct,
+                ROUND(AVG(f.ltc), 2) AS lead_time_for_change_months,
+                ROUND(AVG(f.overall_actual_diff::numeric / 30.0), 2)
+                    AS delivery_cycle_time_months
+            FROM public.vw_gdt_dte_release_frequency AS f
+            JOIN squad_release_versions AS squad
+              ON squad.fixversion = f.fixversion
+            WHERE f.release_category = 1
+            GROUP BY squad.dcpsquad, f.release_year
+        ),
+        issue_counts AS (
+            SELECT
+                s.dcpsquad,
+                EXTRACT(YEAR FROM r.release_date)::integer AS release_year,
+                COUNT(*) FILTER (
+                    WHERE LOWER(s.issuetype) = 'user story'
+                ) AS user_story_count,
+                COUNT(*) FILTER (
+                    WHERE LOWER(s.issuetype) = 'feature'
+                ) AS feature_reference_count,
+                COUNT(DISTINCT s.fixversion)
+                    AS feature_reference_release_count
+            FROM squad_issue_versions AS s
+            JOIN public.tbl_gdt_dte_release_info AS r
+              ON r.fixversion = s.fixversion
+            WHERE r.release_category = 1
+            GROUP BY s.dcpsquad, EXTRACT(YEAR FROM r.release_date)
+        )
+        SELECT
+            UPPER(d.dcpsquad) AS dcpsquad,
+            d.release_year,
+            d.release_count,
+            d.release_frequency_months,
+            d.change_failure_rate_pct,
+            d.lead_time_for_change_months,
+            d.delivery_cycle_time_months,
+            COALESCE(i.user_story_count, 0) AS user_story_count,
+            COALESCE(i.feature_reference_count, 0)
+                AS feature_reference_count,
+            COALESCE(i.feature_reference_release_count, 0)
+                AS feature_reference_release_count
+        FROM dora AS d
+        LEFT JOIN issue_counts AS i
+          ON i.dcpsquad = d.dcpsquad AND i.release_year = d.release_year
+    """,
     "dora_metrics_release_detail": """
         SELECT
             COALESCE(i.release_name_sorted, f.fixversion) AS fixversion,
@@ -706,6 +786,10 @@ _FILTER_COLUMNS = {
     "dora_metrics_by_squad": {
         "release_year": "approved.release_year",
     },
+    "dora_metrics_all_squads": {
+        "release_year": "approved.release_year",
+        "dcpsquad": "approved.dcpsquad",
+    },
     "dora_metrics_release_detail": {
         "release_year": "approved.release_year",
         "release_date": "approved.release_date",
@@ -766,6 +850,7 @@ _ORDER_BY = {
     "jira_impeded_breakdown": "approved.issue_count DESC, approved.ageing_bucket",
     "dora_metrics_by_year": "approved.release_year DESC",
     "dora_metrics_by_squad": "approved.release_year DESC",
+    "dora_metrics_all_squads": "approved.dcpsquad, approved.release_year DESC",
     "dora_metrics_release_detail": "approved.release_date DESC NULLS LAST",
     "feature_vs_release_frequency": (
         "approved.release_year DESC, approved.fixversion, approved.jira_key"

@@ -37,6 +37,7 @@ APPROVED_QUERY_IDS = {
     "jira_impeded_breakdown",
     "dora_metrics_by_year",
     "dora_metrics_by_squad",
+    "dora_metrics_all_squads",
     "dora_metrics_release_detail",
     "feature_vs_release_frequency",
     "feature_vs_user_story",
@@ -304,6 +305,28 @@ QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
             "issues owned by a DCPM squad such as TITAN or JAEGER."
         ),
         "default_limit": 10,
+        "allowed_filters": ["release_year", "dcpsquad", "project_key"],
+        "expected_columns": [
+            "dcpsquad",
+            "release_year",
+            "release_count",
+            "release_frequency_months",
+            "change_failure_rate_pct",
+            "lead_time_for_change_months",
+            "delivery_cycle_time_months",
+            "user_story_count",
+            "feature_reference_count",
+            "feature_reference_release_count",
+        ],
+    },
+    "dora_metrics_all_squads": {
+        "purpose": (
+            "Yearly DORA release metrics for EVERY DCPM squad in one query. "
+            "Use this whenever the user asks to compare squads or wants the "
+            "same metrics across all squads; dora_metrics_by_squad returns "
+            "only one squad per call."
+        ),
+        "default_limit": 200,
         "allowed_filters": ["release_year", "dcpsquad", "project_key"],
         "expected_columns": [
             "dcpsquad",

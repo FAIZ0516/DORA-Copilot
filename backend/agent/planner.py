@@ -600,6 +600,12 @@ Planning principles:
   materially different evidence needed for the user's objective.
 - A named squad must use dora_metrics_by_squad with dcpsquad. A squad never
   replaces project_key.
+- For "all squads", "every squad", "each squad", or any squad-to-squad
+  comparison, use dora_metrics_all_squads with NO dcpsquad filter. It returns
+  every squad in one call. Never try to cover all squads by issuing repeated
+  dora_metrics_by_squad calls: only a couple of tool calls are permitted per
+  turn, so that silently reports on one or two squads and leaves the rest
+  looking like they have no data.
 - Treat the live entity catalogue as authoritative for projects, squads,
   release years, releases, issue types, statuses, and metrics. Understand any
   listed value regardless of casing or where it appears in the sentence.

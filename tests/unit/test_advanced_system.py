@@ -1048,3 +1048,36 @@ def test_recovery_never_overrides_an_out_of_scope_decision() -> None:
     assert plan["mode"] == "out_of_scope"
     assert source == "scope-guard"
     assert plan["actions"] == []
+
+
+def test_all_squad_metric_questions_use_the_all_squads_query() -> None:
+    """Regression: dora_metrics_by_squad returns ONE squad per call and the
+    per-turn tool-call budget is 2, so "same delivery metric for all squads"
+    silently reported on one squad and made the other 20 look like they had
+    no data. An all-squads question must use the single-query variant."""
+
+    from backend.agent.request_router import route_jira_request
+
+    for message in [
+        "pull the same delivery metric to all squad",
+        "compare the squads delivery performance",
+        "show DORA metrics for each squad",
+    ]:
+        plan = route_jira_request(message)
+        assert plan is not None, message
+        assert [a["query_id"] for a in plan["actions"]] == ["dora_metrics_all_squads"]
+        # No dcpsquad filter -- that would collapse it back to one squad.
+        assert "dcpsquad" not in plan["actions"][0]["filters"]
+
+
+def test_listing_squads_is_not_hijacked_by_the_metrics_route() -> None:
+    """"list all the squad" wants the squad names, not DORA measures."""
+
+    from backend.agent.request_router import route_jira_request
+
+    plan = route_jira_request("list all the squad")
+    assert plan is not None
+    assert [a["query_id"] for a in plan["actions"]] == [
+        "database_squad_sources",
+        "jira_distinct_squads",
+    ]
