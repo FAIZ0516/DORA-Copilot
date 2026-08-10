@@ -197,3 +197,55 @@ def test_bug_ranking_uses_grouped_query_not_squad_list():
     plan = route_jira_request("Which squad has the most bugs?")
     assert plan is not None
     assert [action["query_id"] for action in plan["actions"]] == ["jira_bug_counts_by_squad"]
+
+
+def _single_squad_cache(squad="BE 1"):
+    return build_cache_entry(
+        intent="ANALYSIS",
+        project_scope={"project_key": "DCPM"},
+        results=[{
+            "query_id": "dora_metrics_by_squad",
+            "filters": {"project_key": "DCPM", "dcpsquad": squad},
+            "rows": [{"dcpsquad": squad, "release_year": 2022}],
+            "row_count": 1,
+        }],
+    )
+
+
+def test_scope_widening_follow_up_does_not_reuse_a_single_squad_cache():
+    """Regression: "make the same for each squad" after a one-squad answer
+    was served from that squad's cached rows, so the assistant reported
+    metrics for BE 1 and claimed the other 20 squads had no data. They did --
+    it simply never queried them."""
+
+    memory = {"query_cache": [_single_squad_cache()]}
+    for message in ["make the same for each squad", "make for all squad",
+                    "compare the squads"]:
+        decision = choose_cache_action(
+            message, memory=memory, project_scope={"project_key": "DCPM"},
+            semantic_follow_up=True,
+        )
+        assert decision.action == "none", message
+        assert decision.reason == "scope_widened"
+
+
+def test_asking_about_a_different_squad_forces_a_fresh_query():
+    memory = {"query_cache": [_single_squad_cache()]}
+    decision = choose_cache_action(
+        "Kaiju team", memory=memory, project_scope={"project_key": "DCPM"},
+        semantic_follow_up=True,
+    )
+    assert decision.action == "none"
+    assert decision.reason == "different_squad_requested"
+
+
+def test_genuine_follow_ups_still_reuse_the_cache():
+    """The narrowing must not break ordinary follow-ups."""
+
+    memory = {"query_cache": [_single_squad_cache()]}
+    for message in ["why is that", "explain that"]:
+        decision = choose_cache_action(
+            message, memory=memory, project_scope={"project_key": "DCPM"},
+            semantic_follow_up=True,
+        )
+        assert decision.action == "reuse", message

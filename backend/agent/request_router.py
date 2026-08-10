@@ -97,11 +97,22 @@ def route_jira_request(message: str) -> AgentPlan | None:
         r"\b(all|every|each|per)\s+(the\s+)?squads?\b|\bsquad[- ]by[- ]squad\b|"
         r"\bcompare\s+(the\s+)?squads?\b|\bacross\s+(all\s+)?squads?\b",
         lowered,
-    ) and re.search(
-        r"\bdora\b|\bmetric|\bdelivery\b|\brelease frequency\b|\blead time\b|"
-        r"\bcycle time\b|\bchange failure\b|\bperformance\b",
-        lowered,
-    ):
+    ) and (
+        re.search(
+            r"\bdora\b|\bmetric|\bdelivery\b|\brelease frequency\b|\blead time\b|"
+            r"\bcycle time\b|\bchange failure\b|\bperformance\b",
+            lowered,
+        )
+        # "make the same for each squad" / "do it for all squads": the metric
+        # is carried by conversation context, not restated. Without this the
+        # request fell through and was answered from a single-squad cache.
+        or re.search(
+            r"\b(same|it|this|that|these|those)\b.{0,30}\b(all|every|each)\s+"
+            r"(the\s+)?squads?\b|\b(make|do|run|pull|show|repeat|apply)\b.{0,30}"
+            r"\b(all|every|each)\s+(the\s+)?squads?\b",
+            lowered,
+        )
+    ) and not re.search(r"\b(list|name|which)\b", lowered):
         return _plan(
             mode="data",
             intent=ANALYSIS,

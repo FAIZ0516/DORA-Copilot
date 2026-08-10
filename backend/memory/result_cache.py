@@ -21,6 +21,14 @@ from ..database.doradb_catalog import QUERY_CATALOGUE
 
 
 FOLLOW_UP_ON_EXISTING_RESULT = "FOLLOW_UP_ON_EXISTING_RESULT"
+# "for each/all/every squad", "across squads", "compare the squads" -- a
+# request to widen beyond whatever the cache holds.
+ALL_ENTITIES_PATTERN = re.compile(
+    r"\b(all|every|each)\s+(?:of\s+)?(?:the\s+)?squads?\b"
+    r"|\bsquad[- ]by[- ]squad\b|\bacross\s+(?:all\s+)?squads?\b"
+    r"|\bcompare\s+(?:the\s+)?squads?\b|\bfor\s+all\s+squad",
+    re.I,
+)
 REFRESH_PATTERN = re.compile(r"\b(current|latest|refresh|refreshed|rerun|re-run|updated)\b", re.I)
 FOLLOW_UP_PATTERN = re.compile(
     r"\b(how many did you find|how many|which one|compare them|why\??|"
@@ -91,6 +99,37 @@ def choose_cache_action(
     query_ids = set(entry.get("query_ids", []))
     if "squad" in lowered and not any("squad" in query_id for query_id in query_ids):
         return CacheDecision("none", reason="required_fields_missing")
+
+    # A follow-up that WIDENS scope cannot be served from a narrower cached
+    # result. "make the same for each squad" after a single-squad answer was
+    # being answered from that one squad's rows, so the assistant reported
+    # metrics for BE 1 and said the other 20 squads had no data -- they did,
+    # it just never queried them. Same for naming a different squad.
+    cached_squads = {
+        str(row.get("dcpsquad", "")).strip().upper()
+        for result in entry.get("results", [])
+        if isinstance(result, dict)
+        for row in result.get("rows", [])
+        if isinstance(row, dict) and row.get("dcpsquad")
+    }
+    if ALL_ENTITIES_PATTERN.search(message):
+        # Reuse only if the cache already spans more than one squad; a
+        # single-squad cache can never answer "every squad".
+        if len(cached_squads) <= 1:
+            return CacheDecision("none", reason="scope_widened")
+    elif cached_squads:
+        # A different named squad than the one(s) cached needs a new query.
+        named = {
+            value.strip().upper()
+            for value in re.findall(r"[A-Za-z][A-Za-z0-9 _-]{1,40}", message)
+        }
+        if any(
+            squad in named or squad.replace(" ", "") in {n.replace(" ", "") for n in named}
+            for squad in cached_squads
+        ):
+            pass  # the cached squad is the one being asked about
+        elif re.search(r"\bsquad|\bteam\b", lowered):
+            return CacheDecision("none", reason="different_squad_requested")
     return CacheDecision("reuse", entry=entry, reason="eligible_follow_up")
 
 
