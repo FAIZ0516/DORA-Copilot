@@ -68,8 +68,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .zara-role-card > button { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; color: white; background: var(--zara-blue); border: 0; border-radius: 10px; font-weight: 650; cursor: pointer; transition: background 160ms ease, transform 160ms ease; }
 .zara-role-card > button:hover { background: var(--zara-blue-strong); transform: translateY(-1px); }
 .zara-role-card > button svg { width: 17px; }
-.zara-role-shell > footer { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 24px; color: #7b8799; font-size: .72rem; }
+.zara-role-shell > footer { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 24px; color: #7b8799; font-size: .72rem; }
+.zara-role-shell > footer > span, .zara-role-shell > footer > a { display: inline-flex; align-items: center; gap: 8px; }
+.zara-role-shell > footer > a { color: #1769e0; font-weight: 700; text-decoration: none; }
+.zara-role-shell > footer > a:hover { text-decoration: underline; }
 .zara-role-shell > footer svg { width: 15px; color: #3b82d9; }
+.zara-workspace-loading { min-height: 100vh; display: grid; place-items: center; color: #516176; background: #f6f9fd; font: 600 0.9rem Inter, sans-serif; }
 
 /* Application shell */
 .echo-chat-app.zara-workspace-app { height: 100vh; min-height: 660px; display: grid; grid-template-rows: 62px minmax(0, 1fr); color: var(--zara-ink); background: transparent; }

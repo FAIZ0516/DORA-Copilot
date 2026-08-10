@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   Activity,
   ArrowLeft,
@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import Chat from "./components/Chat";
 import { DashboardProvider } from "./dashboardContext";
+
+const ZaraDataWorkspace = lazy(() => import("./features/zara-workspace/ZaraDataWorkspace"));
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const fallbackProjects = [{ key: "DCPM", label: "DCPM", detail: "DoraDB" }];
@@ -56,7 +58,7 @@ function storedOperationalRole() {
   return value === "scrum_master" || value === "head_of_department" ? value : null;
 }
 
-export default function App() {
+function LegacyDoraCopilot() {
   const initialRole = storedOperationalRole();
   const [screen, setScreen] = useState(initialRole ? "workspace" : "role-selection");
   const [selectedRole, setSelectedRole] = useState(initialRole === "head_of_department" ? "business" : "technical");
@@ -161,7 +163,10 @@ export default function App() {
               );
             })}
           </div>
-          <footer><ShieldCheck aria-hidden="true" /> Governed read-only analysis · Evidence before recommendations</footer>
+          <footer>
+            <span><ShieldCheck aria-hidden="true" /> Governed read-only analysis · Evidence before recommendations</span>
+            <a href="/zara-workspace">Open Zara Data Workspace <ArrowRight aria-hidden="true" /></a>
+          </footer>
         </section>
       </main>
     );
@@ -189,4 +194,16 @@ export default function App() {
       <span className="sr-only"><Database />{system.database} · {system.llm}</span>
     </main>
   );
+}
+
+export default function App() {
+  const path = typeof window === "undefined" ? "/" : window.location.pathname.replace(/\/+$/, "") || "/";
+  if (path === "/zara-workspace" || path.startsWith("/zara-workspace/")) {
+    return (
+      <Suspense fallback={<main className="zara-workspace-loading">Loading Zara Data Workspace…</main>}>
+        <ZaraDataWorkspace />
+      </Suspense>
+    );
+  }
+  return <LegacyDoraCopilot />;
 }
