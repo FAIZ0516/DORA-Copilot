@@ -44,7 +44,7 @@ export function buildRiskItems(payload) {
     const copy = RISK_COPY[reason.metric] || {
       title: `${words(reason.metric)} needs review`,
       impact: "The current delivery condition crossed a transparent dashboard attention rule.",
-      action: "Review the supporting issues with the squad before deciding on an intervention.",
+      action: "Review the supporting tickets with the squad before deciding on an intervention.",
     };
     return {
       id: `${reason.metric || "risk"}-${index}`,
@@ -75,7 +75,7 @@ export function buildPrimaryKpis(payload) {
       title: "Completed vs Scoped",
       value: `${Number(kpis.completed_work || 0).toLocaleString()} / ${Number(kpis.total_work || 0).toLocaleString()}`,
       tone: "green",
-      comparison: "Scoped issues are not a commitment baseline",
+      comparison: "Scoped tickets are not a commitment baseline",
       definition: registry.completed_work,
     },
     {
@@ -86,11 +86,11 @@ export function buildPrimaryKpis(payload) {
       comparison: "Based on current Impeded status",
       definition: {
         title: "Active Blockers",
-        description: "Issues whose current Jira status is Impeded.",
+        description: "Tickets whose current Jira status is Impeded.",
         why_it_matters: "Impeded work may need an explicit owner and next action.",
         formula: "Count where status equals Impeded.",
         source_tables: ["public.tbl_gdt_dte_jira_issues"],
-        suggested_questions: ["Which impeded issues need attention first?"],
+        suggested_questions: ["Which impeded tickets need attention first?"],
       },
     },
     {

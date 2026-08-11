@@ -21,9 +21,9 @@ export function DeliveryAnalytics({ payload }) {
     x_key: "scope",
     x_label: "Selected scope",
     series: [
-      { key: "completed", label: "End-state work", unit: "issues" },
-      { key: "in_progress", label: "In progress", unit: "issues" },
-      { key: "to_do", label: "To do", unit: "issues" },
+      { key: "completed", label: "End-state work", unit: "tickets" },
+      { key: "in_progress", label: "In progress", unit: "tickets" },
+      { key: "to_do", label: "To do", unit: "tickets" },
     ],
     data: [{
       scope: payload?.squad || "Current scope",
@@ -37,7 +37,7 @@ export function DeliveryAnalytics({ payload }) {
     title: "Work Status Distribution",
     x_key: "status_category",
     x_label: "Jira status category",
-    series: [{ key: "issue_count", label: "Issues", unit: "issues" }],
+    series: [{ key: "issue_count", label: "Tickets", unit: "tickets" }],
     data: payload?.work_status || [],
   };
   return (
@@ -68,7 +68,7 @@ export function ProductivityOverview({ payload, issues, onAsk }) {
     title: "Active Workload by Team Member",
     x_key: "assignee",
     x_label: "Assignee",
-    series: [{ key: "issue_count", label: "Active issues", unit: "issues" }],
+    series: [{ key: "issue_count", label: "Active tickets", unit: "tickets" }],
     data: rows,
   };
   return (
@@ -79,8 +79,8 @@ export function ProductivityOverview({ payload, issues, onAsk }) {
       </header>
       <div className="productivity-grid">
         <div className="productivity-chart">
-          {rows.length ? <MetricChart chart={chart} /> : <div className="analytics-empty">No assignee workload is visible on the current issue-table page.</div>}
-          <p className="analytics-note">This distribution uses the currently loaded issue-table page because a full-scope assignee aggregate is not exposed by the backend.</p>
+          {rows.length ? <MetricChart chart={chart} /> : <div className="analytics-empty">No assignee workload is visible on the current ticket-table page.</div>}
+          <p className="analytics-note">This distribution uses the currently loaded ticket-table page because a full-scope assignee aggregate is not exposed by the backend.</p>
         </div>
         <div className="support-signals" aria-label="Delivery support signals">
           <h4>Support Signals</h4>

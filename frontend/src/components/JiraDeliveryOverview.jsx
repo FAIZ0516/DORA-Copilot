@@ -124,7 +124,7 @@ export default function JiraDeliveryOverview({ projectKey, onPrompt, disabled = 
         </div>
       )}
       {dashboard?.empty && status !== "loading" && (
-        <div className="jira-dashboard-empty">No Jira issues matched the selected project scope.</div>
+        <div className="jira-dashboard-empty">No Jira tickets matched the selected project scope.</div>
       )}
       {dashboard && !dashboard.empty && (
         <>
@@ -152,20 +152,20 @@ export default function JiraDeliveryOverview({ projectKey, onPrompt, disabled = 
           {expanded && (
             <div className="jira-dashboard-expanded">
               <Breakdown
-                title="Issues by Status Category"
+                title="Tickets by Status Category"
                 rows={dashboard.status_categories}
                 labelKey="status_category"
-                onSelect={(label) => onPrompt(`Explain current Jira issues in the '${label}' status category.`)}
+                onSelect={(label) => onPrompt(`Explain current Jira tickets in the '${label}' status category.`)}
                 note="Done is an end-state and may include rejected or cancelled work."
-                tooltip="Groups all issues by their Jira status category (To Do, In Progress, Done, etc.). This shows your workflow distribution — how much work is waiting, active, or completed. Click any bar to ask the AI for a detailed breakdown."
+                tooltip="Groups all tickets by their Jira status category (To Do, In Progress, Done, etc.). This shows your workflow distribution — how much work is waiting, active, or completed. Click any bar to ask the AI for a detailed breakdown."
               />
               <Breakdown
-                title="Issues by Issue Type"
+                title="Tickets by Ticket Type"
                 rows={dashboard.issue_types}
                 labelKey="issuetype"
                 onSelect={(label) => onPrompt(issueTypePrompt(label))}
-                note="Issue types are not equal units of effort, productivity, or value."
-                tooltip="Breaks down issues by type (Bug, Story, Task, Epic, etc.). Different types serve different purposes — bugs need fixing, stories deliver features, tasks cover maintenance. Click a bar to explore a specific type."
+                note="Ticket types are not equal units of effort, productivity, or value."
+                tooltip="Breaks down tickets by type (Bug, Story, Task, Epic, etc.). Different types serve different purposes — bugs need fixing, stories deliver features, tasks cover maintenance. Click a bar to explore a specific type."
               />
               <Breakdown
                 title="Ageing of Open Work"
@@ -173,12 +173,12 @@ export default function JiraDeliveryOverview({ projectKey, onPrompt, disabled = 
                 labelKey="ageing_bucket"
                 onSelect={(label) => onPrompt(ageingPrompt(label))}
                 note="Calendar age from created date; not cycle time or DORA lead time."
-                tooltip="How long open issues have been sitting unresolved, grouped into age buckets. Older issues may indicate neglect, blockers, or deprioritisation. This is calendar age — not the same as DORA lead time or cycle time metrics."
+                tooltip="How long open tickets have been sitting unresolved, grouped into age buckets. Older tickets may indicate neglect, blockers, or deprioritisation. This is calendar age — not the same as DORA lead time or cycle time metrics."
               />
               <section className="jira-quality-panel" aria-label="Jira data quality">
                 <h4>
                   Data Quality
-                  <Tooltip text="Checks the completeness and consistency of Jira issue metadata. These metrics help you assess how reliable your data is. Issues with missing or inconsistent fields may skew team-level reports and DORA metric calculations." />
+                  <Tooltip text="Checks the completeness and consistency of Jira ticket metadata. These metrics help you assess how reliable your data is. Tickets with missing or inconsistent fields may skew team-level reports and DORA metric calculations." />
                 </h4>
                 <dl>
                   <div><dt>Missing squad</dt><dd>{formatCount(dashboard.data_quality.missing_squad_count)}</dd></div>
@@ -186,7 +186,7 @@ export default function JiraDeliveryOverview({ projectKey, onPrompt, disabled = 
                   <div><dt>Done without resolved date</dt><dd>{formatCount(dashboard.data_quality.done_without_resolved_count)}</dd></div>
                   <div><dt>Resolved before created</dt><dd>{formatCount(dashboard.data_quality.invalid_resolution_interval_count)}</dd></div>
                 </dl>
-                <p>Aggregate completeness checks only. No issue text or identities are displayed.</p>
+                <p>Aggregate completeness checks only. No ticket text or identities are displayed.</p>
               </section>
             </div>
           )}
