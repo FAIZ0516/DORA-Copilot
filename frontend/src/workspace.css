@@ -211,7 +211,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .section-heading-row > button { min-height: 32px; padding: 0 10px; color: #2567bf; background: #f1f7ff; border: 1px solid #d4e5fa; border-radius: 7px; font-size: .6rem; cursor: pointer; }
 .role-metric-grid, .portfolio-kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .role-metric-card, .portfolio-kpi-row article { position: relative; min-height: 128px; padding: 15px; background: #fff; border: 1px solid var(--zara-line); border-radius: 13px; box-shadow: 0 7px 20px rgba(43,78,125,.055); transition: transform 160ms ease, box-shadow 160ms ease; }
-.role-metric-card:hover { transform: translateY(-2px); box-shadow: var(--zara-shadow); }
+.role-metric-card:hover { transform: translateY(-2px); background-color: var(--zara-blue-soft); border-color: #bcd7f7; box-shadow: var(--zara-shadow); }
 .role-metric-card::before { content: ""; position: absolute; inset: 0 13px auto; height: 2px; background: #4a8fdf; border-radius: 99px; }
 .role-metric-card.tone-warning::before { background: #e1a82f; }
 .role-metric-card.tone-critical::before { background: #d85a62; }

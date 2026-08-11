@@ -122,6 +122,12 @@ export function filterIssuesForFeature(issuePayload, selectedFeature) {
   return { ...issuePayload, items, visible_total: items.length, page_limited_filter: true };
 }
 
+function assigneeLabel(value) {
+  const raw = String(value || "");
+  const at = raw.indexOf("@");
+  return at > 0 ? raw.slice(0, at) : raw;
+}
+
 export function buildWorkloadRows(issuePayload) {
   const counts = new Map();
   (issuePayload?.items || []).forEach((issue) => {
@@ -130,7 +136,7 @@ export function buildWorkloadRows(issuePayload) {
     counts.set(assignee, (counts.get(assignee) || 0) + 1);
   });
   return [...counts.entries()]
-    .map(([assignee, issue_count]) => ({ assignee, issue_count }))
+    .map(([assignee, issue_count]) => ({ assignee: assigneeLabel(assignee), issue_count }))
     .sort((a, b) => b.issue_count - a.issue_count || a.assignee.localeCompare(b.assignee))
     .slice(0, 8);
 }

@@ -180,6 +180,7 @@ function cartesianOptions(chart) {
       grid: { color: index === 0 ? "#e3edf2" : "transparent" },
       ticks: {
         color: "#526a7b",
+        precision: 0,
         callback: (value) => formatValue(value, unit),
       },
     };
