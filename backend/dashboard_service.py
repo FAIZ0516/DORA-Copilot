@@ -307,6 +307,25 @@ def get_dashboard_filter_options(
         f"SELECT MIN(j.created)::date AS minimum, MAX(j.created)::date AS maximum FROM {JIRA_TABLE} AS j WHERE {where}",
         params,
     )
+
+    def issue_values(expression: str) -> list[dict[str, Any]]:
+        """Return selectable values for one allowlisted ticket dimension."""
+
+        return _execute_rows(
+            session,
+            f"""
+            SELECT BTRIM({expression}) AS value, COUNT(*) AS issue_count
+            FROM {JIRA_TABLE} AS j
+            WHERE {where}
+              AND {expression} IS NOT NULL
+              AND BTRIM({expression}) <> ''
+            GROUP BY BTRIM({expression})
+            ORDER BY LOWER(BTRIM({expression})), BTRIM({expression})
+            LIMIT 500
+            """,
+            params,
+        )
+
     return {
         "project": project.strip().upper(),
         "squad": squad,
@@ -314,6 +333,12 @@ def get_dashboard_filter_options(
         "sprints": sprints,
         "date_range": date_rows[0] if date_rows else {"minimum": None, "maximum": None},
         "date_field": "created",
+        "issue_filters": {
+            "issue_types": issue_values("j.issuetype"),
+            "statuses": issue_values("j.status"),
+            "priorities": issue_values("j.priority"),
+            "assignees": issue_values("j.assignee"),
+        },
         "notes": [
             "Release and sprint filters represent stored Jira associations, not deployment or commitment history.",
             "Date range filters Jira created dates.",

@@ -12,21 +12,19 @@ const cssSource = readFileSync(new URL("../src/workspace.css", import.meta.url),
 const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const historySource = readFileSync(new URL("../src/components/history/ConversationPanel.jsx", import.meta.url), "utf8");
 
-test("Scrum Master and Head of Department load visibly different configuration", () => {
+test("the dashboard has one role-neutral configuration", () => {
   const scrum = getRoleDashboardConfig("scrum_master");
   const head = getRoleDashboardConfig("head_of_department");
-  assert.equal(scrum.dashboardTitle, "Squad Performance Dashboard");
-  assert.equal(head.dashboardTitle, "Department Performance Dashboard");
-  assert.notDeepEqual(scrum.initialQuestions, head.initialQuestions);
-  assert.notDeepEqual(scrum.access, head.access);
+  assert.equal(scrum, head);
+  assert.equal(scrum.dashboardTitle, "All Squads Overview");
 });
 
-test("panel collapse state is normalized and all panels can be restored", () => {
+test("panel collapse state is normalized without a restore-default toolbar", () => {
   assert.deepEqual(normalizePanelLayout({ history: false, dashboard: true, chat: false }), { history: false, dashboard: true, chat: false });
   assert.deepEqual(normalizePanelLayout({ history: false, dashboard: false, chat: false }), DEFAULT_PANEL_LAYOUT);
   assert.match(layoutSource, /Collapse \$\{meta\.title\}/);
   assert.match(layoutSource, /Expand \$\{meta\.title\}/);
-  assert.match(layoutSource, /restoreDefault/);
+  assert.doesNotMatch(layoutSource, /restoreDefault|Restore Default/);
 });
 
 test("suggested questions fill the composer and never send directly", () => {
@@ -40,12 +38,15 @@ test("suggested questions fill the composer and never send directly", () => {
 test("follow-up suggestions appear after an assistant response", () => {
   assert.match(chatSource, /latestAssistantId/);
   assert.match(chatSource, /Continue exploring/);
-  assert.match(chatSource, /roleConfig\.followUpQuestions/);
+  assert.match(chatSource, /requestFollowUpQuestions/);
+  assert.match(chatSource, /message\.followUps \|\| \[\]/);
 });
 
-test("scope changes refresh dashboard context and role switches without reload", () => {
-  assert.match(chatSource, /onRoleChange\?\.\(nextRole\)/);
+test("scope changes refresh dashboard context without role switching or reload", () => {
+  assert.match(chatSource, /continueInScope/);
+  assert.match(chatSource, /scope_mismatch/);
   assert.match(chatSource, /onProjectChange=\{setProject\}/);
+  assert.doesNotMatch(chatSource, /onRoleChange|changeRole/);
   assert.doesNotMatch(chatSource, /window\.location\.reload/);
 });
 
@@ -58,15 +59,18 @@ test("mobile navigation exposes Menu, Dashboard, and Zara", () => {
   assert.match(cssSource, /data-mobile-panel="dashboard"/);
 });
 
-test("role selection enters the workspace directly and recent chats stay collapsed", () => {
-  assert.match(appSource, /setScreen\("workspace"\)/);
+test("the app enters the workspace directly and recent chats stay collapsed", () => {
+  // The role-selection screen was removed entirely: there is no screen
+  // state and no chooser, so the workspace renders immediately.
+  assert.doesNotMatch(appSource, /role-selection/);
+  assert.doesNotMatch(appSource, /setScreen/);
   assert.doesNotMatch(appSource, /Get Started|welcome-screen/);
   assert.match(historySource, /<details className="recent-chats-accordion">/);
   assert.doesNotMatch(historySource, /<details className="recent-chats-accordion" open/);
   assert.match(historySource, />Dashboard</);
   assert.match(historySource, />Reports</);
   assert.match(historySource, />Zara Assistant</);
-  assert.match(historySource, />Settings</);
+  assert.doesNotMatch(historySource, />Settings</);
 });
 
 test("invalid AI chart schemas are rejected without executing generated code", () => {

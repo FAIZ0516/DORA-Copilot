@@ -46,6 +46,10 @@ export function sendChat(payload) {
   return request("/api/chat", { method: "POST", body: JSON.stringify(payload) });
 }
 
+export function requestFollowUpQuestions(payload) {
+  return request("/api/chat/follow-ups", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export function messagesFromConversation(conversation) {
   return (conversation.messages || [])
     .filter((message) => message.role === "user" || message.role === "assistant")

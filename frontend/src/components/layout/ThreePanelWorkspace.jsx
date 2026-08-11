@@ -4,7 +4,6 @@ import {
   MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
-  RotateCcw,
 } from "lucide-react";
 
 const PANEL_META = {
@@ -44,23 +43,9 @@ function WorkspacePanel({ panel, visible, onToggle, children }) {
 }
 
 export default function ThreePanelWorkspace({ layout, history, dashboard, chat }) {
-  const { panels, mobilePanel, togglePanel, showPanel, restoreDefault } = layout;
+  const { panels, mobilePanel, togglePanel, showPanel } = layout;
   return (
     <div className="three-panel-workspace">
-      <header className="workspace-layout-toolbar" aria-label="Workspace panel controls">
-        <div>
-          {Object.entries(PANEL_META).map(([key, meta]) => {
-            const Icon = meta.icon;
-            return (
-              <button className={panels[key] ? "is-visible" : ""} type="button" key={key} onClick={() => togglePanel(key)} aria-pressed={panels[key]}>
-                <Icon aria-hidden="true" /> {panels[key] ? `Hide ${meta.shortTitle}` : `Show ${meta.shortTitle}`}
-              </button>
-            );
-          })}
-        </div>
-        <button type="button" onClick={restoreDefault}><RotateCcw aria-hidden="true" /> Restore default</button>
-      </header>
-
       <nav className="workspace-mobile-tabs" aria-label="Workspace views">
         {Object.entries(PANEL_META).map(([key, meta]) => {
           const Icon = meta.icon;

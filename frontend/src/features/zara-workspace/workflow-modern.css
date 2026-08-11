@@ -1,0 +1,176 @@
+/* Modern workflow diagram: native HTML cards connected by an interactive SVG flow. */
+.workflow-canvas {
+  background-color: #f7f9fd;
+  background-image:
+    radial-gradient(circle at 20% 16%, rgba(99, 102, 241, .11), transparent 25%),
+    radial-gradient(circle at 74% 72%, rgba(14, 165, 233, .08), transparent 28%),
+    linear-gradient(rgba(121, 142, 174, .12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(121, 142, 174, .12) 1px, transparent 1px),
+    radial-gradient(rgba(91, 111, 143, .22) .7px, transparent .7px);
+  background-position: 0 0, 0 0, 0 0, 0 0, 10px 10px;
+  background-size: auto, auto, 80px 80px, 80px 80px, 20px 20px;
+}
+
+.workflow-canvas::before {
+  background: linear-gradient(135deg, rgba(255, 255, 255, .56), transparent 42%, rgba(238, 244, 255, .3));
+}
+
+.canvas-title {
+  top: 12px;
+  left: 14px;
+  width: calc(100% - 28px);
+  height: 46px;
+  border: 1px solid rgba(211, 222, 238, .9);
+  border-radius: 13px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, .86);
+  box-shadow: 0 10px 26px rgba(37, 57, 91, .08);
+  backdrop-filter: blur(16px);
+}
+
+.canvas-title span { color: #5d67ba; }
+.canvas-title strong { color: #526780; }
+.canvas-title > div::after {
+  content: "LIVE FLOW";
+  margin-left: 4px;
+  border: 1px solid #ccebdd;
+  border-radius: 999px;
+  padding: 3px 6px;
+  background: #f0fbf6;
+  color: #24815e;
+  font-size: 6px;
+  font-weight: 850;
+  letter-spacing: .08em;
+}
+
+.canvas-title > div::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6366f1;
+  box-shadow: 0 0 0 5px rgba(99, 102, 241, .1);
+}
+
+.canvas-world { top: 72px; }
+
+.workflow-edge {
+  stroke: #7188c7;
+  stroke-width: 2.4;
+  stroke-dasharray: 9 7;
+  filter: drop-shadow(0 3px 3px rgba(79, 70, 229, .14));
+  animation: workflow-edge-flow 14s linear infinite;
+  transition: stroke .18s ease, stroke-width .18s ease, filter .18s ease;
+}
+
+.workflow-edge:hover,
+.workflow-edge--insert {
+  stroke: #4f46e5;
+  stroke-width: 4;
+  filter: drop-shadow(0 4px 5px rgba(79, 70, 229, .22));
+  animation-duration: 4s;
+}
+
+.edge-layer marker path { fill: #596fc0; }
+
+@keyframes workflow-edge-flow {
+  to { stroke-dashoffset: -160; }
+}
+
+.workflow-node {
+  height: 146px;
+  overflow: visible;
+  border-color: rgba(207, 218, 234, .95);
+  border-radius: 17px;
+  background: linear-gradient(155deg, rgba(255, 255, 255, .98), rgba(248, 251, 255, .98));
+  box-shadow: 0 14px 32px rgba(29, 50, 83, .11), inset 0 1px 0 #fff;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.workflow-node:hover {
+  border-color: #aebfe2;
+  box-shadow: 0 21px 42px rgba(29, 50, 83, .16), inset 0 1px 0 #fff;
+}
+
+.workflow-node--selected {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, .13), 0 24px 48px rgba(50, 55, 130, .2);
+}
+
+.workflow-node::before {
+  inset: 0 16px auto;
+  width: auto;
+  height: 3px;
+  border-radius: 0 0 999px 999px;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+}
+
+.workflow-node--filter::before { background: linear-gradient(90deg, #7c3aed, #c084fc); }
+.workflow-node--select::before { background: linear-gradient(90deg, #059669, #2dd4bf); }
+.workflow-node--group::before { background: linear-gradient(90deg, #d97706, #fbbf24); }
+.workflow-node--join::before { background: linear-gradient(90deg, #e11d48, #fb7185); }
+.workflow-node--output::before { background: linear-gradient(90deg, #4f46e5, #8b5cf6); }
+
+.node-head { height: 45px; grid-template-columns: 33px 1fr 26px; padding: 9px 9px 0 13px; }
+.node-head > span {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #e9f1ff, #f5f8ff);
+  box-shadow: 0 5px 12px rgba(37, 99, 235, .12);
+}
+
+.workflow-node--filter .node-head > span { background: linear-gradient(145deg, #f2ebff, #faf7ff); }
+.workflow-node--select .node-head > span { background: linear-gradient(145deg, #e7faf3, #f5fffb); }
+.workflow-node--output .node-head > span { background: linear-gradient(145deg, #eceeff, #f8f7ff); }
+.node-head small { color: #7f8da4; }
+.node-body { padding: 7px 14px 11px; }
+.node-body h3 { color: #203650; font-size: 13px; letter-spacing: -.015em; }
+.node-body p { color: #70829a; }
+
+.node-foot {
+  height: 35px;
+  border-top-color: #e9eff6;
+  border-radius: 0 0 17px 17px;
+  background: rgba(247, 250, 253, .7);
+}
+
+.node-foot span {
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: #edf9f4;
+}
+
+.node-foot .node-warning { background: #fff7e8; }
+
+.node-port {
+  top: 62px;
+  width: 16px;
+  height: 24px;
+  border-width: 4px;
+  border-radius: 9px;
+  background: #7c8fbd;
+  box-shadow: 0 0 0 1px #aebddd, 0 4px 10px rgba(52, 68, 110, .18);
+  transition: transform .15s ease, background .15s ease, box-shadow .15s ease;
+}
+
+.node-port:hover {
+  background: #4f46e5;
+  box-shadow: 0 0 0 5px rgba(79, 70, 229, .13), 0 5px 12px rgba(52, 68, 110, .2);
+  transform: scale(1.14);
+}
+
+.node-port--in { left: -9px; }
+.node-port--out { right: -9px; }
+
+.canvas-controls {
+  border-color: #d4deeb;
+  border-radius: 12px;
+  padding: 5px;
+  box-shadow: 0 13px 30px rgba(31, 54, 86, .14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-edge { animation: none; }
+  .workflow-node { transition: none; }
+}

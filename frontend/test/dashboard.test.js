@@ -31,9 +31,9 @@ test("all four KPI cards use live aggregate values and correct percentage", () =
 test("KPI and chart drill-down prompts are exact and contain no SQL", () => {
   assert.equal(
     DASHBOARD_KPIS[0].prompt,
-    "Explain the current Jira issue composition by issue type and status category.",
+    "Explain the current Jira ticket composition by ticket type and status category.",
   );
-  assert.equal(issueTypePrompt("Bug"), "Analyse current Jira issues where issuetype is 'Bug'.");
+  assert.equal(issueTypePrompt("Bug"), "Analyse current Jira tickets where issuetype is 'Bug'.");
   assert.match(ageingPrompt("30-60 days"), /priority and ownership coverage/);
   assert.equal(DASHBOARD_KPIS.some((item) => /select\s/i.test(item.prompt)), false);
 });

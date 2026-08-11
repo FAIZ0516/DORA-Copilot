@@ -1,10 +1,9 @@
-export function defaultDashboardView(role) {
-  return role === "head_of_department" ? "portfolio" : "squad_detail";
+export function defaultDashboardView() {
+  return "portfolio";
 }
 
 export function buildDashboardContext(state, overrides = {}) {
   return {
-    role: overrides.role ?? state.selectedRole,
     active_view: overrides.active_view ?? state.activeView,
     project: overrides.project ?? state.selectedProject,
     squad: (overrides.squad ?? state.selectedSquad) || undefined,

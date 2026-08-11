@@ -36,6 +36,14 @@ _CACHE: dict[str, tuple[float, EntityCatalogue]] = {}
 _CACHE_LOCK = RLock()
 _CACHE_TTL_SECONDS = 300.0
 
+_CROSS_SQUAD_REQUEST = re.compile(
+    r"\b(?:which|what)\s+squad\b|"
+    r"\b(?:best|worst|highest|lowest|most|least)\b.{0,40}\bsquads?\b|"
+    r"\b(?:compare|rank)\b.{0,80}\bsquads?\b|"
+    r"\bacross\s+(?:all\s+)?squads?\b",
+    re.IGNORECASE,
+)
+
 
 def _tokens(value: str) -> tuple[str, ...]:
     """Normalize punctuation/casing while preserving ordered entity tokens."""
@@ -183,6 +191,51 @@ def resolve_entities(message: str, catalogue: EntityCatalogue) -> dict[str, Any]
     }
 
 
+def detect_squad_scope_mismatch(
+    message: str,
+    *,
+    active_squad: str | None,
+    catalogue: EntityCatalogue,
+) -> dict[str, Any] | None:
+    """Block questions that would widen a single-squad dashboard scope.
+
+    The active dashboard scope wins over question wording, conversation memory,
+    and cached results. Returning a structured value lets the UI offer safe
+    navigation without treating the request as an application error.
+    """
+
+    active = str(active_squad or "").strip()
+    if not active:
+        return None
+    requested = resolve_entities(message, catalogue).get("matches", {}).get("squad", [])
+    different = [value for value in requested if value.casefold() != active.casefold()]
+    cross_squad = len(requested) > 1 or bool(_CROSS_SQUAD_REQUEST.search(message))
+    if not different and not cross_squad:
+        return None
+    requested_squad = different[0] if len(different) == 1 else None
+    if requested_squad:
+        message_text = (
+            f"You're currently viewing {active}, so Zara only has access to "
+            f"{active} data in this context. Switch to {requested_squad} or "
+            "All Squads to continue."
+        )
+    else:
+        message_text = (
+            f"You're currently viewing {active}. This question requires the "
+            "All Squads view."
+        )
+    return {
+        "type": "squad_scope_mismatch",
+        "active_squad": active,
+        "requested_squad": requested_squad,
+        "message": message_text,
+        "available_actions": [
+            *(["switch_to_requested_squad"] if requested_squad else []),
+            "go_to_all_squads",
+        ],
+    }
+
+
 def filter_value_is_grounded(
     filter_name: str,
     raw_value: Any,
@@ -221,6 +274,7 @@ __all__ = [
     "EntityCatalogue",
     "clear_entity_catalogue_cache",
     "compact_catalogue",
+    "detect_squad_scope_mismatch",
     "filter_value_is_grounded",
     "load_entity_catalogue",
     "merge_memory_entities",

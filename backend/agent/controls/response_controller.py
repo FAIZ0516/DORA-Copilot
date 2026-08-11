@@ -222,6 +222,26 @@ _LIST_INTENTS = frozenset(
     {"discovery", "list_squads", "list_values", "data_retrieval", "database_metadata"}
 )
 _TABLE_INTENTS = frozenset({"issue_listing", "comparison"})
+# Same intent-vocabulary rot as _detect_format had: this only knew the
+# retired lowercase "recommendation" intent, so every live request came back
+# recommendation_mode="none" and evidence_style="metric_support" instead of
+# "detailed_evidence". Match the message too, since intent names keep moving.
+# Deliberately NOT "analysis": ANALYSIS is the generic intent the model emits
+# for most data questions, so including it made every metric lookup look like
+# a recommendation request.
+_RECOMMENDATION_INTENTS = frozenset({"recommendation", "risk_analysis"})
+_RECOMMENDATION_REQUEST = re.compile(
+    r"\b(recommend|recommendation|suggest|suggestion|improve|improvement|"
+    r"advice|advise|action plan|next steps?|what should (?:we|i|they)|"
+    r"how (?:can|should) (?:we|i|they|the team|the squad))\b",
+    re.I,
+)
+
+
+def _is_recommendation(message: str, intent: str) -> bool:
+    return bool(_RECOMMENDATION_REQUEST.search(message)) or (
+        intent.strip().lower() in _RECOMMENDATION_INTENTS
+    )
 _ENUMERATION_REQUEST = re.compile(
     r"\b(?:list|enumerate)\b"
     r"|\bwhat\s+\w+\s+(?:exist|are\s+there)\b"
@@ -292,6 +312,7 @@ def _detect_follow_up(
 
 
 def _detect_evidence_style(
+    message: str,
     *,
     mode: str,
     intent: str,
@@ -307,7 +328,11 @@ def _detect_evidence_style(
     if intent == KNOWLEDGE_EXPLANATION:
         return "source_reference"
     if mode == "data" and has_results:
-        return "detailed_evidence" if intent == "recommendation" else "metric_support"
+        return (
+            "detailed_evidence"
+            if _is_recommendation(message, intent)
+            else "metric_support"
+        )
     if mode == "conversation":
         return "brief_support"
     return "brief_support"
@@ -370,11 +395,14 @@ def derive_policy(
         "follow_up_type": follow_up_type,
         "context_reference": is_follow_up,
         "evidence_style": _detect_evidence_style(
+            message,
             mode=mode, intent=intent, has_results=has_results, follow_up_type=follow_up_type
         ),
         "uncertainty_mode": _detect_uncertainty(warnings=warnings, results=results),
         "recommendation_mode": (
-            "evidence_based" if intent == "recommendation" and has_results else "none"
+            "evidence_based"
+            if _is_recommendation(message, intent) and has_results
+            else "none"
         ),
         "priority_order": PRIORITY_ORDER,
         "suggest_next_action": mode == "data" and follow_up_type not in {"format_change", "correction"},

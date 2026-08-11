@@ -3,6 +3,8 @@ import { useState } from "react";
 
 import "./zara-workspace.css";
 import "./integration.css";
+import "./visualization-modern.css";
+import "./workflow-modern.css";
 
 import { OperationSidebar } from "./components/layout/OperationSidebar";
 import { PreviewDrawer } from "./components/layout/PreviewDrawer";

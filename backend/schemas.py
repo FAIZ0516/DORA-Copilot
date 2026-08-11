@@ -22,7 +22,6 @@ class ChatHistoryItem(BaseModel):
 class DashboardContext(BaseModel):
     """Structured dashboard scope supplied independently from the user message."""
 
-    role: Literal["scrum_master", "head_of_department"] | None = None
     active_view: Literal["portfolio", "squad_detail", "chat"] | None = None
     project: str | None = Field(default=None, min_length=1, max_length=20)
     squad: str | None = Field(default=None, min_length=1, max_length=80)
@@ -70,6 +69,16 @@ class ChatResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     validation: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class FollowUpQuestionRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    answer: str = Field(min_length=1, max_length=10_000)
+    dashboard_context: DashboardContext | None = None
+
+
+class FollowUpQuestionResponse(BaseModel):
+    suggestions: list[str] = Field(default_factory=list, max_length=3)
 
 
 class ConversationCreate(BaseModel):

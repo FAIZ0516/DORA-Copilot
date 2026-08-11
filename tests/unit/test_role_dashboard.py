@@ -12,9 +12,35 @@ from backend.dashboard_service import (
     _attention,
     _scope_sql,
     get_dashboard_issues,
+    get_dashboard_filter_options,
     get_dashboard_squads,
     get_portfolio_dashboard,
 )
+
+
+def test_dashboard_filter_options_include_live_ticket_dimensions():
+    rows = [
+        [{"value": "4.3.0", "issue_count": 2}],
+        [{"value": "TITAN Sprint 1", "issue_count": 2}],
+        [{"minimum": "2026-01-01", "maximum": "2026-08-01"}],
+        [{"value": "Bug", "issue_count": 2}],
+        [{"value": "In Progress", "issue_count": 1}],
+        [{"value": "High", "issue_count": 1}],
+        [{"value": "Alex", "issue_count": 1}],
+    ]
+    with patch("backend.dashboard_service._execute_rows", side_effect=rows) as execute:
+        payload = get_dashboard_filter_options(
+            object(), project="dcpm", squad="TITAN"  # type: ignore[arg-type]
+        )
+
+    assert payload["issue_filters"] == {
+        "issue_types": rows[3],
+        "statuses": rows[4],
+        "priorities": rows[5],
+        "assignees": rows[6],
+    }
+    assert len(execute.call_args_list) == 7
+    assert all(call.args[2]["squad"] == "TITAN" for call in execute.call_args_list)
 
 
 def test_squad_list_excludes_only_documented_generic_values():

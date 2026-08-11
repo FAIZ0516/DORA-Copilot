@@ -7,7 +7,16 @@ from sqlalchemy.exc import OperationalError
 from backend.agent.agent_definition import AdvancedDoraDbAgent
 from backend.agent.controls.execution_control import public_policy
 from backend.agent.guardrails.tool_guardrail import enforce_plan
-from backend.agent.orchestrator import _is_holistic_request
+from backend.agent.orchestrator import _is_holistic_request, needs_domain_knowledge
+from backend.agent.request_router import (
+    ANALYSIS,
+    CLARIFICATION_REQUIRED,
+    DATABASE_METADATA,
+    DATA_RETRIEVAL,
+    KNOWLEDGE_EXPLANATION,
+)
+from backend.memory.result_cache import FOLLOW_UP_ON_EXISTING_RESULT
+from backend.knowledge_service import select_knowledge_sections
 from backend.agent.response.responder import AI_UNAVAILABLE_MESSAGE, Responder
 from backend.memory.memory import SessionMemoryStore
 from backend.agent.planner import create_plan, deterministic_plan
@@ -1081,3 +1090,48 @@ def test_listing_squads_is_not_hijacked_by_the_metrics_route() -> None:
         "database_squad_sources",
         "jira_distinct_squads",
     ]
+
+
+def test_data_guide_reaches_intents_the_model_invented() -> None:
+    """Regression: the verified Jira guide was gated on an allow-list of six
+    exact intent names, but the model invents its own -- LIST_SQUADS and
+    CAPABILITY_EXPLANATION were both observed in production. Those fell
+    outside the list, so the guide silently vanished from the prompt and the
+    model answered from nothing, producing wrong numbers or a false "I have no
+    data". Gating is now a deny-list keyed on mode, so an unrecognised intent
+    defaults to receiving the guide."""
+
+    for intent in ("LIST_SQUADS", "CAPABILITY_EXPLANATION", "SOME_FUTURE_NAME"):
+        assert needs_domain_knowledge({"mode": "data", "intent": intent}), intent
+        assert needs_domain_knowledge({"mode": "conversation", "intent": intent}), intent
+
+    # The six original allow-list intents must not regress.
+    for intent in (
+        DATABASE_METADATA,
+        KNOWLEDGE_EXPLANATION,
+        DATA_RETRIEVAL,
+        ANALYSIS,
+        CLARIFICATION_REQUIRED,
+        FOLLOW_UP_ON_EXISTING_RESULT,
+    ):
+        assert needs_domain_knowledge({"mode": "data", "intent": intent}), intent
+
+
+def test_cheap_turns_skip_the_data_guide() -> None:
+    """Greetings and refusals should not pay to ship the schema guide."""
+
+    assert not needs_domain_knowledge({"mode": "conversation", "intent": "greeting"})
+    assert not needs_domain_knowledge({"mode": "conversation", "intent": "GREETING"})
+    assert not needs_domain_knowledge({"mode": "out_of_scope", "intent": "anything"})
+
+
+def test_knowledge_selection_returns_sections_for_squad_questions() -> None:
+    """The gate is only half the fix -- the selector must actually find
+    something for the questions that were failing."""
+
+    for question in (
+        "list all the squads",
+        "how many bugs does each squad have",
+        "what data do you have about issues",
+    ):
+        assert select_knowledge_sections(question), question

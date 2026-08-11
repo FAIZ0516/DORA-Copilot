@@ -3,26 +3,17 @@ import { buildDashboardContext, defaultDashboardView } from "./dashboardState";
 
 const DashboardContext = createContext(null);
 
-export function DashboardProvider({ role, project, children }) {
-  const [selectedRole, setSelectedRole] = useState(role || "scrum_master");
+export function DashboardProvider({ project, children }) {
   const [selectedProject, setSelectedProject] = useState(project || "DCPM");
   const [selectedSquad, setSelectedSquad] = useState("");
   const [selectedRelease, setSelectedRelease] = useState("");
   const [selectedSprint, setSelectedSprint] = useState("");
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
   const [selectedMetric, setSelectedMetric] = useState("");
-  const [activeView, setActiveView] = useState(defaultDashboardView(role));
+  const [activeView, setActiveView] = useState(defaultDashboardView());
   const [conversationId, setConversationId] = useState(null);
   const [selectedSquadRow, setSelectedSquadRow] = useState(null);
   const [currentMetricValue, setCurrentMetricValue] = useState(null);
-
-  useEffect(() => {
-    if (!role) return;
-    setSelectedRole(role);
-    setActiveView(defaultDashboardView(role));
-    setSelectedSquad("");
-    setSelectedSquadRow(null);
-  }, [role]);
 
   useEffect(() => {
     if (project) setSelectedProject(project);
@@ -30,7 +21,6 @@ export function DashboardProvider({ role, project, children }) {
 
   const value = useMemo(() => {
     const dashboardContext = (overrides = {}) => buildDashboardContext({
-      selectedRole,
       activeView,
       selectedProject,
       selectedSquad,
@@ -43,8 +33,6 @@ export function DashboardProvider({ role, project, children }) {
     }, overrides);
 
     return {
-      selectedRole,
-      setSelectedRole,
       selectedProject,
       setSelectedProject,
       selectedSquad,
@@ -68,7 +56,6 @@ export function DashboardProvider({ role, project, children }) {
       dashboardContext,
     };
   }, [
-    selectedRole,
     selectedProject,
     selectedSquad,
     selectedRelease,

@@ -46,13 +46,23 @@ export function buildRiskItems(payload) {
       impact: "The current delivery condition crossed a transparent dashboard attention rule.",
       action: "Review the supporting tickets with the squad before deciding on an intervention.",
     };
+    // The portfolio view flattens attention reasons from several squads into
+    // one list, so each reason carries the squad it came from. Without it a
+    // Head of Department reads "High-priority defects need review" with no way
+    // to tell which squad it describes -- and the drill-in button has nothing
+    // to open. Squad-level payloads have no squad on the reason and read the
+    // same as before.
+    const squad = reason.squad || "";
+    const detail = reason.reason || `${words(reason.metric)}: ${reason.value ?? "Unavailable"}`;
     return {
-      id: `${reason.metric || "risk"}-${index}`,
+      id: `${squad ? `${squad}-` : ""}${reason.metric || "risk"}-${index}`,
       metric: reason.metric,
+      squad,
       value: reason.value,
-      severity: severityFor(status, reason.metric),
-      evidence: reason.reason || `${words(reason.metric)}: ${reason.value ?? "Unavailable"}`,
+      severity: severityFor(squad ? reason.status || status : status, reason.metric),
+      evidence: squad ? `${squad}: ${detail}` : detail,
       ...copy,
+      title: squad ? `${squad} — ${copy.title}` : copy.title,
     };
   });
 }

@@ -18,6 +18,7 @@ import {
   getConversation,
   listConversations,
   messagesFromConversation,
+  requestFollowUpQuestions,
   sendChat,
 } from "../services/conversations";
 
@@ -35,10 +36,6 @@ function makeMessage(role, text, extras = {}) {
 export default function Chat({
   projects = [],
   databaseConnected = false,
-  selectedRole = "technical",
-  operationalRole = "scrum_master",
-  onWorkspaceChange,
-  onRoleChange,
 }) {
   const dashboard = useDashboardContext();
   const layout = usePanelLayout();
@@ -131,8 +128,6 @@ export default function Chat({
       dashboard.setDateRange({ from: restored.date_from || "", to: restored.date_to || "" });
       if (restored.active_view) dashboard.setActiveView(restored.active_view);
       if (restored.selected_metric) dashboard.setSelectedMetric(restored.selected_metric);
-      onWorkspaceChange?.(conversation.workspace);
-      if (restored.role === "head_of_department" || restored.role === "scrum_master") onRoleChange?.(restored.role);
       setConversationStatus("ready");
       setConversationError("");
     } catch (error) {
@@ -155,7 +150,7 @@ export default function Chat({
       const payload = await sendChat({
         message: text,
         conversation_id: activeConversationId,
-        workspace: selectedRole,
+        workspace: "technical",
         project_key: project || null,
         history,
         dashboard_context: requestContext,
@@ -166,13 +161,21 @@ export default function Chat({
         dashboard.setConversationId(conversationId);
         window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversationId);
       }
-      setMessages((current) => [...current, makeMessage("assistant", payload.answer, {
+      const assistantMessage = makeMessage("assistant", payload.answer, {
         chart: payload.chart,
         table: payload.table,
         warnings: payload.warnings,
         validation: payload.validation,
         metadata: payload.metadata,
-      })]);
+        requestText: text,
+        followUps: [],
+      });
+      setMessages((current) => [...current, assistantMessage]);
+      if (!payload.metadata?.scope_mismatch) {
+        requestFollowUpQuestions({ question: text, answer: payload.answer, dashboard_context: requestContext })
+          .then((followUpPayload) => setMessages((current) => current.map((message) => message.id === assistantMessage.id ? { ...message, followUps: followUpPayload.suggestions || [] } : message)))
+          .catch(() => { /* Follow-up generation is non-critical. */ });
+      }
       await loadRecent();
     } catch (error) {
       setMessages((current) => [...current, makeMessage("assistant", `I couldn’t complete that request. ${error.message}`, { error: true })]);
@@ -219,11 +222,23 @@ export default function Chat({
     }
   }
 
+  // Suggestion chips deliberately only fill the composer, so the user can
+  // edit a canned question before asking it.
   function fillQuestion(question, dashboardOverride = null) {
     setInput(question);
     pendingDashboardContextRef.current = dashboardOverride;
     layout.showPanel("chat");
     window.requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  // Dashboard "Ask Zara" buttons name an action, so they perform it. They used
+  // to share fillQuestion, which meant clicking Ask Zara typed the question
+  // into the box and then waited for the user to press Enter -- the button did
+  // not ask anything. The question already carries the dashboard scope it was
+  // built from, so there is nothing for the user to fill in.
+  function askZara(question, dashboardOverride = null) {
+    layout.showPanel("chat");
+    sendMessage(question, dashboardOverride);
   }
 
   function navigateWorkspace(destination) {
@@ -242,10 +257,19 @@ export default function Chat({
     });
   }
 
-  function changeRole(role) {
-    const nextRole = role === "head_of_department" ? "head_of_department" : "scrum_master";
-    onRoleChange?.(nextRole);
-    onWorkspaceChange?.(nextRole === "head_of_department" ? "business" : "technical");
+  function continueInScope(message, squad) {
+    const requestText = message.requestText?.trim();
+    if (!requestText) return;
+    const activeView = squad ? "squad_detail" : "portfolio";
+    dashboard.setSelectedSquad(squad);
+    dashboard.setSelectedSquadRow(null);
+    dashboard.setActiveView(activeView);
+    layout.showPanel("dashboard");
+    const scopedContext = dashboard.dashboardContext({ squad, active_view: activeView });
+    window.requestAnimationFrame(() => {
+      document.getElementById("dashboard-top")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      sendMessage(requestText, scopedContext);
+    });
   }
 
   function toggleListening() {
@@ -306,20 +330,20 @@ export default function Chat({
   }
 
   const isEmpty = !messages.some((message) => message.role === "user");
-  const roleConfig = getRoleDashboardConfig(operationalRole);
-  const inputPlaceholder = WORKSPACE_PLACEHOLDERS[selectedRole] || WORKSPACE_PLACEHOLDERS.technical;
+  const roleConfig = getRoleDashboardConfig();
+  const inputPlaceholder = WORKSPACE_PLACEHOLDERS.technical;
   const latestAssistantId = [...messages].reverse().find((message) => message.role === "assistant" && message.id !== "welcome")?.id;
 
-  const historyPanel = <ConversationPanel conversations={conversations} status={conversationStatus} error={conversationError} activeConversationId={activeConversationId} operationalRole={operationalRole} onRoleChange={changeRole} onNew={startNewConversation} onOpen={openConversation} onArchive={archiveHistoryConversation} onRetry={loadRecent} onNavigate={navigateWorkspace} />;
+  const historyPanel = <ConversationPanel conversations={conversations} status={conversationStatus} error={conversationError} activeConversationId={activeConversationId} onNew={startNewConversation} onOpen={openConversation} onArchive={archiveHistoryConversation} onRetry={loadRecent} onNavigate={navigateWorkspace} />;
   const dashboardPanel = (
     <div className="dashboard-panel-shell">
-      <RoleDashboard role={operationalRole} projectKey={project} projects={projects} databaseConnected={databaseConnected} onProjectChange={setProject} onAsk={fillQuestion} disabled={isSending} />
+      <RoleDashboard projectKey={project} projects={projects} databaseConnected={databaseConnected} onProjectChange={setProject} onAsk={askZara} disabled={isSending} />
     </div>
   );
   const chatPanel = (
     <div className="echo-copilot-panel">
       <div className="copilot-toolbar">
-        <div><Sparkles aria-hidden="true" /><span>Zara · {roleConfig.label} context</span></div>
+        <div className="copilot-context"><Sparkles aria-hidden="true" /><span>Context</span><b>{dashboard.selectedSquad || "All Squads"}</b><b>{dashboard.selectedSprint || "All Sprints"}</b><b>{dashboard.selectedProject || project || "DCPM"}</b></div>
         <div><span className={`copilot-data-status ${databaseConnected ? "connected" : "offline"}`}><i aria-hidden="true" />{databaseConnected ? "DoraDB read-only" : "Data service offline"}</span><button type="button" onClick={clearConversation}><RotateCcw aria-hidden="true" /> Clear</button></div>
       </div>
 
@@ -334,12 +358,13 @@ export default function Chat({
                 {message.role === "assistant" && <button type="button" onClick={() => speak(message)} aria-label={speakingId === message.id ? "Stop speaking" : "Read response aloud"} title="Read response aloud">{speakingId === message.id ? <Square aria-hidden="true" /> : <Volume2 aria-hidden="true" />}</button>}
               </div></div>
               <div className="copilot-message-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown></div>
+              {message.metadata?.scope_mismatch && <aside className="scope-attention" aria-label="Different squad context"><div><CircleAlert aria-hidden="true" /><span><strong>Different squad context</strong><small>Choose the data scope to continue this question.</small></span></div><div>{message.metadata.scope_mismatch.requested_squad && <button type="button" onClick={() => continueInScope(message, message.metadata.scope_mismatch.requested_squad)}>View {message.metadata.scope_mismatch.requested_squad}</button>}<button type="button" onClick={() => continueInScope(message, "")}>Go to All Squads</button></div></aside>}
               {message.warnings?.length > 0 && <div className="warning-panel"><CircleAlert aria-hidden="true" /><div><strong>Data note</strong>{message.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div></div>}
               <MetricChart chart={message.chart} />
               <DataTable table={message.table} />
               {message.error && <button className="message-retry-button" type="button" onClick={retryLastMessage}><RefreshCw aria-hidden="true" /> Retry last question</button>}
               {message.role === "assistant" && message.metadata?.analysis_steps > 0 && <div className="analysis-proof"><CheckCircle2 aria-hidden="true" /><span>{message.metadata.answer_source === "ai-provider-unavailable" ? "AI provider unavailable · no substitute answer created" : "Analyzed from read-only DoraDB · answer checked"}</span></div>}
-              {message.id === latestAssistantId && !message.error && !isSending && <SuggestedQuestionChips label="Continue exploring" questions={roleConfig.followUpQuestions} onSuggestionClick={fillQuestion} />}
+              {message.id === latestAssistantId && !message.error && !isSending && <SuggestedQuestionChips label="Continue exploring" questions={message.followUps || []} onSuggestionClick={sendMessage} />}
             </div>
           </article>
         ))}

@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, Bookmark, MessageSquareText, Play, Save, Settings, Sparkles, WandSparkles } from "lucide-react";
+import { ArrowLeft, BarChart3, Bookmark, MessageSquareText, Play, Save, Sparkles, WandSparkles } from "lucide-react";
 
 export type AppPage = "prepare" | "visualize" | "assistant" | "saved";
 interface Props { active: AppPage; name: string; running: boolean; dirty: boolean; onNameChange: (name: string) => void; onNavigate: (page: AppPage) => void; onSave: () => void; onRun: () => void }
@@ -13,6 +13,8 @@ export function TopNavigation({ active, name, running, dirty, onNameChange, onNa
     <span className="save-state">{dirty ? <><i /> Unsaved</> : "Saved"}</span>
     <button className="nav-button" onClick={onSave}><Save size={15} /> Save</button>
     {active === "prepare" && <button className="run-button" onClick={onRun} disabled={running}><Play size={15} fill="currentColor" /> {running ? "Running…" : "Run Workflow"}</button>}
-    <button className="settings-button" title="Workspace settings"><Settings size={16} /></button><span className="ai-ready" title="Zara AI ready"><Sparkles size={14} /></span>
+    {/* A "Workspace settings" button used to sit here with no handler and no
+        settings screen behind it. Removed rather than left as a dead control. */}
+    <span className="ai-ready" title="Zara AI ready"><Sparkles size={14} /></span>
   </header>;
 }

@@ -36,6 +36,7 @@ from ..instruction_loader import (
 )
 from ..request_router import CAPABILITY_EXPLANATION, KNOWLEDGE_EXPLANATION
 from ...memory.result_cache import FOLLOW_UP_ON_EXISTING_RESULT
+from ...services.entity_grounding import detect_squad_scope_mismatch
 from ..state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,65 @@ _CURRENT_DATASET_COUNT = re.compile(
     r"(?:issues?|rows?|records?|squads?|values?)\b",
     re.IGNORECASE,
 )
+
+
+def generate_follow_up_questions(
+    llm: GenerativeAIClient,
+    *,
+    question: str,
+    answer: str,
+    dashboard_context: dict[str, Any],
+    squads: list[str],
+) -> list[str]:
+    """Generate optional current-turn follow-ups without affecting the answer."""
+
+    if not llm.enabled or not question.strip() or not answer.strip():
+        return []
+    active_squad = str(dashboard_context.get("squad") or "").strip() or None
+    try:
+        raw = llm.complete(
+            """Generate up to three concise analytical follow-up questions.
+Return JSON only as {"suggestions":["..."]}. Base them only on the current
+question, current answer, and current dashboard context. Each question must
+be answerable from the connected Jira/DORA data, useful as the immediate next
+step, and not repeat the original. When a single squad is active, every
+suggestion must stay within that squad and must not compare or name another
+squad. Do not answer the questions and do not request database tools.""",
+            json.dumps(
+                {
+                    "active_context": dashboard_context,
+                    "current_user_question": question[:2000],
+                    "current_zara_answer": answer[:6000],
+                },
+                default=str,
+            ),
+            json_mode=True,
+            temperature=0.25,
+        )
+        parsed = json.loads(strip_markdown_fence(raw or "{}"))
+        candidates = parsed.get("suggestions", []) if isinstance(parsed, dict) else []
+    except Exception as exc:  # The already-generated answer must still succeed.
+        logger.warning("Follow-up suggestion generation failed: %s", type(exc).__name__)
+        return []
+
+    suggestions: list[str] = []
+    original = " ".join(question.casefold().split())
+    catalogue = {"squad": squads}
+    for candidate in candidates if isinstance(candidates, list) else []:
+        value = " ".join(str(candidate).strip().split())
+        if not 8 <= len(value) <= 180 or " ".join(value.casefold().split()) == original:
+            continue
+        if detect_squad_scope_mismatch(
+            value,
+            active_squad=active_squad,
+            catalogue=catalogue,
+        ):
+            continue
+        if value not in suggestions:
+            suggestions.append(value)
+        if len(suggestions) == 3:
+            break
+    return suggestions
 
 
 def _policy(state: AgentState) -> ResponsePolicy:
@@ -259,7 +319,11 @@ Approved capability catalogue:
                     "I cannot modify data, run arbitrary SQL, or expose credentials."
                 )
         elif plan["mode"] == "clarification":
-            if plan["intent"] == "AI_PLANNER_UNAVAILABLE":
+            if plan["intent"] == "squad_scope_mismatch":
+                answer = plan["clarification"]
+                answer_source = "scope-guard"
+                generated = None
+            elif plan["intent"] == "AI_PLANNER_UNAVAILABLE":
                 answer = getattr(
                     self.llm,
                     "unavailable_message",
@@ -292,7 +356,7 @@ Response policy for this turn:
                     ),
                     temperature=min(settings.llm_response_temperature, 0.2),
                 )
-            if plan["intent"] == "AI_PLANNER_UNAVAILABLE":
+            if plan["intent"] in {"AI_PLANNER_UNAVAILABLE", "squad_scope_mismatch"}:
                 pass
             elif generated:
                 answer = strip_markdown_fence(generated)
@@ -530,4 +594,4 @@ those years. Keep under 350 words.
         }
 
 
-__all__ = ["AI_UNAVAILABLE_MESSAGE", "Responder"]
+__all__ = ["AI_UNAVAILABLE_MESSAGE", "Responder", "generate_follow_up_questions"]

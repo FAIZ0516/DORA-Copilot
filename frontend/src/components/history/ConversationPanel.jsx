@@ -6,10 +6,8 @@ import {
   MessageSquareText,
   Plus,
   Search,
-  Settings,
   Trash2,
 } from "lucide-react";
-import { getRoleDashboardConfig } from "../../config/roleDashboardConfig";
 
 const GROUP_ORDER = ["Today", "Yesterday", "Previous 7 Days", "Older"];
 
@@ -30,8 +28,6 @@ export default function ConversationPanel({
   status,
   error,
   activeConversationId,
-  operationalRole,
-  onRoleChange,
   onNew,
   onOpen,
   onArchive,
@@ -40,7 +36,6 @@ export default function ConversationPanel({
 }) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query.trim().toLowerCase());
-  const roleConfig = getRoleDashboardConfig(operationalRole);
   const groups = useMemo(() => {
     const result = Object.fromEntries(GROUP_ORDER.map((group) => [group, []]));
     conversations
@@ -56,7 +51,6 @@ export default function ConversationPanel({
         <button type="button" className="active" onClick={() => onNavigate("dashboard")}><BarChart3 aria-hidden="true" /><span>Dashboard</span></button>
         <button type="button" onClick={() => onNavigate("reports")}><FileText aria-hidden="true" /><span>Reports</span></button>
         <button type="button" onClick={() => onNavigate("assistant")}><MessageSquareText aria-hidden="true" /><span>Zara Assistant</span></button>
-        <button type="button" onClick={() => document.getElementById("workspace-role-select")?.focus()}><Settings aria-hidden="true" /><span>Settings</span></button>
       </nav>
 
       <button className="conversation-new-button" type="button" onClick={onNew}><Plus aria-hidden="true" /> New conversation</button>
@@ -76,7 +70,7 @@ export default function ConversationPanel({
                   <div className={`conversation-row ${conversation.id === activeConversationId ? "active" : ""}`} key={conversation.id}>
                     <button type="button" onClick={() => onOpen(conversation.id)} aria-current={conversation.id === activeConversationId ? "page" : undefined}>
                       <strong title={conversation.title}>{conversation.title || "Untitled conversation"}</strong>
-                      <span>{conversation.workspace || roleConfig.workspace} workspace</span>
+                      <span>{conversation.workspace || "technical"} workspace</span>
                     </button>
                     <button className="conversation-archive" type="button" onClick={() => onArchive(conversation.id)} aria-label={`Archive ${conversation.title || "conversation"}`} title="Archive conversation"><Trash2 aria-hidden="true" /></button>
                   </div>
@@ -87,15 +81,6 @@ export default function ConversationPanel({
           </div>
         </div>
       </details>
-
-      <div className="conversation-panel-role">
-        <label htmlFor="workspace-role-select">Workspace role</label>
-        <select id="workspace-role-select" value={operationalRole} onChange={(event) => onRoleChange(event.target.value)}>
-          <option value="scrum_master">Scrum Master</option>
-          <option value="head_of_department">Head of Department</option>
-        </select>
-        <span>{roleConfig.access.join(" · ")}</span>
-      </div>
     </aside>
   );
 }

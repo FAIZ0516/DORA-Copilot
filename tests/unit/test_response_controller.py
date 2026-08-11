@@ -225,3 +225,36 @@ def test_non_enumeration_question_stays_paragraph() -> None:
         plan=_plan("conversation", "KNOWLEDGE_EXPLANATION"),
     )
     assert policy["format"] == "paragraph"
+
+
+def test_recommendation_detected_under_live_intent_names() -> None:
+    """Regression: recommendation_mode/evidence_style only knew the retired
+    lowercase "recommendation" intent, so live uppercase intents always gave
+    recommendation_mode="none" and the evidence-grounding guidance never
+    reached the model."""
+
+    results = [{"query_id": "dora_metrics_by_squad", "rows": [{"a": 1}], "row_count": 1}]
+    for message in [
+        "Suggest improvements for the Jaeger squad",
+        "What should we do to improve delivery?",
+        "How can the team improve?",
+    ]:
+        policy = derive_policy(
+            message, plan=_plan("data", "ANALYSIS"), results=results
+        )
+        assert policy["recommendation_mode"] == "evidence_based", message
+        assert policy["evidence_style"] == "detailed_evidence", message
+
+
+def test_plain_metric_question_is_not_treated_as_a_recommendation() -> None:
+    """ANALYSIS is the generic intent for most data questions, so it must not
+    by itself mark a request as a recommendation."""
+
+    results = [{"query_id": "dora_metrics_by_year", "rows": [{"a": 1}], "row_count": 1}]
+    policy = derive_policy(
+        "What was release frequency in 2022?",
+        plan=_plan("data", "ANALYSIS"),
+        results=results,
+    )
+    assert policy["recommendation_mode"] == "none"
+    assert policy["evidence_style"] == "metric_support"

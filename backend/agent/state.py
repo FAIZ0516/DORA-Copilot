@@ -36,6 +36,7 @@ class AgentState(TypedDict, total=False):
     memory: dict[str, Any]
     entity_catalogue: dict[str, list[str]]
     grounding: dict[str, Any]
+    scope_mismatch: dict[str, Any] | None
     db_session: Session | None
     started_at: float
     planner_source: str

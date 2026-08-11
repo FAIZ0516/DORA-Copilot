@@ -34,8 +34,11 @@ from ..services import (
     build_chart_spec,
     classify_intent,
     compare_rows,
+    detect_squad_scope_mismatch,
     detect_anomalies,
+    load_entity_catalogue,
     message_mentions_metric,
+    resolve_entities,
     select_delivery_performance_metric,
     select_metric,
     select_metric_by_id,
@@ -46,26 +49,38 @@ from .controls.execution_control import ensure_within_deadline, public_policy
 from .controls.response_controller import derive_policy
 from .guardrails.input_guardrail import check_input
 from .planner import create_plan
-from .request_router import (
-    ANALYSIS,
-    CLARIFICATION_REQUIRED,
-    DATABASE_METADATA,
-    DATA_RETRIEVAL,
-    KNOWLEDGE_EXPLANATION,
-)
+from .request_router import DATABASE_METADATA, DATA_RETRIEVAL
 from .state import AgentState
 from .validators import validate_answer, validate_results
 
 logger = logging.getLogger(__name__)
 
-JIRA_ROUTER_INTENTS = {
-    DATABASE_METADATA,
-    KNOWLEDGE_EXPLANATION,
-    DATA_RETRIEVAL,
-    ANALYSIS,
-    CLARIFICATION_REQUIRED,
-    FOLLOW_UP_ON_EXISTING_RESULT,
-}
+# Turns that never benefit from the data guide. Everything else gets it.
+_NO_KNOWLEDGE_INTENTS = frozenset({"greeting", "help", "farewell", "smalltalk"})
+
+
+def needs_domain_knowledge(plan: dict[str, Any]) -> bool:
+    """Should this turn carry the verified Jira data guide into the prompt?
+
+    Gating used to be an allow-list of six exact intent names. The model
+    invents its own names though -- ``LIST_SQUADS`` and
+    ``CAPABILITY_EXPLANATION`` were both seen in production -- so any invented
+    name fell outside the list and the guide silently vanished from the prompt
+    exactly when the model needed it to read the data correctly. That shows up
+    to the user as wrong numbers or a false "I don't have that data".
+
+    So gate on the plan's *mode* instead. Mode has a fixed four-value
+    vocabulary the planner cannot invent past, which makes this deny-list
+    safe: a new intent name defaults to *receiving* the guide rather than
+    losing it. Only cheap conversational turns opt out.
+    """
+
+    mode = plan.get("mode")
+    if mode in {"data", "clarification"}:
+        return True
+    if mode == "conversation":
+        return str(plan.get("intent", "")).strip().lower() not in _NO_KNOWLEDGE_INTENTS
+    return False  # out_of_scope
 
 _ANALYTICAL_METRICS = {
     "release_frequency": "release_frequency_months",
@@ -181,11 +196,57 @@ class AgentOrchestrator:
         # blocking behavior -- classify_intent()'s out_of_scope routing
         # below still owns that -- it makes the verdict observable.
         input_guardrail = check_input(state["message"])
+        try:
+            entity_catalogue = load_entity_catalogue(
+                state.get("db_session"),
+                project_key=state.get("project_scope", {}).get("project_key"),
+            )
+        except (DoraDbConfigurationError, DoraDbQueryRejected, SQLAlchemyError) as exc:
+            logger.warning("Entity catalogue unavailable during scope validation: %s", exc)
+            entity_catalogue = {}
+        grounding = resolve_entities(state["message"], entity_catalogue)
+        dashboard_context = state.get("memory", {}).get("dashboard_context", {}) or {}
+        scope_mismatch = detect_squad_scope_mismatch(
+            state["message"],
+            active_squad=dashboard_context.get("squad"),
+            catalogue=entity_catalogue,
+        )
+        if scope_mismatch:
+            plan = {
+                "mode": "clarification",
+                "intent": "squad_scope_mismatch",
+                "confidence": 1.0,
+                "actions": [],
+                "reason": "The requested data scope is outside the active dashboard squad.",
+                "clarification": scope_mismatch["message"],
+            }
+            return {
+                "plan": plan,
+                "planner_source": "scope-guard",
+                "metric": select_metric(state["message"]),
+                "response_policy": derive_policy(state["message"], plan=plan),
+                "input_guardrail": {
+                    "allowed": input_guardrail.allowed,
+                    "reason": input_guardrail.reason,
+                },
+                "entity_catalogue": entity_catalogue,
+                "grounding": grounding,
+                "scope_mismatch": scope_mismatch,
+                "knowledge_sections": [],
+                "evidence_sources": [],
+                "results": [],
+                "validation": {},
+                "query_result_reused": False,
+                "database_query_executed": False,
+                "cache_reason": "squad_scope_mismatch",
+            }
         plan, source = create_plan(
             state["message"],
             memory=state["memory"],
             browser_history=state.get("browser_history", []),
             llm=self.llm,
+            entity_catalogue=entity_catalogue,
+            grounding=grounding,
         )
         model_source = getattr(self.llm, "source", "")
         model_planned = bool(model_source) and source == model_source
@@ -246,7 +307,6 @@ class AgentOrchestrator:
         # plan left that dimension unset — it must not override a dimension
         # the planner already grounded from the user's own wording (e.g. the
         # user naming a different squad than the one they're viewing).
-        dashboard_context = state.get("memory", {}).get("dashboard_context", {}) or {}
         dashboard_filters = {
             "dcpsquad": dashboard_context.get("squad"),
             "fixversion": dashboard_context.get("release"),
@@ -271,7 +331,7 @@ class AgentOrchestrator:
             )
         sections = (
             select_knowledge_sections(state["message"])
-            if plan["intent"] in JIRA_ROUTER_INTENTS
+            if needs_domain_knowledge(plan)
             else []
         )
         section_payload = [
@@ -294,6 +354,8 @@ class AgentOrchestrator:
         return {
             "plan": plan,
             "planner_source": source,
+            "entity_catalogue": entity_catalogue,
+            "grounding": grounding,
             "metric": metric,
             "response_policy": response_policy,
             "input_guardrail": {
@@ -566,6 +628,7 @@ class AgentOrchestrator:
             "query_result_reused": bool(state.get("query_result_reused")),
             "database_query_executed": bool(state.get("database_query_executed")),
             "cache_reason": state.get("cache_reason", ""),
+            "scope_mismatch": state.get("scope_mismatch"),
         }
         prior_context = state.get("memory", {}).get("last_context", {})
         next_context = (
@@ -578,6 +641,7 @@ class AgentOrchestrator:
             }
             if (
                 state["plan"]["mode"] in {"data", "clarification"}
+                and state["plan"]["intent"] != "squad_scope_mismatch"
                 and not state.get("database_error")
             )
             else prior_context

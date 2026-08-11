@@ -17,6 +17,7 @@ from .dimension_discovery import (
 from .entity_grounding import (
     clear_entity_catalogue_cache,
     compact_catalogue,
+    detect_squad_scope_mismatch,
     filter_value_is_grounded,
     load_entity_catalogue,
     merge_memory_entities,
@@ -38,6 +39,7 @@ __all__ = [
     "classify_intent",
     "compare_rows",
     "detect_anomalies",
+    "detect_squad_scope_mismatch",
     "DIMENSION_ALIASES",
     "clear_entity_catalogue_cache",
     "compact_catalogue",
