@@ -56,63 +56,6 @@ ATTENTION_THRESHOLDS = {
     },
 }
 
-# How each threshold reads in a sentence. Keyed by the same names as
-# ATTENTION_THRESHOLDS so a new rule cannot be described without being named.
-_THRESHOLD_PHRASING = {
-    "high_priority_open_bugs": "open bugs at High or Highest priority reaches {value}",
-    "oldest_unresolved_days": "the oldest unresolved ticket reaches {value} days old",
-    "completion_pct_below": "end-state completion falls below {value}%",
-    "impeded_work": "at least {value} ticket is currently Impeded",
-    "unassigned_open_work": "at least {value} open ticket has no assignee",
-}
-
-_BAND_PHRASING = {
-    "needs_attention": "Needs Attention (the escalation band)",
-    "monitor": "Monitor (the early-warning band)",
-}
-
-
-def attention_rules_text() -> str:
-    """Describe the dashboard's attention rules in prose, from the constants.
-
-    The dashboard labels a squad "Needs Attention" using ATTENTION_THRESHOLDS,
-    but the assistant was never shown those numbers -- so asking Zara to explain
-    a risk badge produced "the material does not define any attention reasons".
-    The dashboard and the assistant now describe the same rules.
-
-    This is generated rather than written into the verified-knowledge Markdown
-    on purpose. A hand-copied threshold would silently start lying the moment
-    someone edited the dict, and a confidently wrong explanation is worse than
-    an honest "I don't know".
-    """
-
-    lines = [
-        "The dashboard assigns each squad a delivery-risk status using fixed, "
-        "deterministic thresholds. This is rule-based, not a model judgement "
-        "and not a confidence score. A squad is evaluated against the "
-        "escalation band first; if no escalation rule is met it is checked "
-        "against the early-warning band; otherwise it is Healthy.",
-        "",
-    ]
-    for band, rules in ATTENTION_THRESHOLDS.items():
-        lines.append(f"**{_BAND_PHRASING.get(band, band)}** — flagged when any of these is true:")
-        for metric, value in rules.items():
-            phrasing = _THRESHOLD_PHRASING.get(metric)
-            lines.append(
-                f"- {phrasing.format(value=value)}"
-                if phrasing
-                else f"- `{metric}` reaches {value}"
-            )
-        lines.append("")
-    lines.append(
-        "Each triggered rule becomes one attention reason, carrying the metric, "
-        "its measured value and the threshold it crossed. A status of "
-        "'Data Incomplete' means some tickets have no status category, so the "
-        "squad could not be scored at all."
-    )
-    return "\n".join(lines).strip()
-
-
 _COMMON_ROLES = ["scrum_master", "head_of_department"]
 
 METRIC_REGISTRY: dict[str, dict[str, Any]] = {
@@ -138,7 +81,7 @@ METRIC_REGISTRY: dict[str, dict[str, Any]] = {
         "required_fields": ["resolved", "status_category"],
         "source_tables": [JIRA_TABLE],
         "supported_roles": _COMMON_ROLES,
-        "suggested_questions": ["What is driving the current level of active work?", "Show the oldest active work.", "What should we prioritise?"],
+        "suggested_questions": ["Why is active work high?", "Show the oldest active work.", "What should we prioritise?"],
     },
     "completed_work": {
         "title": "End-state Work",
@@ -158,7 +101,7 @@ METRIC_REGISTRY: dict[str, dict[str, Any]] = {
         "required_fields": ["status_category", "key"],
         "source_tables": [JIRA_TABLE],
         "supported_roles": _COMMON_ROLES,
-        "suggested_questions": ["What is still outside Done?", "How much Done work was cancelled or rejected?", "How has ticket creation compared with resolution recently?"],
+        "suggested_questions": ["Why is this percentage low?", "What remains outside Done?", "What changed in this scope?"],
     },
     "in_progress_work": {
         "title": "In Progress",

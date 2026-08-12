@@ -39,42 +39,6 @@ def load_jira_knowledge() -> tuple[KnowledgeSection, ...]:
     return tuple(sections)
 
 
-ATTENTION_SECTION_TITLE = "How the dashboard decides a squad needs attention"
-
-# Wording that means the reader is asking about the dashboard's risk badge
-# rather than about the Jira table itself.
-_ATTENTION_HINTS = (
-    "attention",
-    "at risk",
-    "delivery risk",
-    "risk status",
-    "flagged",
-    "threshold",
-    "needs attention",
-    "why is this squad",
-    "investigate first",
-    "escalat",
-)
-
-
-def attention_rules_section() -> KnowledgeSection:
-    """The dashboard's risk rules, rendered from their defining constants."""
-
-    # Imported here rather than at module scope: dashboard_registry is a
-    # sibling of the knowledge layer, and a top-level import would couple
-    # every knowledge lookup to the dashboard package.
-    from .dashboard_registry import attention_rules_text
-
-    return KnowledgeSection(
-        title=ATTENTION_SECTION_TITLE, content=attention_rules_text()
-    )
-
-
-def _wants_attention_rules(question: str) -> bool:
-    lowered = question.lower()
-    return any(hint in lowered for hint in _ATTENTION_HINTS)
-
-
 def _question_terms(question: str) -> set[str]:
     return {
         term
@@ -146,14 +110,6 @@ def select_knowledge_sections(
     ranked.sort(reverse=True)
     selected: list[KnowledgeSection] = []
     used_chars = 0
-    # The risk badge is a dashboard rule, not a database fact, so it is not in
-    # the verified Markdown. Without it the assistant cannot explain its own
-    # product's "Needs Attention" label. Placed first so it survives the
-    # character budget.
-    if _wants_attention_rules(question):
-        section = attention_rules_section()
-        selected.append(section)
-        used_chars += len(section.content)
     for _, _, section in ranked:
         if len(selected) >= limit or used_chars >= MAX_CONTEXT_CHARS:
             break
@@ -214,9 +170,7 @@ def knowledge_fallback_answer(question: str) -> str:
 
 
 __all__ = [
-    "ATTENTION_SECTION_TITLE",
     "KnowledgeSection",
-    "attention_rules_section",
     "format_knowledge_context",
     "knowledge_fallback_answer",
     "load_jira_knowledge",
