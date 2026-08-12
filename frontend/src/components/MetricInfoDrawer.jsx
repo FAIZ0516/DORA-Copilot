@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Database, Info, Sparkles, X } from "lucide-react";
+import { groundQuestion } from "../dashboardQuestions";
 
 function displayValue(value) {
   if (value === null || value === undefined) return "Unavailable";
@@ -24,6 +25,7 @@ export default function MetricInfoDrawer({ metric, scope, updatedAt, onClose, on
   }, [metric, onClose]);
 
   if (!metric) return null;
+  const askScope = { squad: scope?.squad, sprint: scope?.sprint, release: scope?.release, project: scope?.project };
   const questions = metric.suggested_questions || metric.suggestedQuestions || [];
   const fields = metric.required_fields || metric.requiredFields || [];
   const sources = metric.source_tables || metric.sourceTables || [];
@@ -82,16 +84,21 @@ export default function MetricInfoDrawer({ metric, scope, updatedAt, onClose, on
       </section>
 
       <section>
-        <h3>Ask ECHO</h3>
+        <h3>Ask Zara</h3>
         <div className="metric-question-chips">
           {questions.map((question) => (
             <button
               key={question}
               type="button"
-              onClick={() => onAsk(question, {
-                selected_metric: metric.key,
-                current_metric_value: metric.value,
-              })}
+              // The registry phrases these conversationally ("Rank them by
+              // age"), which only works while looking at the drawer. Grounding
+              // restates the metric, value and scope so the sent question
+              // carries its own antecedent.
+              title={groundQuestion(question, { title: metric.title, value: metric.value, scope: askScope })}
+              onClick={() => onAsk(
+                groundQuestion(question, { title: metric.title, value: metric.value, scope: askScope }),
+                { selected_metric: metric.key, current_metric_value: metric.value },
+              )}
             >
               <Sparkles aria-hidden="true" />{question}
             </button>
