@@ -13,6 +13,99 @@
   --muted: #66788a;
   --red: #ed4655;
   --shadow: 0 10px 28px rgba(20, 67, 105, 0.1);
+
+  /* ---------------------------------------------------------------- *
+   * Chart tokens -- the single source of truth for every plot colour.
+   *
+   * `charts/chartTheme.js` reads these at render time for the Chart.js
+   * canvases (chat answers + role dashboard). The Zara workspace renders
+   * with recharts inside an isolated TypeScript project that cannot import
+   * that module, so it reads the same variables instead. Change a colour
+   * here and both chart systems follow.
+   *
+   * Series hues are spaced around the wheel and alternate in lightness, so
+   * adjacent series stay distinguishable in greyscale and for red-green
+   * colour blindness. Marker shape and line dash carry the same distinction
+   * again in JS, so meaning never depends on colour alone.
+   * ---------------------------------------------------------------- */
+  --chart-series-1: #4f46e5;
+  --chart-series-2: #0ea5e9;
+  --chart-series-3: #14b8a6;
+  --chart-series-4: #f59e0b;
+  --chart-series-5: #f43f5e;
+  --chart-series-6: #8b5cf6;
+  --chart-series-7: #22c55e;
+  --chart-series-8: #64748b;
+
+  --chart-ink: #1f2d3d;
+  --chart-ink-muted: #5b6b80;      /* 4.9:1 on --chart-surface */
+  --chart-grid: #e8eef6;
+  --chart-axis-zero: #cbd5e1;
+  --chart-surface: #ffffff;
+  --chart-track: rgba(100, 116, 139, 0.07);
+  --chart-card-border: #e2e9f2;
+  --chart-card-shadow: 0 1px 2px rgba(20, 45, 82, 0.04), 0 8px 24px rgba(20, 45, 82, 0.05);
+  --chart-tooltip-surface: #0f172a;
+  --chart-tooltip-ink: #f8fafc;
+  --chart-tooltip-muted: #cbd5e1;
+}
+
+/* Dark theme.
+ *
+ * Opt-in via `data-theme` rather than bare `prefers-color-scheme`, because the
+ * surrounding application chrome is still light-only -- flipping charts alone
+ * would leave dark cards on a light page. Setting data-theme="dark" (or "auto"
+ * to follow the OS) restyles every chart with no rebuild, because both chart
+ * systems resolve these variables at render time.
+ *
+ * Series hues are lifted in lightness so they keep contrast against the dark
+ * plot surface instead of sinking into it. */
+:root[data-theme="dark"] {
+  --chart-series-1: #a5b4fc;
+  --chart-series-2: #7dd3fc;
+  --chart-series-3: #5eead4;
+  --chart-series-4: #fcd34d;
+  --chart-series-5: #fda4af;
+  --chart-series-6: #c4b5fd;
+  --chart-series-7: #86efac;
+  --chart-series-8: #cbd5e1;
+
+  --chart-ink: #e8eef7;
+  --chart-ink-muted: #9aabc0;      /* 6.4:1 on --chart-surface */
+  --chart-grid: #253345;
+  --chart-axis-zero: #3d4d63;
+  --chart-surface: #131c28;
+  --chart-track: rgba(148, 163, 184, 0.1);
+  --chart-card-border: #253345;
+  --chart-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --chart-tooltip-surface: #f1f5f9;
+  --chart-tooltip-ink: #0f172a;
+  --chart-tooltip-muted: #475569;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="auto"] {
+    --chart-series-1: #a5b4fc;
+    --chart-series-2: #7dd3fc;
+    --chart-series-3: #5eead4;
+    --chart-series-4: #fcd34d;
+    --chart-series-5: #fda4af;
+    --chart-series-6: #c4b5fd;
+    --chart-series-7: #86efac;
+    --chart-series-8: #cbd5e1;
+
+    --chart-ink: #e8eef7;
+    --chart-ink-muted: #9aabc0;
+    --chart-grid: #253345;
+    --chart-axis-zero: #3d4d63;
+    --chart-surface: #131c28;
+    --chart-track: rgba(148, 163, 184, 0.1);
+    --chart-card-border: #253345;
+    --chart-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.28);
+    --chart-tooltip-surface: #f1f5f9;
+    --chart-tooltip-ink: #0f172a;
+    --chart-tooltip-muted: #475569;
+  }
 }
 
 * {
@@ -1662,54 +1755,113 @@ a {
 
 .metric-chart,
 .data-table-card {
-  margin: 14px 0 0;
-  padding: 18px;
-  background: #fff;
-  border: 1px solid #d7e6ed;
-  border-radius: 6px;
-  box-shadow: 0 5px 16px rgba(24, 77, 111, 0.06);
+  margin: 16px 0 0;
+  padding: 18px 18px 14px;
+  background: var(--chart-surface);
+  border: 1px solid var(--chart-card-border);
+  border-radius: 14px;
+  box-shadow: var(--chart-card-shadow);
 }
 
 .metric-chart figcaption,
 .data-table-heading {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 17px;
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
 .metric-chart figcaption > span,
 .data-table-heading strong {
-  color: #086db3;
-  font-size: 0.84rem;
-  font-weight: 800;
+  color: var(--chart-ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
+/* The chart-type label is orientation, not a heading -- a quiet pill keeps it
+   available without competing with the title. */
 .metric-chart figcaption small,
 .data-table-heading span {
-  color: #718797;
-  font-size: 0.63rem;
-  text-transform: uppercase;
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--chart-track);
+  color: var(--chart-ink-muted);
+  font-size: 0.6rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .chart-canvas {
   position: relative;
   width: 100%;
-  height: clamp(280px, 42vw, 410px);
+  height: clamp(240px, 38vw, 380px);
 }
 
+/* Part-to-whole charts need squarer room for the arc plus a side legend. */
 .chart-canvas-pie,
 .chart-canvas-donut,
 .chart-canvas-polar_area,
 .chart-canvas-radar {
-  height: clamp(320px, 48vw, 450px);
+  height: clamp(280px, 44vw, 400px);
 }
 
 .chart-data-summary {
-  margin: 10px 0 0;
-  color: #718797;
-  font-size: 0.62rem;
+  margin: 12px 0 0;
+  color: var(--chart-ink-muted);
+  font-size: 0.64rem;
+}
+
+.chart-empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 16px 0 0;
+  padding: 26px 18px;
+  border: 1px dashed var(--chart-card-border);
+  border-radius: 14px;
+  background: var(--chart-track);
+  text-align: center;
+}
+
+.chart-empty-state strong {
+  color: var(--chart-ink);
+  font-size: 0.78rem;
+}
+
+.chart-empty-state span {
+  color: var(--chart-ink-muted);
+  font-size: 0.66rem;
+}
+
+/* Phones: shorter plots so the chart and the answer around it stay on screen,
+   and a full-width legend rather than a squeezed side column. */
+@media (max-width: 640px) {
+  .metric-chart,
+  .data-table-card {
+    padding: 14px 12px 12px;
+    border-radius: 12px;
+  }
+
+  .metric-chart figcaption {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chart-canvas {
+    height: clamp(210px, 56vw, 280px);
+  }
+
+  .chart-canvas-pie,
+  .chart-canvas-donut,
+  .chart-canvas-polar_area,
+  .chart-canvas-radar {
+    height: clamp(250px, 72vw, 330px);
+  }
 }
 
 .data-table-scroll {
