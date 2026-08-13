@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, FilePlus2 } from "lucide-react";
-import { addSource, listReports, stashPendingSource } from "../../services/reports";
+import { addSource, createReport, listReports } from "../../services/reports";
 
 /**
  * "Add to report" on an assistant answer.
@@ -27,13 +27,21 @@ const MODES = [
   ["original", "Keep original wording"],
 ];
 
-export default function AddToReportMenu({ conversationId, messageId, hasChart, hasTable }) {
+export default function AddToReportMenu({ conversationId, messageId, question, hasChart, hasTable }) {
   const [open, setOpen] = useState(false);
   const [reports, setReports] = useState([]);
   const [status, setStatus] = useState("idle");
   const [selection, setSelection] = useState("full");
   const [mode, setMode] = useState("rewrite");
   const [message, setMessage] = useState("");
+
+  function preload() {
+    if (status !== "idle") return;
+    setStatus("loading");
+    listReports()
+      .then((payload) => { setReports(payload.reports || []); setStatus("ready"); })
+      .catch((error) => { setMessage(error.message); setStatus("error"); });
+  }
 
   useEffect(() => {
     if (!open || status !== "idle") return;
@@ -53,8 +61,17 @@ export default function AddToReportMenu({ conversationId, messageId, hasChart, h
   const available = SELECTIONS.filter(([value]) =>
     (value !== "chart" || hasChart) && (value !== "table" || hasTable));
 
+  /**
+   * Attach the answer and go straight to the report.
+   *
+   * Adding evidence is not the same journey as building a report from
+   * scratch: the user already knows what they want in it. One click attaches
+   * the answer and lands on the report with the data in place, ready to
+   * export -- no template picker, no form in between.
+   */
   async function attach(reportId) {
     setStatus("saving");
+    setMessage("Adding to the report…");
     try {
       await addSource(reportId, {
         conversation_id: conversationId,
@@ -62,24 +79,40 @@ export default function AddToReportMenu({ conversationId, messageId, hasChart, h
         selection,
         content_mode: mode,
       });
-      setMessage("Added to the report.");
-      setStatus("ready");
-      window.setTimeout(() => { setOpen(false); setMessage(""); }, 1400);
+      window.location.assign(`/reports/${reportId}`);
     } catch (error) {
       setMessage(error.message);
       setStatus("error");
     }
   }
 
-  function createNew() {
-    // Report Studio owns creation, so hand the selection over and navigate.
-    stashPendingSource({
-      conversation_id: conversationId,
-      message_id: messageId,
-      selection,
-      content_mode: mode,
-    });
-    window.location.assign("/reports?start=chat");
+  async function createNew() {
+    setStatus("saving");
+    setMessage("Creating a report from this answer…");
+    try {
+      const report = await createReport({
+        template: "blank",
+        title: title(),
+        audience: "delivery_manager",
+        tone: "professional",
+      });
+      await addSource(report.id, {
+        conversation_id: conversationId,
+        message_id: messageId,
+        selection,
+        content_mode: mode,
+      });
+      window.location.assign(`/reports/${report.id}`);
+    } catch (error) {
+      setMessage(error.message);
+      setStatus("error");
+    }
+  }
+
+  /** Name the new report after the question it answers. */
+  function title() {
+    const text = (question || "").trim().replace(/[?.]+$/, "");
+    return text ? text.slice(0, 90) : "Report from a Zara answer";
   }
 
   if (!conversationId || !messageId) return null;
@@ -91,6 +124,8 @@ export default function AddToReportMenu({ conversationId, messageId, hasChart, h
         aria-expanded={open}
         aria-haspopup="true"
         title="Add this answer to a report"
+        onMouseEnter={preload}
+        onFocus={preload}
         onClick={() => setOpen((value) => !value)}
       >
         <FilePlus2 aria-hidden="true" />

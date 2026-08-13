@@ -4843,3 +4843,8 @@ a {
 @media (max-width: 900px) {
   .add-to-report-menu { right: auto; left: 0; width: min(268px, 78vw); }
 }
+
+/* The menu is absolutely positioned inside a chat message, so the message
+   must not clip it. */
+.copilot-message-body,
+.copilot-message-meta { overflow: visible; }

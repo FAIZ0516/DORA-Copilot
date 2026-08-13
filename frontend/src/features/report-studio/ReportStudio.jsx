@@ -357,9 +357,22 @@ function ReportEditor({ report, busy, notice, onBack, onPatch, onSection, onMove
 export default function ReportStudio() {
   // The launcher links to /reports?start=template|chat|blank. Without this the
   // three options all landed on the same library screen.
+  // Three entry shapes, all from the launcher:
+  //   ?create=<template>  one click -> create, generate from live data, open it
+  //   ?start=chat|blank   the author-it-yourself paths
+  //   /reports/<id>       a deep link straight to one report
   const params = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
   const startMode = params?.get("start") || "";
-  const [view, setView] = useState(startMode ? "new" : "library");
+  const autoTemplate = params?.get("create") || "";
+  const deepLinkId = typeof window === "undefined"
+    ? ""
+    : (window.location.pathname.match(/\/reports\/([0-9a-f-]{36})/i)?.[1] || "");
+  const scopeFromQuery = Object.fromEntries(
+    ["project", "squad", "sprint", "release", "date_from", "date_to"]
+      .map((key) => [key, params?.get(key) || ""])
+      .filter(([, value]) => value),
+  );
+  const [view, setView] = useState(startMode || autoTemplate || deepLinkId ? "new" : "library");
   const [catalogue, setCatalogue] = useState(null);
   const [reports, setReports] = useState([]);
   const [report, setReport] = useState(null);
@@ -384,6 +397,34 @@ export default function ReportStudio() {
   useEffect(() => { refreshLibrary(); }, [refreshLibrary]);
 
   const [pending, setPending] = useState(false);
+  const [autoRan, setAutoRan] = useState(false);
+
+  // A deep link opens that report directly instead of the library.
+  useEffect(() => {
+    if (status !== "ready" || !deepLinkId || autoRan) return;
+    setAutoRan(true);
+    open(deepLinkId);
+  }, [status, deepLinkId, autoRan]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ?create=<template> is the whole journey in one click: no form, no choices.
+  useEffect(() => {
+    if (status !== "ready" || !autoTemplate || autoRan || !catalogue) return;
+    const template = catalogue.templates?.find((item) => item.id === autoTemplate);
+    if (!template) return;
+    setAutoRan(true);
+    create(
+      {
+        template: autoTemplate,
+        title: template.default_title,
+        audience: template.default_audience,
+        tone: template.default_tone,
+        detail_level: "standard",
+        include_recommendations: true,
+        scope: scopeFromQuery,
+      },
+      { generate: (template.questions?.length || 0) > 0 },
+    );
+  }, [status, autoTemplate, autoRan, catalogue]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // An "add this answer to a report" hand-off from the chat lands here.
   useEffect(() => {
@@ -491,6 +532,19 @@ export default function ReportStudio() {
   }, [report]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const body = useMemo(() => {
+    if ((autoTemplate || deepLinkId) && !report) {
+      return (
+        <div className="report-empty" role="status">
+          <Loader2 className="is-spinning" aria-hidden="true" />
+          <strong>{autoTemplate ? "Building your report" : "Opening your report"}</strong>
+          <p>
+            {autoTemplate
+              ? "Zara is answering this report's standard questions from today's data. This takes about a minute."
+              : "Loading the saved report."}
+          </p>
+        </div>
+      );
+    }
     if (view === "new") {
       return (
         <NewReport
@@ -567,7 +621,7 @@ export default function ReportStudio() {
         onDuplicate={(id) => run(() => duplicateReport(id), "Report duplicated.")}
       />
     );
-  }, [view, report, reports, status, error, busy, notice, catalogue, pending, startMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view, report, reports, status, error, busy, notice, catalogue, pending, startMode, autoTemplate, deepLinkId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main className="report-studio">

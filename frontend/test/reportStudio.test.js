@@ -19,18 +19,24 @@ test("Generate Report opens Report Studio instead of sending a chat prompt", () 
   // not preview, edit, save or export.
   assert.doesNotMatch(drawerSource, /onGenerate|onAsk/);
   assert.doesNotMatch(drawerSource, /using only the currently selected dashboard scope/);
-  assert.match(drawerSource, /\/reports\?start=/);
+  assert.ok(drawerSource.includes("/reports?"));
   // The dashboard no longer hands the drawer a way to ask the assistant.
   assert.doesNotMatch(dashboardSource, /ReportGenerationDrawer[^/]*onGenerate/);
 });
 
-test("the launcher offers the three documented starting points", () => {
-  for (const start of ["template", "chat", "blank"]) {
-    assert.match(drawerSource, new RegExp(`/reports\\?start=${start}`));
-  }
-  assert.match(drawerSource, /Use a template/);
-  assert.match(drawerSource, /Build from chat/);
-  assert.match(drawerSource, /Start blank/);
+test("the launcher lists the ready-to-run report types directly", () => {
+  // One click creates, generates and opens the report -- no chooser page and
+  // no form. Only templates with standard questions belong in that list.
+  assert.match(drawerSource, /listTemplates\(\)/);
+  assert.match(drawerSource, /item\.questions\?\.length/);
+  assert.match(drawerSource, /go\(\{ create: template\.id \}\)/);
+  assert.match(drawerSource, /Generate now/);
+  // The author-it-yourself paths stay available, but secondary.
+  assert.match(drawerSource, /go\(\{ start: "chat" \}\)/);
+  assert.match(drawerSource, /go\(\{ start: "blank" \}\)/);
+  // The options must be real buttons: they were anchors, which no stylesheet
+  // targeted, so every option rendered as unstyled inline text.
+  assert.doesNotMatch(drawerSource, /<a key=\{id\}/);
 });
 
 test("the launcher carries the active dashboard scope across", () => {
@@ -97,10 +103,26 @@ test("chart and table selections are hidden when the answer has neither", () => 
   assert.match(menuSource, /value !== "table" \|\| hasTable/);
 });
 
+test("adding an answer lands on the report, not back in the create flow", () => {
+  // Adding evidence is a different journey from building from scratch: the
+  // user already knows what they want, so one click should finish it.
+  assert.match(menuSource, /window\.location\.assign\(`\/reports\/\$\{reportId\}`\)/);
+  assert.match(menuSource, /window\.location\.assign\(`\/reports\/\$\{report\.id\}`\)/);
+  assert.match(studioSource, /deepLinkId/);
+  // /reports/<uuid> opens that report directly rather than the library.
+  assert.ok(studioSource.includes("window.location.pathname.match"));
+  assert.ok(studioSource.includes("[0-9a-f-]{36}"));
+});
+
+test("the report list is prefetched so the menu does not pause on open", () => {
+  assert.match(menuSource, /onMouseEnter=\{preload\}/);
+  assert.match(menuSource, /onFocus=\{preload\}/);
+});
+
 test("a selection can go to an existing report or start a new one", () => {
   assert.match(menuSource, /listReports\(\)/);
   assert.match(menuSource, /addSource\(reportId/);
-  assert.match(menuSource, /stashPendingSource/);
+  assert.match(menuSource, /createReport\(\{/);
   assert.match(menuSource, /Create a new report from this answer/);
 });
 
@@ -193,11 +215,12 @@ test("the studio reuses the shared chart tokens rather than a new palette", () =
 
 const newReportSource = read("../src/features/report-studio/NewReport.jsx");
 
-test("the three launcher options land on different starting states", () => {
+test("the launcher options land on different states, not all the same page", () => {
   // They previously all opened the same library screen, so the choice did
   // nothing at all.
   assert.match(studioSource, /params\?\.get\("start"\)/);
-  assert.match(studioSource, /startMode \? "new" : "library"/);
+  assert.match(studioSource, /params\?\.get\("create"\)/);
+  assert.match(studioSource, /startMode \|\| autoTemplate \|\| deepLinkId \? "new" : "library"/);
   assert.match(studioSource, /start=\{startMode\}/);
   assert.match(newReportSource, /const START_MODES = \{/);
   for (const mode of ["template", "chat", "blank"]) {
@@ -224,6 +247,9 @@ test("a template carries standard questions and can generate from live data", ()
   // The generate step is offered at creation and again from the editor.
   assert.match(studioSource, /generateReport\(created\.id\)/);
   assert.match(studioSource, /Refresh from data/);
+  // ?create=<template> runs the whole journey with no form in between.
+  assert.match(studioSource, /autoTemplate/);
+  assert.match(studioSource, /Building your report/);
 });
 
 test("creating a report is two steps, not one long form", () => {
@@ -238,4 +264,14 @@ test("a handed-over chat answer is acknowledged in the create flow", () => {
   assert.match(newReportSource, /pending &&/);
   assert.match(newReportSource, /will be attached once the report is created/);
   assert.match(studioSource, /setPending\(true\)/);
+});
+
+test("the launcher options are actually styled", () => {
+  // The previous version used anchors while the stylesheet targeted buttons,
+  // so every option rendered as unstyled inline text.
+  const workspaceCss = read("../src/workspace.css");
+  assert.match(workspaceCss, /\.report-type-list button \{/);
+  assert.match(workspaceCss, /\.report-type-icon \{/);
+  assert.match(workspaceCss, /\.report-type-text \{/);
+  assert.match(workspaceCss, /\.report-drawer-lead \{/);
 });
