@@ -13,6 +13,8 @@ const API_BASE = (import.meta.env?.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 // Silero needs 16 kHz mono; the worklet downsamples to this before sending.
 export const TARGET_SAMPLE_RATE = 16000;
+// Silero's frame size. Emitting exactly this avoids server-side re-chunking.
+export const FRAME_SAMPLES = 512;
 
 function headers() {
   return {
@@ -72,27 +74,43 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.targetRate = options.processorOptions.targetRate;
+    this.frameSamples = options.processorOptions.frameSamples;
     this.ratio = sampleRate / this.targetRate;
-    this.buffer = [];
+    this.frame = new Int16Array(this.frameSamples);
+    this.filled = 0;
+    // Accumulator for box-filter decimation.
+    this.sum = 0;
+    this.count = 0;
     this.position = 0;
   }
   process(inputs) {
     const channel = inputs[0] && inputs[0][0];
     if (!channel) return true;
-    // Linear decimation to the target rate; adequate for speech and far
-    // cheaper than a full resampler on the audio thread.
     for (let i = 0; i < channel.length; i += 1) {
+      // Average every input sample that maps to one output sample instead of
+      // picking one and discarding the rest. Dropping samples at 48k -> 16k
+      // folds everything above 8 kHz back into the speech band as noise, and
+      // that aliasing is what makes speech recognition mishear words.
+      this.sum += channel[i];
+      this.count += 1;
       this.position += 1;
       if (this.position >= this.ratio) {
         this.position -= this.ratio;
-        const sample = Math.max(-1, Math.min(1, channel[i]));
-        this.buffer.push(sample < 0 ? sample * 0x8000 : sample * 0x7fff);
+        let sample = this.count ? this.sum / this.count : 0;
+        this.sum = 0;
+        this.count = 0;
+        sample = Math.max(-1, Math.min(1, sample));
+        this.frame[this.filled] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+        this.filled += 1;
+        // Emit exactly one detector frame at a time, so the server never has
+        // to re-chunk and every frame costs the same to process.
+        if (this.filled === this.frameSamples) {
+          const out = this.frame;
+          this.frame = new Int16Array(this.frameSamples);
+          this.filled = 0;
+          this.port.postMessage(out.buffer, [out.buffer]);
+        }
       }
-    }
-    // Emit in blocks so the socket sees a steady, low-latency trickle.
-    if (this.buffer.length >= 512) {
-      const frame = new Int16Array(this.buffer.splice(0, this.buffer.length));
-      this.port.postMessage(frame.buffer, [frame.buffer]);
     }
     return true;
   }
@@ -144,7 +162,7 @@ export class VoiceTransport {
     }
     this.source = this.context.createMediaStreamSource(this.stream);
     this.node = new AudioWorkletNode(this.context, "pcm-capture", {
-      processorOptions: { targetRate: TARGET_SAMPLE_RATE },
+      processorOptions: { targetRate: TARGET_SAMPLE_RATE, frameSamples: FRAME_SAMPLES },
     });
     this.node.port.onmessage = (event) => {
       if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(event.data);

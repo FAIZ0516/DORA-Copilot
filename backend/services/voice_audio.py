@@ -78,6 +78,19 @@ def vad_available() -> bool:
     return True
 
 
+def speech_probabilities(frames: list[bytes], *, model=None) -> list[float]:
+    """Score several frames in one call.
+
+    The socket used to hand each 32 ms frame to a worker thread on its own --
+    roughly thirty thread hops a second, whose scheduling overhead dwarfed the
+    inference. Scoring a whole socket message at once keeps the audio path
+    ahead of the speaker.
+    """
+
+    model = model or load_vad()
+    return [speech_probability(frame, model=model) for frame in frames]
+
+
 def speech_probability(frame: bytes, *, model=None) -> float:
     """Probability that one 512-sample frame contains speech."""
 
@@ -225,6 +238,40 @@ def pcm_to_wav_file(pcm: bytes, *, sample_rate: int | None = None) -> str:
     return path
 
 
+# Whisper emits these verbatim over silence and background noise. They are
+# training-data residue from subtitled video, not anything the user said.
+_HALLUCINATIONS = frozenset(
+    {
+        "thank you.", "thanks for watching!", "thank you for watching.",
+        "bye.", "bye bye.", "you", "okay.", "so.", ".", "!", "?",
+        "subtitles by the amara.org community", "amara.org",
+        "please subscribe.", "thanks for watching.", "mbc 뉴스 이덕영입니다.",
+    }
+)
+
+
+def _clean_transcript(segments) -> str:
+    """Keep confident speech, drop what Whisper narrated over silence."""
+
+    kept: list[str] = []
+    for segment in segments:
+        text = (getattr(segment, "text", "") or "").strip()
+        if not text:
+            continue
+        # faster-whisper reports these per segment; a segment can clear the
+        # global thresholds and still be a confident-sounding invention.
+        no_speech = float(getattr(segment, "no_speech_prob", 0.0) or 0.0)
+        avg_logprob = float(getattr(segment, "avg_logprob", 0.0) or 0.0)
+        if no_speech >= settings.whisper_no_speech_threshold:
+            continue
+        if avg_logprob < settings.whisper_logprob_threshold:
+            continue
+        if text.lower().strip() in _HALLUCINATIONS:
+            continue
+        kept.append(text)
+    return " ".join(kept).strip()
+
+
 def transcribe_pcm(pcm: bytes, *, sample_rate: int | None = None, model=None) -> str:
     """Transcribe 16-bit mono PCM. Blocking -- call it off the event loop."""
 
@@ -235,16 +282,33 @@ def transcribe_pcm(pcm: bytes, *, sample_rate: int | None = None, model=None) ->
         return ""
 
     engine = model or load_whisper()
-    path = pcm_to_wav_file(pcm, sample_rate=rate)
-    try:
-        segments, _info = engine.transcribe(path, beam_size=1, vad_filter=False)
-        return " ".join(segment.text.strip() for segment in segments).strip()
-    finally:
-        # Always remove it, including when transcription raised.
-        try:
-            os.unlink(path)
-        except OSError:  # pragma: no cover - best effort cleanup
-            logger.debug("Could not remove temporary audio file %s", path)
+    # Hand Whisper the samples directly rather than a file path. Passing a path
+    # makes faster-whisper decode it with PyAV, which adds a temporary file, a
+    # decode step and a native dependency -- one that is blocked outright by
+    # Application Control on this machine. The audio is already the mono float
+    # PCM the model wants, so none of that is needed.
+    import numpy as np
+
+    samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    segments, _info = engine.transcribe(
+        samples,
+        # Greedy decoding mishears; a small beam is much more accurate and
+        # costs little on a few seconds of audio.
+        beam_size=settings.whisper_beam_size,
+        # Auto-detection on a short clip picks the wrong language and then
+        # invents a "translation". Pin it unless explicitly left blank.
+        language=settings.voice_language or None,
+        # Whisper narrates silence with confident phantom text -- "Thank
+        # you.", subtitle credits -- so let it drop non-speech itself.
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 300},
+        # Each utterance is independent; carrying context across turns is
+        # what produces repetition loops.
+        condition_on_previous_text=False,
+        no_speech_threshold=settings.whisper_no_speech_threshold,
+        log_prob_threshold=settings.whisper_logprob_threshold,
+    )
+    return _clean_transcript(segments)
 
 
 __all__ = [
@@ -257,6 +321,7 @@ __all__ = [
     "load_vad",
     "load_whisper",
     "pcm_to_wav_file",
+    "speech_probabilities",
     "speech_probability",
     "stt_available",
     "transcribe_pcm",

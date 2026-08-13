@@ -249,30 +249,45 @@ def test_a_too_short_utterance_never_reaches_the_model() -> None:
     assert model.calls == [], "a cough must not be transcribed"
 
 
-def test_a_real_utterance_is_transcribed_and_the_file_removed() -> None:
-    import os
+def test_a_real_utterance_is_transcribed_from_memory() -> None:
+    """Samples go straight to the model, not via a temporary file.
+
+    Passing a path makes faster-whisper decode it with PyAV -- an extra file,
+    an extra decode, and a native dependency that Application Control blocks
+    outright on this machine.
+    """
+
+    import numpy as np
 
     model = _Whisper()
     text = transcribe_pcm(_pcm(1000), model=model)
     assert text == "how many bugs does MBK have"
     assert len(model.calls) == 1
-    # Temporary audio must not be left on disk.
-    assert not os.path.exists(model.calls[0])
+    passed = model.calls[0]
+    assert isinstance(passed, np.ndarray), "audio must be handed over as samples"
+    assert passed.dtype == np.float32
+    # Normalised into the range the model expects.
+    assert passed.max() <= 1.0 and passed.min() >= -1.0
 
 
-def test_the_temporary_file_is_removed_even_when_transcription_fails() -> None:
-    import os
+def test_transcription_is_decoded_with_settings_that_resist_hallucination() -> None:
+    """Greedy decoding mishears, and Whisper narrates silence confidently."""
 
-    captured: list[str] = []
+    captured: dict = {}
 
-    class _Broken:
-        def transcribe(self, path, **_kwargs):
-            captured.append(path)
-            raise RuntimeError("model exploded")
+    class _Recorder:
+        def transcribe(self, audio, **kwargs):
+            captured.update(kwargs)
+            return [], {}
 
-    with pytest.raises(RuntimeError):
-        transcribe_pcm(_pcm(1000), model=_Broken())
-    assert captured and not os.path.exists(captured[0])
+    transcribe_pcm(_pcm(1000), model=_Recorder())
+    assert captured["beam_size"] > 1
+    assert captured["vad_filter"] is True
+    assert captured["condition_on_previous_text"] is False
+    # A pinned language stops it detecting the wrong one and inventing a
+    # translation from a short clip.
+    assert captured["language"]
+    assert captured["no_speech_threshold"] > 0
 
 
 def test_temporary_audio_names_are_unique_per_call() -> None:

@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     # Guards against a stuck client streaming audio forever.
     voice_session_ttl_seconds: int = Field(default=1_800, ge=60, le=14_400)
     voice_sample_rate: int = Field(default=16_000, ge=8_000, le=48_000)
+    # Pinning the language stops Whisper auto-detecting the wrong one on a
+    # short clip and then "translating" it into invented text. Blank = detect.
+    voice_language: str = "en"
+    # Greedy decoding is fast and wrong; a small beam is far more accurate and
+    # costs little on utterance-length audio.
+    whisper_beam_size: int = Field(default=5, ge=1, le=10)
+    # Below these, a segment is noise Whisper narrated rather than speech.
+    whisper_no_speech_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    whisper_logprob_threshold: float = Field(default=-1.0, ge=-5.0, le=0.0)
     whisper_model: str = "small"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"

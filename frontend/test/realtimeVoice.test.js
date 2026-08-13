@@ -153,3 +153,18 @@ test("the dev proxy forwards the WebSocket upgrade, not just HTTP", () => {
   const viteConfig = read("../vite.config.js");
   assert.match(viteConfig, /ws: true/);
 });
+
+test("audio is downsampled with a filter, not by dropping samples", () => {
+  // Decimating 48k -> 16k by keeping one sample in three folds everything
+  // above 8 kHz back into the speech band, and that aliasing is what makes
+  // speech recognition mishear words.
+  const worklet = transportSource.slice(
+    transportSource.indexOf("const WORKLET_SOURCE"),
+    transportSource.indexOf("export class VoiceTransport"),
+  );
+  assert.match(worklet, /this\.sum \+= channel\[i\]/);
+  assert.match(worklet, /this\.sum \/ this\.count/);
+  // Exact detector frames, so the server never re-chunks.
+  assert.match(worklet, /this\.filled === this\.frameSamples/);
+  assert.match(transportSource, /export const FRAME_SAMPLES = 512/);
+});

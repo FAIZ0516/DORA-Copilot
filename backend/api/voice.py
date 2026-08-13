@@ -41,7 +41,7 @@ from ..services.voice_audio import (
     UtteranceDetector,
     VoiceModelUnavailable,
     load_vad,
-    speech_probability,
+    speech_probabilities,
     stt_available,
     transcribe_pcm,
     vad_available,
@@ -386,16 +386,23 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                 continue
             pending.extend(chunk)
 
-            # Silero needs exact frames; anything left over waits for more audio.
+            # Silero needs exact frames; anything left over waits for more
+            # audio. The whole message is scored in one worker call rather than
+            # one hop per frame -- the hop overhead was larger than the
+            # inference and showed up as lag before the assistant reacted.
+            frames: list[bytes] = []
             while len(pending) >= VAD_FRAME_BYTES:
-                frame = bytes(pending[:VAD_FRAME_BYTES])
+                frames.append(bytes(pending[:VAD_FRAME_BYTES]))
                 del pending[:VAD_FRAME_BYTES]
-                try:
-                    probability = await asyncio.to_thread(speech_probability, frame)
-                except VoiceModelUnavailable as exc:
-                    await _send(socket, ServerEvent(type="error", detail=str(exc), recoverable=False))
-                    return
+            if not frames:
+                continue
+            try:
+                scores = await asyncio.to_thread(speech_probabilities, frames)
+            except VoiceModelUnavailable as exc:
+                await _send(socket, ServerEvent(type="error", detail=str(exc), recoverable=False))
+                return
 
+            for frame, probability in zip(frames, scores):
                 event = detector.feed(probability)
                 if detector.speaking:
                     buffer.extend(frame)
