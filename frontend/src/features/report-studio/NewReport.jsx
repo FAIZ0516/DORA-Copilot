@@ -43,7 +43,7 @@ const START_MODES = {
 
 const label = (value) => String(value || "").replaceAll("_", " ");
 
-export default function NewReport({ catalogue, start, pending, busy, onCreate, onCancel }) {
+export default function NewReport({ catalogue, start, pending, busy, initialScope, onCreate, onCancel }) {
   const mode = START_MODES[start] ? start : "template";
   const [step, setStep] = useState(mode === "blank" ? 2 : 1);
   const [template, setTemplate] = useState(mode === "blank" ? "blank" : "executive_summary");
@@ -52,9 +52,12 @@ export default function NewReport({ catalogue, start, pending, busy, onCreate, o
   const [tone, setTone] = useState("executive");
   const [detail, setDetail] = useState("standard");
   const [recommendations, setRecommendations] = useState(true);
-  const [generate, setGenerate] = useState(mode === "template");
+  const [generate, setGenerate] = useState(true);
+  // The launcher passes the dashboard's scope in the URL. Ignoring it meant a
+  // report started from a JAEGER view was created for all squads.
   const [scope, setScope] = useState({
     project: "DCPM", squad: "", sprint: "", release: "", date_from: "", date_to: "",
+    ...(initialScope || {}),
   });
 
   const templates = catalogue?.templates || [];
@@ -69,7 +72,7 @@ export default function NewReport({ catalogue, start, pending, busy, onCreate, o
     setTitle(chosen.default_title);
     setAudience(chosen.default_audience);
     setTone(chosen.default_tone);
-    setGenerate(mode === "template" && (chosen.questions?.length || 0) > 0);
+    setGenerate((chosen.questions?.length || 0) > 0);
   }, [chosen, mode]);
 
   function submit(event) {

@@ -300,3 +300,29 @@ test("reports in the list are distinguishable from one another", () => {
   assert.match(menuSource, /report\.scope\?\.squad \|\| "All squads"/);
   assert.match(menuSource, /toLocaleDateString\(\)/);
 });
+
+const newReportSrc = read("../src/features/report-studio/NewReport.jsx");
+
+test("a template report generates by default, whichever door you came through", () => {
+  // Tying this to ?start=template meant a report begun from the chat or
+  // library path was created empty, with every section reading
+  // "Not written yet."
+  assert.match(newReportSrc, /useState\(true\)/);
+  assert.match(newReportSrc, /setGenerate\(\(chosen\.questions\?\.length \|\| 0\) > 0\)/);
+  assert.doesNotMatch(newReportSrc, /useState\(mode === "template"\)/);
+});
+
+test("the dashboard scope in the URL is applied, not discarded", () => {
+  // /reports?project=DCPM&squad=JAEGER must produce a JAEGER report.
+  assert.match(newReportSrc, /\.\.\.\(initialScope \|\| \{\}\)/);
+  assert.match(studioSource, /initialScope=\{scopeFromQuery\}/);
+  assert.match(studioSource, /scopeFromQuery/);
+});
+
+test("an empty template report offers to fill itself in one click", () => {
+  assert.match(studioSource, /report\.sources\.length === 0 && report\.template !== "blank"/);
+  assert.match(studioSource, /This report has no data yet/);
+  assert.match(studioSource, /Fill from live data/);
+  const studioCss = read("../src/features/report-studio/report-studio.css");
+  assert.match(studioCss, /\.report-fill-prompt \{/);
+});

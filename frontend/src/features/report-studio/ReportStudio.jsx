@@ -265,6 +265,22 @@ function ReportEditor({ report, busy, notice, onBack, onPatch, onSection, onMove
 
       {notice && <div className={`report-notice report-notice--${notice.tone}`} role="status">{notice.text}</div>}
 
+      {report.sources.length === 0 && report.template !== "blank" && (
+        <div className="report-fill-prompt">
+          <div>
+            <strong>This report has no data yet</strong>
+            <p>
+              Answer its standard questions from {scopeLine(report.scope)} and Zara will write
+              every section for you. You can edit anything afterwards.
+            </p>
+          </div>
+          <button type="button" className="primary" onClick={onGenerate} disabled={busy}>
+            {busy ? <Loader2 className="is-spinning" aria-hidden="true" /> : <Wand2 aria-hidden="true" />}
+            {busy ? "Generating…" : "Fill from live data"}
+          </button>
+        </div>
+      )}
+
       {report.conflicts?.length > 0 && (
         <div className="report-conflicts" role="alert">
           <AlertTriangle aria-hidden="true" />
@@ -550,6 +566,7 @@ export default function ReportStudio() {
         <NewReport
           catalogue={catalogue}
           start={startMode}
+          initialScope={scopeFromQuery}
           pending={pending}
           busy={busy}
           onCreate={create}
