@@ -22,6 +22,18 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from .report_branding import (
+    FOOTER_COVER_BOTTOM,
+    FOOTER_COVER_HEIGHT,
+    FOOTER_COVER_WIDTH,
+    FOOTER_NUMBER_BASELINE,
+    TEMPLATE_MARGIN_BOTTOM,
+    TEMPLATE_MARGIN_LEFT,
+    TEMPLATE_MARGIN_RIGHT,
+    TEMPLATE_MARGIN_TOP,
+    apply_template,
+    template_available,
+)
 from .report_charts import describe, draw_chart, truncation_note
 from reportlab.platypus import (
     BaseDocTemplate,
@@ -145,29 +157,53 @@ class _ReportDoc(BaseDocTemplate):
     """Adds the running footer: page numbers, version and scope."""
 
     def __init__(self, buffer: io.BytesIO, *, report: dict[str, Any]) -> None:
+        branded = template_available()
+        # Inside the template's frame when branded, so body text never runs
+        # under the masthead or across the footer rule.
+        left = TEMPLATE_MARGIN_LEFT if branded else MARGIN
+        right = TEMPLATE_MARGIN_RIGHT if branded else MARGIN
+        top = TEMPLATE_MARGIN_TOP if branded else MARGIN
+        bottom = TEMPLATE_MARGIN_BOTTOM if branded else MARGIN + 8 * mm
         super().__init__(
             buffer, pagesize=A4,
-            leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN, bottomMargin=MARGIN + 8 * mm,
+            leftMargin=left, rightMargin=right, topMargin=top, bottomMargin=bottom,
             title=report.get("title") or "Report", author="DORA Copilot",
         )
         self._report = report
-        frame = Frame(MARGIN, MARGIN + 8 * mm, PAGE_WIDTH - 2 * MARGIN,
-                      PAGE_HEIGHT - 2 * MARGIN - 8 * mm, id="body")
+        self._branded = branded
+        self._left = left
+        self._right = right
+        frame = Frame(left, bottom, PAGE_WIDTH - left - right,
+                      PAGE_HEIGHT - top - bottom, id="body")
         self.addPageTemplates([
-            PageTemplate(id="cover", frames=[frame]),
+            PageTemplate(id="cover", frames=[frame], onPage=self._footer),
             PageTemplate(id="body", frames=[frame], onPage=self._footer),
         ])
 
     def _footer(self, canvas, doc) -> None:  # noqa: ANN001 - ReportLab signature
         canvas.saveState()
-        canvas.setStrokeColor(RULE)
-        canvas.setLineWidth(0.5)
-        canvas.line(MARGIN, MARGIN + 6 * mm, PAGE_WIDTH - MARGIN, MARGIN + 6 * mm)
+        if self._branded:
+            # The template carries its own rule, and a static "1" that would
+            # otherwise repeat on every page. Cover it, then write the real
+            # number. Content is merged above the template, so this hides it.
+            canvas.setFillColor(colors.white)
+            canvas.rect(
+                PAGE_WIDTH - self._right - FOOTER_COVER_WIDTH, FOOTER_COVER_BOTTOM,
+                FOOTER_COVER_WIDTH, FOOTER_COVER_HEIGHT, stroke=0, fill=1,
+            )
+            baseline = FOOTER_NUMBER_BASELINE
+        else:
+            canvas.setStrokeColor(RULE)
+            canvas.setLineWidth(0.5)
+            canvas.line(self._left, MARGIN + 6 * mm, PAGE_WIDTH - self._right, MARGIN + 6 * mm)
+            baseline = MARGIN + 2 * mm
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(MUTED)
         left = f"{self._report.get('title') or 'Report'} · v{self._report.get('version', 1)}"
-        canvas.drawString(MARGIN, MARGIN + 2 * mm, left[:110])
-        canvas.drawRightString(PAGE_WIDTH - MARGIN, MARGIN + 2 * mm, f"Page {canvas.getPageNumber()}")
+        canvas.drawString(self._left, baseline, left[:110])
+        canvas.drawRightString(
+            PAGE_WIDTH - self._right, baseline, f"Page {canvas.getPageNumber()}"
+        )
         canvas.restoreState()
 
 
@@ -377,7 +413,7 @@ def render_pdf(report: dict[str, Any]) -> bytes:
         flow.extend(block[2:] if len(block) > 2 else [])
 
     doc.build(flow)
-    return buffer.getvalue()
+    return apply_template(buffer.getvalue())
 
 
 def render_docx(report: dict[str, Any]) -> bytes:
