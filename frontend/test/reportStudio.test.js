@@ -275,3 +275,28 @@ test("the launcher options are actually styled", () => {
   assert.match(workspaceCss, /\.report-type-text \{/);
   assert.match(workspaceCss, /\.report-drawer-lead \{/);
 });
+
+test("the add-to-report menu renders in a portal, not inside the chat message", () => {
+  // Inline, the scrim inherited `.copilot-message-meta button:hover`, which
+  // repainted the full-viewport overlay pale blue and blanked the page. The
+  // message list's overflow-y also clipped the panel.
+  assert.match(menuSource, /createPortal\(/);
+  assert.match(menuSource, /document\.body,/);
+  assert.match(menuSource, /add-to-report-layer/);
+  const mainCss = read("../src/styles.css");
+  assert.match(mainCss, /\.add-to-report-layer \.add-to-report-scrim:hover/);
+  // The blanket overflow override is gone; the portal removes the need.
+  assert.doesNotMatch(mainCss, /\.copilot-message-meta \{ overflow: visible/);
+});
+
+test("the menu is positioned from the trigger and follows scroll", () => {
+  assert.match(menuSource, /getBoundingClientRect\(\)/);
+  assert.match(menuSource, /window\.addEventListener\("resize", place\)/);
+  assert.match(menuSource, /window\.addEventListener\("scroll", place, true\)/);
+});
+
+test("reports in the list are distinguishable from one another", () => {
+  // Several reports share a template name, so the row shows scope and age.
+  assert.match(menuSource, /report\.scope\?\.squad \|\| "All squads"/);
+  assert.match(menuSource, /toLocaleDateString\(\)/);
+});

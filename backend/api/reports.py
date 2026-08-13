@@ -483,9 +483,15 @@ def add_source(
             source_ids=[str(source.id)],
         )
     if request.selection in {"full", "narrative", "recommendations", "warnings"}:
-        # "original" keeps the assistant's wording; the other modes leave the
-        # block empty for compose to write from the snapshot.
-        content = evidence.get("answer") if request.content_mode == "original" else ""
+        # The block is always seeded with the answer, whatever the mode. Leaving
+        # it empty until composition ran meant a user who added an answer landed
+        # on a blank section and had to press another button before the report
+        # said anything -- the data they asked for should already be there, with
+        # rewriting as a refinement rather than a prerequisite.
+        content = evidence.get("answer") or ""
+        if request.selection == "warnings":
+            warnings = evidence.get("warnings") or []
+            content = "\n".join(warnings) or "No data-quality warnings were recorded."
         repository.add_section(
             report,
             type="key_finding" if request.selection != "warnings" else "data_quality",

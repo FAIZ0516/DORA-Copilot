@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, FilePlus2 } from "lucide-react";
 import { addSource, createReport, listReports } from "../../services/reports";
 
@@ -34,6 +35,37 @@ export default function AddToReportMenu({ conversationId, messageId, question, h
   const [selection, setSelection] = useState("full");
   const [mode, setMode] = useState("rewrite");
   const [message, setMessage] = useState("");
+  const triggerRef = useRef(null);
+  const [anchor, setAnchor] = useState(null);
+
+  /**
+   * The menu is rendered into document.body rather than inline.
+   *
+   * Inline it sat inside `.copilot-message-meta`, whose `button:hover` rule
+   * repainted the full-viewport scrim pale blue and blanked the page, and
+   * inside `.copilot-message-list`, whose `overflow-y: auto` clipped it. A
+   * portal escapes both, so the menu is positioned from the trigger instead.
+   */
+  useEffect(() => {
+    if (!open) return undefined;
+    function place() {
+      const box = triggerRef.current?.getBoundingClientRect();
+      if (!box) return;
+      const width = Math.min(280, window.innerWidth - 24);
+      setAnchor({
+        top: Math.min(box.bottom + 6, window.innerHeight - 24),
+        left: Math.max(12, Math.min(box.right - width, window.innerWidth - width - 12)),
+        width,
+      });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open]);
 
   function preload() {
     if (status !== "idle") return;
@@ -120,6 +152,7 @@ export default function AddToReportMenu({ conversationId, messageId, question, h
   return (
     <div className={`add-to-report ${open ? "is-open" : ""}`}>
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
         aria-haspopup="true"
@@ -133,10 +166,20 @@ export default function AddToReportMenu({ conversationId, messageId, question, h
         <ChevronDown aria-hidden="true" />
       </button>
 
-      {open && (
-        <>
-          <button className="add-to-report-scrim" type="button" aria-label="Close" onClick={() => setOpen(false)} />
-          <div className="add-to-report-menu" role="dialog" aria-label="Add this answer to a report">
+      {open && anchor && createPortal(
+        <div className="add-to-report-layer">
+          <button
+            className="add-to-report-scrim"
+            type="button"
+            aria-label="Close"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className="add-to-report-menu"
+            role="dialog"
+            aria-label="Add this answer to a report"
+            style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
+          >
             <label>
               <span>Include</span>
               <select value={selection} onChange={(event) => setSelection(event.target.value)}>
@@ -159,18 +202,27 @@ export default function AddToReportMenu({ conversationId, messageId, question, h
               {reports.map((report) => (
                 <button key={report.id} type="button" disabled={status === "saving"} onClick={() => attach(report.id)}>
                   <strong>{report.title}</strong>
-                  <small>{report.section_count} sections · {report.source_count} sources</small>
+                  {/* Several reports can share a template name, so show what
+                      actually tells them apart: scope, evidence and age. */}
+                  <small>
+                    {[
+                      report.scope?.squad || "All squads",
+                      `${report.source_count} source${report.source_count === 1 ? "" : "s"}`,
+                      new Date(report.updated_at).toLocaleDateString(),
+                    ].join(" · ")}
+                  </small>
                 </button>
               ))}
             </div>
-            <button type="button" className="add-to-report-new" onClick={createNew}>
+            <button type="button" className="add-to-report-new" disabled={status === "saving"} onClick={createNew}>
               <FilePlus2 aria-hidden="true" /> Create a new report from this answer
             </button>
             {message && (
               <p className={`add-to-report-note ${status === "error" ? "is-error" : ""}`} role="status">{message}</p>
             )}
           </div>
-        </>
+        </div>,
+        document.body,
       )}
     </div>
   );

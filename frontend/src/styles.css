@@ -4819,8 +4819,13 @@ a {
 /* "Add to report" on an assistant answer, rendered inside the chat panel. */
 .add-to-report { position: relative; display: inline-flex; }
 .add-to-report > button { display: inline-flex; align-items: center; gap: 4px; }
-.add-to-report-scrim { position: fixed; inset: 0; z-index: 40; border: 0; background: transparent; }
-.add-to-report-menu { position: absolute; z-index: 41; top: calc(100% + 6px); right: 0; width: 268px; display: grid; gap: 8px; padding: 12px; border: 1px solid var(--chart-card-border); border-radius: 12px; background: var(--chart-surface); box-shadow: 0 16px 34px rgba(20,45,82,.16); text-align: left; }
+/* The menu lives in a portal on document.body, so no chat rule can repaint
+   the scrim on hover or clip the panel. */
+.add-to-report-layer { position: fixed; z-index: 120; inset: 0; }
+.add-to-report-layer .add-to-report-scrim,
+.add-to-report-layer .add-to-report-scrim:hover,
+.add-to-report-layer .add-to-report-scrim:focus { position: fixed; inset: 0; padding: 0; border: 0; background: transparent; box-shadow: none; cursor: default; }
+.add-to-report-menu { position: fixed; z-index: 121; max-height: min(70vh, 520px); overflow-y: auto; display: grid; gap: 8px; padding: 12px; border: 1px solid var(--chart-card-border); border-radius: 12px; background: var(--chart-surface); box-shadow: 0 16px 34px rgba(20,45,82,.16); text-align: left; }
 .add-to-report-menu label { display: grid; gap: 3px; }
 .add-to-report-menu label span { color: var(--chart-ink-muted); font-size: 0.56rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .add-to-report-heading { margin: 2px 0 0; color: var(--chart-ink-muted); font-size: 0.56rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
@@ -4840,11 +4845,4 @@ a {
   background: var(--chart-surface); color: var(--chart-ink); font: inherit; font-size: 0.76rem;
 }
 
-@media (max-width: 900px) {
-  .add-to-report-menu { right: auto; left: 0; width: min(268px, 78vw); }
-}
 
-/* The menu is absolutely positioned inside a chat message, so the message
-   must not clip it. */
-.copilot-message-body,
-.copilot-message-meta { overflow: visible; }
