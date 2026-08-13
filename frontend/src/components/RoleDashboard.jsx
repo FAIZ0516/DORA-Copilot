@@ -123,7 +123,7 @@ function PrimaryKpiRow({ payload, onInfo, onAsk, scope }) {
       <div className="role-metric-grid">
         {cards.map((card) => (
           <article className={`role-metric-card tone-${card.tone}`} key={card.key}>
-            <div><span>{card.title}</span><button type="button" onClick={() => onInfo({ key: card.key, value: card.value, ...card.definition })} aria-label={`Explain ${card.title}`} title={`What ${card.title} means`}><Info aria-hidden="true" /></button></div>
+            <div><span>{card.title}</span><button type="button" onClick={() => onInfo({ ...card.definition, key: card.key, title: card.title, value: card.value, suffix: card.suffix })} aria-label={`Explain ${card.title}`} title={`What ${card.title} means`}><Info aria-hidden="true" /></button></div>
             <strong>{typeof card.value === "number" ? number(card.value, card.suffix) : card.value}</strong>
             <p>{card.comparison}</p>
             <MetricAskMenu card={card} scope={scope} onAsk={onAsk} />
@@ -131,6 +131,30 @@ function PrimaryKpiRow({ payload, onInfo, onAsk, scope }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function PortfolioKpiRow({ payload, onInfo }) {
+  return (
+    <div className="portfolio-kpi-row">
+      {(payload.metric_cards || []).slice(0, 4).map((metric) => (
+        <article className="portfolio-metric-card" key={metric.key}>
+          <div>
+            <span>{metric.title}</span>
+            <button
+              type="button"
+              onClick={() => onInfo({ ...metric, suffix: metric.key.includes("pct") ? "%" : "" })}
+              aria-label={`Explain ${metric.title}`}
+              title={`What ${metric.title} means`}
+            >
+              <Info aria-hidden="true" />
+            </button>
+          </div>
+          <strong>{number(metric.value, metric.key.includes("pct") ? "%" : "")}</strong>
+          <p>{metric.description}</p>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -273,10 +297,11 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
 
   useEffect(() => {
     const controller = new AbortController();
-    setStatus("loading"); setError("");
+    let active = true;
+    setStatus("loading"); setError(""); setPayload(null); setDrawerMetric(null);
     const request = !context.selectedSquad || context.activeView === "portfolio" ? loadPortfolioDashboard(filterRequest, { signal: controller.signal }) : loadSquadDashboard(context.selectedSquad, filterRequest, { signal: controller.signal });
-    request.then((result) => { setPayload(result); setStatus("ready"); }).catch((loadError) => { if (loadError.name !== "AbortError") { setError(loadError.message); setStatus("error"); } });
-    return () => controller.abort();
+    request.then((result) => { if (active) { setPayload(result); setStatus("ready"); } }).catch((loadError) => { if (active && loadError.name !== "AbortError") { setError(loadError.message); setStatus("error"); } });
+    return () => { active = false; controller.abort(); };
   }, [context.activeView, context.selectedSquad, filterRequest, refreshToken]);
 
   useEffect(() => {
@@ -320,7 +345,7 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
       {payload?.empty && status !== "loading" && <div className="dashboard-empty-state"><BarChart3 /><strong>No Jira tickets found in the selected scope.</strong><p>Clear a release, sprint, feature, or created-date filter and try again.</p><button type="button" onClick={resetFilters}>Clear filters</button></div>}
 
       {payload && !payload.empty && <>
-        {isPortfolio ? <><div className="portfolio-kpi-row">{(payload.metric_cards || []).slice(0, 4).map((metric) => <article key={metric.key}><span>{metric.title}</span><strong>{number(metric.value, metric.key.includes("pct") ? "%" : "")}</strong><p>{metric.description}</p></article>)}</div><PortfolioView payload={payload} onSquad={viewSquad} onAsk={ask} /></> : <><PrimaryKpiRow payload={payload} onInfo={openMetric} onAsk={ask} scope={askScope} /><DeliveryAnalytics payload={payload} /><RiskAttentionPanel payload={payload} onViewIssue={focusRisk} onAsk={ask} squad={context.selectedSquad} /><ProductivityOverview payload={payload} issues={visibleIssues} onAsk={ask} />{payload.release_information?.length > 0 && <section className="release-information"><header><h3>Release Information</h3><span>Rule-based source dates</span></header>{payload.release_information.map((release) => <article key={`${release.fixversion}-${release.release_date}`}><strong>{release.fixversion}</strong><span>Release date {release.release_date || "Unavailable"}</span><span>Plan {release.release_plan_start || "—"} → {release.release_plan_end || "—"}</span><span>Actual {release.release_actual_start || "—"} → {release.release_actual_end || "—"}</span></article>)}</section>}<IssueTable payload={visibleIssues} filterOptions={options} filters={issueFilters} setFilters={setIssueFilters} onPage={(page) => setIssueFilters((current) => ({ ...current, page }))} /></>}
+        {isPortfolio ? <><PortfolioKpiRow payload={payload} onInfo={openMetric} /><PortfolioView payload={payload} onSquad={viewSquad} onAsk={ask} /></> : <><PrimaryKpiRow payload={payload} onInfo={openMetric} onAsk={ask} scope={askScope} /><DeliveryAnalytics payload={payload} /><RiskAttentionPanel payload={payload} onViewIssue={focusRisk} onAsk={ask} squad={context.selectedSquad} /><ProductivityOverview payload={payload} issues={visibleIssues} onAsk={ask} />{payload.release_information?.length > 0 && <section className="release-information"><header><h3>Release Information</h3><span>Rule-based source dates</span></header>{payload.release_information.map((release) => <article key={`${release.fixversion}-${release.release_date}`}><strong>{release.fixversion}</strong><span>Release date {release.release_date || "Unavailable"}</span><span>Plan {release.release_plan_start || "—"} → {release.release_plan_end || "—"}</span><span>Actual {release.release_actual_start || "—"} → {release.release_actual_end || "—"}</span></article>)}</section>}<IssueTable payload={visibleIssues} filterOptions={options} filters={issueFilters} setFilters={setIssueFilters} onPage={(page) => setIssueFilters((current) => ({ ...current, page }))} /></>}
         {(payload.data_quality_notes || []).length > 0 && <section className="dashboard-quality-note"><CircleHelp aria-hidden="true" /><div><strong>Data quality &amp; interpretation</strong>{payload.data_quality_notes.map((note) => <p key={note}>{note}</p>)}</div></section>}
       </>}
 

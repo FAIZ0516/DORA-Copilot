@@ -70,23 +70,33 @@ export function buildRiskItems(payload) {
 export function buildPrimaryKpis(payload) {
   const kpis = payload?.kpis || {};
   const registry = payload?.metric_registry || {};
+  const completed = Number(kpis.completed_work || 0);
+  const scoped = Number(kpis.total_work || 0);
   return [
     {
       key: "completion_pct",
-      title: "Sprint Progress",
+      title: "Sprint Completion",
       value: kpis.completion_pct,
       suffix: "%",
       tone: "blue",
-      comparison: "Previous sprint comparison unavailable",
-      definition: registry.completion_pct,
+      comparison: `${completed.toLocaleString()} of ${scoped.toLocaleString()} scoped tickets completed`,
+      definition: {
+        ...registry.completion_pct,
+        title: "Sprint Completion",
+        description: "Percentage of scoped tickets currently in Jira's Done category.",
+        data_quality_note: "This uses the current filtered scope, not a historical sprint-commitment baseline. Done can include rejected or cancelled outcomes.",
+      },
     },
     {
-      key: "completed_work",
-      title: "Completed vs Scoped",
-      value: `${Number(kpis.completed_work || 0).toLocaleString()} / ${Number(kpis.total_work || 0).toLocaleString()}`,
-      tone: "green",
-      comparison: "Scoped tickets are not a commitment baseline",
-      definition: registry.completed_work,
+      key: "active_work",
+      title: "Open Work",
+      value: kpis.active_work,
+      tone: Number(kpis.active_work || 0) > 0 ? "blue" : "green",
+      comparison: "Unresolved and not in Jira's Done category",
+      definition: {
+        ...registry.active_work,
+        title: "Open Work",
+      },
     },
     {
       key: "impeded_work",
@@ -99,7 +109,9 @@ export function buildPrimaryKpis(payload) {
         description: "Tickets whose current Jira status is Impeded.",
         why_it_matters: "Impeded work may need an explicit owner and next action.",
         formula: "Count where status equals Impeded.",
+        required_fields: ["status"],
         source_tables: ["public.tbl_gdt_dte_jira_issues"],
+        data_quality_note: "Only tickets whose current Jira status is exactly Impeded are counted. Issue links and other waiting states are not inferred as blockers.",
         suggested_questions: ["Which impeded tickets need attention first?"],
       },
     },
@@ -114,7 +126,9 @@ export function buildPrimaryKpis(payload) {
         description: "A deterministic status derived from visible defect, ageing, progress, impediment, and ownership signals.",
         why_it_matters: "It focuses review without replacing team judgment.",
         formula: "Configured attention thresholds; no model-generated risk score.",
+        required_fields: ["priority", "created", "assignee", "status", "status_category"],
         source_tables: ["public.tbl_gdt_dte_jira_issues"],
+        data_quality_note: "This is a rule-based review signal, not a prediction. Any configured threshold can change the displayed status.",
         suggested_questions: ["Why is this squad at risk?"],
       },
     },
