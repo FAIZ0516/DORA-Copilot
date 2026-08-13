@@ -4897,3 +4897,25 @@ a {
   .release-information > article { grid-template-columns: minmax(0, 1fr); }
   .metric-info-drawer { padding: 17px; }
 }
+
+/* Report evidence hand-off. This menu is portalled to document.body so it is
+   not clipped or repainted by the chat message container. */
+.add-to-report { position: relative; display: inline-flex; }
+.add-to-report > button { display: inline-flex; align-items: center; gap: 4px; }
+.add-to-report-layer { position: fixed; z-index: 120; inset: 0; }
+.add-to-report-layer .add-to-report-scrim,
+.add-to-report-layer .add-to-report-scrim:hover,
+.add-to-report-layer .add-to-report-scrim:focus { position: fixed; inset: 0; padding: 0; border: 0; background: transparent; box-shadow: none; cursor: default; }
+.add-to-report-menu { position: fixed; z-index: 121; max-height: min(70vh, 520px); overflow-y: auto; display: grid; gap: 8px; padding: 12px; border: 1px solid var(--chart-card-border); border-radius: 12px; background: var(--chart-surface); box-shadow: 0 16px 34px rgba(20,45,82,.16); text-align: left; }
+.add-to-report-menu label { display: grid; gap: 3px; }
+.add-to-report-menu label span { color: var(--chart-ink-muted); font-size: .56rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.add-to-report-heading { margin: 2px 0 0; color: var(--chart-ink-muted); font-size: .56rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.add-to-report-list { display: grid; gap: 4px; max-height: 168px; overflow-y: auto; }
+.add-to-report-list button,
+.add-to-report-new { display: grid; gap: 1px; padding: 7px 9px; border: 1px solid var(--chart-card-border); border-radius: 9px; background: var(--chart-surface); color: var(--chart-ink); font: inherit; text-align: left; cursor: pointer; }
+.add-to-report-list strong { font-size: .7rem; }
+.add-to-report-list small { color: var(--chart-ink-muted); font-size: .6rem; }
+.add-to-report-new { display: flex; align-items: center; gap: 6px; font-size: .68rem; font-weight: 600; }
+.add-to-report-note { margin: 0; color: var(--chart-ink-muted); font-size: .64rem; }
+.add-to-report-note.is-error { color: #b91c1c; }
+.add-to-report-menu select { min-height: 34px; padding: 6px 9px; border: 1px solid var(--chart-card-border); border-radius: 9px; background: var(--chart-surface); color: var(--chart-ink); font: inherit; font-size: .76rem; }

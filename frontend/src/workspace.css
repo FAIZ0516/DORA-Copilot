@@ -341,13 +341,23 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .metric-formula-block code { display: block; padding: 10px; color: #345c8c; background: #f5f8fc; border: 1px solid #e1e8f1; border-radius: 8px; font-size: .61rem; white-space: normal; }
 .metric-question-chips button { padding: 7px 8px; color: #326aaa; background: #f0f7ff; border: 1px solid #d9e9fa; border-radius: 999px; font-size: .58rem; cursor: pointer; }
 .report-drawer-backdrop { position: fixed; z-index: 99; inset: 0; background: rgba(22,35,54,.16); }
-.report-type-list { display: grid; gap: 8px; }
-.report-type-list button { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 11px; color: #3e4c60; background: #fafbfd; border: 1px solid #e2e8f0; border-radius: 9px; text-align: left; cursor: pointer; }
-.report-type-list button:hover { color: #1c62bd; background: #f1f7ff; border-color: #d4e4f8; }
-.report-type-list button > svg { width: 16px; }
-.report-type-list button span { display: grid; gap: 3px; }
-.report-type-list strong { font-size: .65rem; }
-.report-type-list small { color: #818c9d; font-size: .54rem; }
+.report-type-list { display: grid; gap: 9px; }
+.report-type-list button { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 13px; color: #2b3a4f; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; text-align: left; cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
+.report-type-list button:hover { border-color: #4f46e5; box-shadow: 0 6px 18px rgba(79,70,229,.12); transform: translateY(-1px); }
+.report-type-list button:focus-visible { outline: 2px solid #0ea5e9; outline-offset: 2px; }
+.report-type-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(140deg,#4f46e5,#0ea5e9); color: #fff; }
+.report-type-icon svg { width: 16px; height: 16px; }
+.report-type-list--secondary .report-type-icon { background: #eef2f8; color: #56657c; }
+.report-type-text { display: grid; gap: 2px; min-width: 0; }
+.report-type-list strong { font-size: .78rem; font-weight: 700; letter-spacing: -.01em; }
+.report-type-list small { color: #6b7a90; font-size: .68rem; line-height: 1.45; }
+.report-type-list em { color: #4f46e5; font-size: .6rem; font-style: normal; font-weight: 650; }
+.report-type-list button > svg:last-child { width: 15px; color: #9aa7b8; }
+.report-drawer-lead { margin: 0 0 10px; color: #6b7a90; font-size: .7rem; line-height: 1.5; }
+.report-drawer-note { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; color: #8794a6; font-size: .66rem; line-height: 1.5; }
+.report-drawer-note.is-error { color: #b91c1c; }
+.report-drawer-note svg { width: 13px; }
+@media (prefers-reduced-motion: reduce) { .report-type-list button { transition: none; } .report-type-list button:hover { transform: none; } }
 
 .role-dashboard-skeleton { display: grid; gap: 11px; }
 .role-dashboard-skeleton > div { display: grid; grid-template-columns: repeat(4,1fr); gap: 9px; }
