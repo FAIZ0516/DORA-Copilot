@@ -146,3 +146,10 @@ test("the text composer stays available while voice is on", () => {
   const composerIndex = chatSource.indexOf("copilot-composer-wrap");
   assert.ok(panelIndex < composerIndex, "voice sits above the composer, replacing nothing");
 });
+
+test("the dev proxy forwards the WebSocket upgrade, not just HTTP", () => {
+  // Without ws:true Vite proxies /api/voice/session as HTTP and silently drops
+  // the upgrade, so the socket never connects and voice mode looks broken.
+  const viteConfig = read("../vite.config.js");
+  assert.match(viteConfig, /ws: true/);
+});

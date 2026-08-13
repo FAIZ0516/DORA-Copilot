@@ -170,6 +170,16 @@ def load_whisper():
     if _whisper_load_error is not None:
         raise VoiceModelUnavailable(_whisper_load_error)
     try:
+        # The model is fetched from the Hugging Face hub on first use, and this
+        # environment terminates TLS at a corporate proxy whose root is in the
+        # Windows trust store but not in certifi -- the same reason llm.py and
+        # tts.py build truststore SSL contexts. Those are per-client, so they do
+        # not help a download made inside the hub library; injecting into the
+        # stdlib makes every client here use the OS trust store.
+        import truststore
+
+        truststore.inject_into_ssl()
+
         from faster_whisper import WhisperModel
 
         _whisper_model = WhisperModel(

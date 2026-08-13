@@ -18,6 +18,10 @@ export default defineConfig(({ mode }) => {
           // for example when a crash leaves 8000 held by a stale socket.
           target: env.VITE_API_PROXY_TARGET || "http://127.0.0.1:8000",
           changeOrigin: true,
+          // The realtime voice session upgrades /api/voice/session to a
+          // WebSocket. Without this the proxy forwards the HTTP routes but
+          // silently drops the upgrade, so voice mode never connects.
+          ws: true,
         },
       },
     },
