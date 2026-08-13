@@ -22,6 +22,7 @@ import {
   buildRiskItems,
   filterIssuesForFeature,
 } from "../dashboardPresentation";
+import { buildMetricQuestions } from "../dashboardQuestions";
 import {
   loadDashboardFilters,
   loadDashboardIssues,
@@ -52,7 +53,69 @@ function DashboardSkeleton() {
   );
 }
 
-function PrimaryKpiRow({ payload, onInfo, onAsk }) {
+/**
+ * "Ask Zara" on a KPI card offers a choice of questions rather than firing one
+ * fixed sentence. The options are derived from the card's current value, so a
+ * strong percentage is never asked why it is low and a metric at zero never
+ * offers questions about items that do not exist.
+ */
+function MetricAskMenu({ card, scope, onAsk }) {
+  const [open, setOpen] = useState(false);
+  const options = useMemo(() => buildMetricQuestions(card, scope), [card, scope]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onKeyDown(event) { if (event.key === "Escape") setOpen(false); }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  return (
+    <div className={`metric-ask-menu ${open ? "is-open" : ""}`}>
+      <button
+        className="metric-ask-action"
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="true"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Sparkles aria-hidden="true" /> Ask Zara <ChevronDown aria-hidden="true" />
+      </button>
+      {open && (
+        <>
+          {/* Clicking anywhere else dismisses the chooser. */}
+          <button className="metric-ask-scrim" type="button" aria-label="Close question chooser" onClick={() => setOpen(false)} />
+          <div className="metric-ask-options" role="menu" aria-label={`Questions about ${card.title}`}>
+            <p>Ask about {card.title}</p>
+            {options.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                role="menuitem"
+                title={option.question}
+                onClick={() => {
+                  setOpen(false);
+                  onAsk(option.question, {
+                    selected_metric: card.key,
+                    current_metric_value: card.value,
+                    // A cross-squad comparison must not inherit the single-squad
+                    // dashboard scope, or the assistant refuses with "you are
+                    // currently viewing MBK; this needs the All Squads view".
+                    ...(option.crossSquad ? { squad: "" } : {}),
+                  });
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PrimaryKpiRow({ payload, onInfo, onAsk, scope }) {
   const cards = buildPrimaryKpis(payload);
   return (
     <section className="primary-kpi-section" aria-labelledby="primary-kpi-title">
@@ -63,7 +126,7 @@ function PrimaryKpiRow({ payload, onInfo, onAsk }) {
             <div><span>{card.title}</span><button type="button" onClick={() => onInfo({ key: card.key, value: card.value, ...card.definition })} aria-label={`Explain ${card.title}`} title={`What ${card.title} means`}><Info aria-hidden="true" /></button></div>
             <strong>{typeof card.value === "number" ? number(card.value, card.suffix) : card.value}</strong>
             <p>{card.comparison}</p>
-            <button className="metric-ask-action" type="button" onClick={() => onAsk(card.definition?.suggested_questions?.[0] || `Explain ${card.title}.`, { selected_metric: card.key, current_metric_value: card.value })}><Sparkles aria-hidden="true" /> Ask Zara</button>
+            <MetricAskMenu card={card} scope={scope} onAsk={onAsk} />
           </article>
         ))}
       </div>
@@ -223,6 +286,13 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [context.selectedSquad, context.activeView, filterRequest, issueFilters, refreshToken]);
 
+  // The scope questions are written against. Dashboard context is also sent
+  // as structured metadata, but the question itself has to stand alone -- the
+  // assistant answers the sentence it is given.
+  const askScope = useMemo(
+    () => ({ squad: context.selectedSquad, sprint: context.selectedSprint, release: context.selectedRelease, project: context.selectedProject }),
+    [context.selectedSquad, context.selectedSprint, context.selectedRelease, context.selectedProject],
+  );
   function ask(question, patch = {}) { if (patch.selected_metric) context.setSelectedMetric(patch.selected_metric); if (patch.current_metric_value !== undefined) context.setCurrentMetricValue(patch.current_metric_value); onAsk(question, context.dashboardContext(patch)); }
   function openMetric(metric) { context.setSelectedMetric(metric.key); context.setCurrentMetricValue(metric.value); setDrawerMetric(metric); }
   function viewSquad(row) { context.setSelectedSquad(row.squad || row.name); context.setSelectedSquadRow(row); context.setActiveView("squad_detail"); setIssueFilters((current) => ({ ...current, page: 1 })); window.requestAnimationFrame(() => document.getElementById("dashboard-top")?.scrollIntoView({ behavior: "smooth", block: "start" })); }
@@ -250,7 +320,7 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
       {payload?.empty && status !== "loading" && <div className="dashboard-empty-state"><BarChart3 /><strong>No Jira tickets found in the selected scope.</strong><p>Clear a release, sprint, feature, or created-date filter and try again.</p><button type="button" onClick={resetFilters}>Clear filters</button></div>}
 
       {payload && !payload.empty && <>
-        {isPortfolio ? <><div className="portfolio-kpi-row">{(payload.metric_cards || []).slice(0, 4).map((metric) => <article key={metric.key}><span>{metric.title}</span><strong>{number(metric.value, metric.key.includes("pct") ? "%" : "")}</strong><p>{metric.description}</p></article>)}</div><PortfolioView payload={payload} onSquad={viewSquad} onAsk={ask} /></> : <><PrimaryKpiRow payload={payload} onInfo={openMetric} onAsk={ask} /><DeliveryAnalytics payload={payload} /><RiskAttentionPanel payload={payload} onViewIssue={focusRisk} onAsk={ask} squad={context.selectedSquad} /><ProductivityOverview payload={payload} issues={visibleIssues} onAsk={ask} />{payload.release_information?.length > 0 && <section className="release-information"><header><h3>Release Information</h3><span>Rule-based source dates</span></header>{payload.release_information.map((release) => <article key={`${release.fixversion}-${release.release_date}`}><strong>{release.fixversion}</strong><span>Release date {release.release_date || "Unavailable"}</span><span>Plan {release.release_plan_start || "—"} → {release.release_plan_end || "—"}</span><span>Actual {release.release_actual_start || "—"} → {release.release_actual_end || "—"}</span></article>)}</section>}<IssueTable payload={visibleIssues} filterOptions={options} filters={issueFilters} setFilters={setIssueFilters} onPage={(page) => setIssueFilters((current) => ({ ...current, page }))} /></>}
+        {isPortfolio ? <><div className="portfolio-kpi-row">{(payload.metric_cards || []).slice(0, 4).map((metric) => <article key={metric.key}><span>{metric.title}</span><strong>{number(metric.value, metric.key.includes("pct") ? "%" : "")}</strong><p>{metric.description}</p></article>)}</div><PortfolioView payload={payload} onSquad={viewSquad} onAsk={ask} /></> : <><PrimaryKpiRow payload={payload} onInfo={openMetric} onAsk={ask} scope={askScope} /><DeliveryAnalytics payload={payload} /><RiskAttentionPanel payload={payload} onViewIssue={focusRisk} onAsk={ask} squad={context.selectedSquad} /><ProductivityOverview payload={payload} issues={visibleIssues} onAsk={ask} />{payload.release_information?.length > 0 && <section className="release-information"><header><h3>Release Information</h3><span>Rule-based source dates</span></header>{payload.release_information.map((release) => <article key={`${release.fixversion}-${release.release_date}`}><strong>{release.fixversion}</strong><span>Release date {release.release_date || "Unavailable"}</span><span>Plan {release.release_plan_start || "—"} → {release.release_plan_end || "—"}</span><span>Actual {release.release_actual_start || "—"} → {release.release_actual_end || "—"}</span></article>)}</section>}<IssueTable payload={visibleIssues} filterOptions={options} filters={issueFilters} setFilters={setIssueFilters} onPage={(page) => setIssueFilters((current) => ({ ...current, page }))} /></>}
         {(payload.data_quality_notes || []).length > 0 && <section className="dashboard-quality-note"><CircleHelp aria-hidden="true" /><div><strong>Data quality &amp; interpretation</strong>{payload.data_quality_notes.map((note) => <p key={note}>{note}</p>)}</div></section>}
       </>}
 

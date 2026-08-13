@@ -4113,9 +4113,91 @@ a {
 }
 
 .role-metric-card:hover .metric-ask-action,
-.metric-ask-action:focus-visible {
+.metric-ask-action:focus-visible,
+.metric-ask-menu.is-open .metric-ask-action {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Question chooser on a KPI card. The trigger stays visible while the menu is
+   open (see the .is-open rule above), otherwise moving the pointer off the
+   card to reach the list would fade the control away underneath it. */
+.metric-ask-menu {
+  position: relative;
+}
+
+.metric-ask-menu .metric-ask-action svg:last-child {
+  width: 11px;
+  transition: transform 180ms ease;
+}
+
+.metric-ask-menu.is-open .metric-ask-action svg:last-child {
+  transform: rotate(180deg);
+}
+
+/* Full-viewport click target that closes the menu. It sits under the option
+   list but over everything else. */
+.metric-ask-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.metric-ask-options {
+  position: absolute;
+  z-index: 41;
+  top: calc(100% + 6px);
+  left: -6px;
+  width: max(214px, calc(100% + 12px));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px;
+  border: 1px solid rgba(126, 168, 214, 0.26);
+  border-radius: 11px;
+  background: #16283f;
+  box-shadow: 0 16px 34px rgba(4, 16, 32, 0.46);
+  text-align: left;
+}
+
+.metric-ask-options p {
+  margin: 2px 6px 5px;
+  color: rgba(195, 217, 241, 0.56);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.metric-ask-options button {
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #dbe9f8;
+  font-size: 0.66rem;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.metric-ask-options button:hover,
+.metric-ask-options button:focus-visible {
+  background: rgba(88, 191, 225, 0.15);
+  color: #fff;
+}
+
+/* On a phone the card is narrow, so the list spans it and sits above the
+   fold rather than hanging off the right edge. */
+@media (max-width: 640px) {
+  .metric-ask-options {
+    left: 0;
+    width: 100%;
+  }
 }
 
 .dashboard-attention-panel {
