@@ -85,6 +85,8 @@ export const composeReport = (id, sectionIds = []) =>
     body: JSON.stringify({ section_ids: sectionIds }),
   });
 
+export const generateReport = (id) => request(`/api/reports/${id}/generate`, { method: "POST" });
+
 export const validateReport = (id) => request(`/api/reports/${id}/validate`, { method: "POST" });
 
 /**

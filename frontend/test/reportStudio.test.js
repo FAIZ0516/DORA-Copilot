@@ -190,3 +190,52 @@ test("the studio reuses the shared chart tokens rather than a new palette", () =
     assert.match(cssSource, new RegExp(token), token);
   }
 });
+
+const newReportSource = read("../src/features/report-studio/NewReport.jsx");
+
+test("the three launcher options land on different starting states", () => {
+  // They previously all opened the same library screen, so the choice did
+  // nothing at all.
+  assert.match(studioSource, /params\?\.get\("start"\)/);
+  assert.match(studioSource, /startMode \? "new" : "library"/);
+  assert.match(studioSource, /start=\{startMode\}/);
+  assert.match(newReportSource, /const START_MODES = \{/);
+  for (const mode of ["template", "chat", "blank"]) {
+    assert.match(newReportSource, new RegExp(`${mode}: \{`), mode);
+  }
+  // Blank skips the type picker; the others start on it.
+  assert.match(newReportSource, /mode === "blank" \? 2 : 1/);
+});
+
+test("Add to report styles ship with the chat page, not the lazy studio route", () => {
+  // report-studio.css is imported by the lazily loaded studio, so the button
+  // rendered completely unstyled on the chat page.
+  const mainCss = read("../src/styles.css");
+  assert.match(mainCss, /\.add-to-report-menu/);
+  assert.match(mainCss, /\.add-to-report-list/);
+  assert.doesNotMatch(cssSource, /\.add-to-report-menu \{/);
+});
+
+test("a template carries standard questions and can generate from live data", () => {
+  assert.match(clientSource, /export const generateReport/);
+  assert.match(clientSource, /\/generate`/);
+  assert.match(newReportSource, /chosen\.questions\.map/);
+  assert.match(newReportSource, /What this report answers/);
+  // The generate step is offered at creation and again from the editor.
+  assert.match(studioSource, /generateReport\(created\.id\)/);
+  assert.match(studioSource, /Refresh from data/);
+});
+
+test("creating a report is two steps, not one long form", () => {
+  assert.match(newReportSource, /report-steps/);
+  assert.match(newReportSource, /Choose a type/);
+  assert.match(newReportSource, /Set the details/);
+  assert.match(newReportSource, /setStep\(2\)/);
+  assert.match(newReportSource, /setStep\(1\)/);
+});
+
+test("a handed-over chat answer is acknowledged in the create flow", () => {
+  assert.match(newReportSource, /pending &&/);
+  assert.match(newReportSource, /will be attached once the report is created/);
+  assert.match(studioSource, /setPending\(true\)/);
+});

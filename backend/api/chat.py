@@ -177,7 +177,16 @@ def chat(
                 "knowledge_sections": result.get("metadata", {}).get("knowledge_sections", []),
             },
         )
+        # The id only exists after the insert, so write it into both the
+        # response and the stored copy -- otherwise a reloaded conversation has
+        # no id and "Add to report" cannot reference the answer.
         result["metadata"]["message_id"] = str(assistant_message.id)
+        stored = dict(assistant_message.structured_content or {})
+        stored_metadata = dict(stored.get("metadata") or {})
+        stored_metadata["message_id"] = str(assistant_message.id)
+        stored["metadata"] = stored_metadata
+        assistant_message.structured_content = stored
+        runtime_session.commit()
         repository.update_state(
             conversation,
             update_persistent_state(

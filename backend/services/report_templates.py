@@ -73,17 +73,28 @@ def _section(type_: str, title: str, **extra: Any) -> dict[str, Any]:
     return {"type": type_, "title": title, **extra}
 
 
+# A template is an ordered list of blocks plus the standard questions that
+# fill it. The questions are fixed so a template is reproducible -- the same
+# report run next week asks the same things and reports whatever the data says
+# then. They run through the existing governed agent, so a generated report is
+# backed by the same approved queries and validation as any chat answer.
 # A template is an ordered list of blocks. Narrative blocks start empty and are
 # filled by composition; structural blocks (cover, methodology) are rendered
 # deterministically from the report's own scope and provenance.
 TEMPLATES: dict[str, dict[str, Any]] = {
     "blank": {
+        "questions": [],
         "label": "Blank report",
         "description": "Start with only a cover and build the report yourself.",
         "default_title": "New report",
         "sections": [_section("cover", "")],
     },
     "executive_summary": {
+        "questions": [
+            "Summarise the current delivery position, including completion, open work and blockers.",
+            "What are the most significant delivery risks right now, with the evidence behind each?",
+            "Which work is oldest or most at risk of slipping?",
+        ],
         "label": "Executive Summary",
         "description": "A short leadership briefing: position, risks, and what to decide.",
         "default_title": "Executive Summary",
@@ -101,6 +112,12 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         ],
     },
     "sprint_performance": {
+        "questions": [
+            "Show the current delivery position: completed, in progress and to do.",
+            "Break the work down by status category and issue type.",
+            "Which high-priority bugs and impeded tickets need attention, ranked by age?",
+            "How does completion compare across squads?",
+        ],
         "label": "Sprint Performance Report",
         "description": "Delivery position for a squad or sprint, with supporting evidence.",
         "default_title": "Sprint Performance Report",
@@ -120,6 +137,11 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         ],
     },
     "risk_and_action": {
+        "questions": [
+            "Which squads currently need attention, and what is the reason for each?",
+            "Show the oldest unresolved work and explain why those items are still open.",
+            "Which high-priority open bugs should be addressed first?",
+        ],
         "label": "Risk and Action Report",
         "description": "Attention areas with evidence, severity, and owners.",
         "default_title": "Risk and Action Report",
@@ -136,6 +158,11 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         ],
     },
     "weekly_management_update": {
+        "questions": [
+            "Summarise the current delivery position for a management update.",
+            "How has ticket creation compared with resolution recently?",
+            "What needs a decision or escalation this week, based on the evidence?",
+        ],
         "label": "Weekly Management Update",
         "description": "A short recurring update: what moved, what is blocked, what is next.",
         "default_title": "Weekly Management Update",
@@ -151,6 +178,11 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         ],
     },
     "dora_performance": {
+        "questions": [
+            "Show release frequency, change failure rate, lead time and delivery cycle time by year.",
+            "How have the DORA measures trended over the available periods?",
+            "How do the DORA measures compare across squads?",
+        ],
         "label": "DORA Performance Report",
         "description": "Release frequency, change failure rate, lead time and cycle time.",
         "default_title": "DORA Performance Report",
@@ -185,6 +217,7 @@ def template_catalogue() -> list[dict[str, Any]]:
             "default_audience": value.get("default_audience", "delivery_manager"),
             "default_tone": value.get("default_tone", "professional"),
             "section_count": len(value["sections"]),
+            "questions": list(value.get("questions") or []),
         }
         for key, value in TEMPLATES.items()
     ]
@@ -225,6 +258,12 @@ def _default_classification(type_: str) -> str:
     return "observed_fact"
 
 
+def questions_for_template(template: str) -> list[str]:
+    """The standard questions this template answers from live data."""
+
+    return list((TEMPLATES.get(template) or TEMPLATES["blank"]).get("questions") or [])
+
+
 def default_title(template: str) -> str:
     return (TEMPLATES.get(template) or TEMPLATES["blank"])["default_title"]
 
@@ -242,6 +281,7 @@ __all__ = [
     "TEMPLATE_IDS",
     "TONES",
     "default_title",
+    "questions_for_template",
     "sections_for_template",
     "template_catalogue",
 ]

@@ -16,11 +16,13 @@ import {
   RefreshCw,
   Sparkles,
   Trash2,
+  Wand2,
 } from "lucide-react";
 import {
   addSection,
   addSource,
   composeReport,
+  generateReport,
   createReport,
   deleteSection,
   duplicateReport,
@@ -34,6 +36,7 @@ import {
   updateSection,
   validateReport,
 } from "../../services/reports";
+import NewReport from "./NewReport";
 import "./report-studio.css";
 
 /**
@@ -151,120 +154,6 @@ function ReportLibrary({ reports, status, error, onOpen, onNew, onDuplicate, onR
 }
 
 /* ------------------------------------------------------------------ */
-/* New report                                                         */
-/* ------------------------------------------------------------------ */
-
-function NewReport({ catalogue, onCreate, onCancel, busy }) {
-  const [template, setTemplate] = useState("executive_summary");
-  const [title, setTitle] = useState("");
-  const [audience, setAudience] = useState("senior_leadership");
-  const [tone, setTone] = useState("executive");
-  const [detail, setDetail] = useState("standard");
-  const [recommendations, setRecommendations] = useState(true);
-  const [scope, setScope] = useState({ project: "DCPM", squad: "", sprint: "", release: "", date_from: "", date_to: "" });
-
-  const chosen = catalogue?.templates?.find((item) => item.id === template);
-  useEffect(() => {
-    if (!chosen) return;
-    setTitle(chosen.default_title);
-    setAudience(chosen.default_audience);
-    setTone(chosen.default_tone);
-  }, [template]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function submit(event) {
-    event.preventDefault();
-    const cleaned = Object.fromEntries(Object.entries(scope).filter(([, value]) => value));
-    onCreate({
-      template,
-      title: title || chosen?.default_title,
-      audience,
-      tone,
-      detail_level: detail,
-      include_recommendations: recommendations,
-      scope: cleaned,
-    });
-  }
-
-  return (
-    <form className="report-new" onSubmit={submit}>
-      <fieldset>
-        <legend>Start from</legend>
-        <div className="report-template-grid">
-          {(catalogue?.templates || []).map((item) => (
-            <label key={item.id} className={template === item.id ? "is-selected" : ""}>
-              <input
-                type="radio"
-                name="template"
-                value={item.id}
-                checked={template === item.id}
-                onChange={() => setTemplate(item.id)}
-              />
-              <strong>{item.label}</strong>
-              <small>{item.description}</small>
-              <em>{item.section_count} section{item.section_count === 1 ? "" : "s"}</em>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>Configure</legend>
-        <div className="report-config-grid">
-          <label><span>Report title</span>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} required />
-          </label>
-          <label><span>Audience</span>
-            <select value={audience} onChange={(event) => setAudience(event.target.value)}>
-              {(catalogue?.audiences || []).map((value) => <option key={value} value={value}>{label(value)}</option>)}
-            </select>
-          </label>
-          <label><span>Tone</span>
-            <select value={tone} onChange={(event) => setTone(event.target.value)}>
-              {(catalogue?.tones || []).map((value) => <option key={value} value={value}>{label(value)}</option>)}
-            </select>
-          </label>
-          <label><span>Level of detail</span>
-            <select value={detail} onChange={(event) => setDetail(event.target.value)}>
-              {(catalogue?.detail_levels || []).map((value) => <option key={value} value={value}>{label(value)}</option>)}
-            </select>
-          </label>
-          <label><span>Project</span>
-            <input value={scope.project} onChange={(event) => setScope({ ...scope, project: event.target.value })} />
-          </label>
-          <label><span>Squad</span>
-            <input value={scope.squad} placeholder="All squads" onChange={(event) => setScope({ ...scope, squad: event.target.value })} />
-          </label>
-          <label><span>Sprint</span>
-            <input value={scope.sprint} placeholder="All sprints" onChange={(event) => setScope({ ...scope, sprint: event.target.value })} />
-          </label>
-          <label><span>Release</span>
-            <input value={scope.release} placeholder="All releases" onChange={(event) => setScope({ ...scope, release: event.target.value })} />
-          </label>
-          <label><span>From</span>
-            <input type="date" value={scope.date_from} onChange={(event) => setScope({ ...scope, date_from: event.target.value })} />
-          </label>
-          <label><span>To</span>
-            <input type="date" value={scope.date_to} onChange={(event) => setScope({ ...scope, date_to: event.target.value })} />
-          </label>
-          <label className="report-checkbox">
-            <input type="checkbox" checked={recommendations} onChange={(event) => setRecommendations(event.target.checked)} />
-            <span>Include recommendations</span>
-          </label>
-        </div>
-      </fieldset>
-
-      <div className="report-new-actions">
-        <button type="button" onClick={onCancel}>Cancel</button>
-        <button type="submit" className="primary" disabled={busy}>
-          {busy ? <Loader2 className="is-spinning" aria-hidden="true" /> : <FileText aria-hidden="true" />}
-          Create report
-        </button>
-      </div>
-    </form>
-  );
-}
-
-/* ------------------------------------------------------------------ */
 /* Editor                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -340,7 +229,7 @@ function SectionBlock({ section, index, total, busy, onChange, onMove, onToggle,
   );
 }
 
-function ReportEditor({ report, busy, notice, onBack, onPatch, onSection, onMove, onRemove, onAdd, onCompose, onValidate, onExport, onExportCsv, onDuplicate }) {
+function ReportEditor({ report, busy, notice, onBack, onPatch, onSection, onMove, onRemove, onAdd, onCompose, onGenerate, onValidate, onExport, onExportCsv, onDuplicate }) {
   const visible = report.sections.filter((section) => section.visible);
   return (
     <div className="report-editor">
@@ -362,8 +251,11 @@ function ReportEditor({ report, busy, notice, onBack, onPatch, onSection, onMove
         </div>
         <div className="report-editor-actions">
           <button type="button" onClick={onValidate} disabled={busy}><CheckCircle2 aria-hidden="true" /> Validate</button>
-          <button type="button" onClick={onCompose} disabled={busy}>
-            {busy ? <Loader2 className="is-spinning" aria-hidden="true" /> : <Sparkles aria-hidden="true" />} Generate text
+          <button type="button" onClick={onGenerate} disabled={busy} title="Answer this template's standard questions from live data">
+            {busy ? <Loader2 className="is-spinning" aria-hidden="true" /> : <Wand2 aria-hidden="true" />} Refresh from data
+          </button>
+          <button type="button" onClick={onCompose} disabled={busy} title="Rewrite the narrative from the attached evidence">
+            <Sparkles aria-hidden="true" /> Rewrite text
           </button>
           <button type="button" onClick={onDuplicate} disabled={busy}><Copy aria-hidden="true" /> Duplicate</button>
           <button type="button" className="primary" onClick={() => onExport("pdf")} disabled={busy}><Download aria-hidden="true" /> Export PDF</button>
@@ -463,7 +355,11 @@ function ReportEditor({ report, busy, notice, onBack, onPatch, onSection, onMove
 /* ------------------------------------------------------------------ */
 
 export default function ReportStudio() {
-  const [view, setView] = useState("library");
+  // The launcher links to /reports?start=template|chat|blank. Without this the
+  // three options all landed on the same library screen.
+  const params = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
+  const startMode = params?.get("start") || "";
+  const [view, setView] = useState(startMode ? "new" : "library");
   const [catalogue, setCatalogue] = useState(null);
   const [reports, setReports] = useState([]);
   const [report, setReport] = useState(null);
@@ -487,14 +383,16 @@ export default function ReportStudio() {
 
   useEffect(() => { refreshLibrary(); }, [refreshLibrary]);
 
-  // A "add this answer to a report" hand-off from the chat lands here.
+  const [pending, setPending] = useState(false);
+
+  // An "add this answer to a report" hand-off from the chat lands here.
   useEffect(() => {
     if (status !== "ready") return;
-    const pending = takePendingSource();
-    if (!pending) return;
+    const handed = takePendingSource();
+    if (!handed) return;
+    setPending(true);
     setView("new");
-    setNotice({ tone: "info", text: "Create or open a report to attach the selected answer." });
-    window.sessionStorage.setItem("zara-pending-source", JSON.stringify(pending));
+    window.sessionStorage.setItem("zara-pending-source", JSON.stringify(handed));
   }, [status]);
 
   const attachPending = useCallback(async (reportId) => {
@@ -523,14 +421,26 @@ export default function ReportStudio() {
     }
   }
 
-  async function create(payload) {
+  async function create(payload, { generate = false } = {}) {
     setBusy(true);
+    setNotice(generate ? { tone: "info", text: "Answering the template questions from live data…" } : null);
     try {
       const created = await createReport(payload);
       const attached = await attachPending(created.id);
       setReport(attached || created);
       setView("editor");
-      setNotice(null);
+      setPending(false);
+      if (generate) {
+        // The template's fixed questions are answered now, so the report is
+        // filled from whatever the data currently says.
+        const result = await generateReport(created.id);
+        setReport(result.report);
+        setNotice(
+          result.warnings?.length
+            ? { tone: "warn", text: result.warnings.join(" ") }
+            : { tone: "info", text: `Report generated from ${result.report.sources.length} evidence sources.` },
+        );
+      }
       refreshLibrary();
     } catch (failure) {
       setNotice({ tone: "warn", text: failure.message });
@@ -585,6 +495,8 @@ export default function ReportStudio() {
       return (
         <NewReport
           catalogue={catalogue}
+          start={startMode}
+          pending={pending}
           busy={busy}
           onCreate={create}
           onCancel={() => { setView("library"); setNotice(null); }}
@@ -617,6 +529,15 @@ export default function ReportStudio() {
             return result;
           })}
           onValidate={() => run(() => validateReport(report.id), null)}
+          onGenerate={() => run(async () => {
+            const result = await generateReport(report.id);
+            setNotice(
+              result.warnings?.length
+                ? { tone: "warn", text: result.warnings.join(" ") }
+                : { tone: "info", text: "Report refreshed from live data." },
+            );
+            return result;
+          })}
           onExport={(format) => run(async () => {
             const name = await exportReport(report.id, format);
             setNotice({ tone: "info", text: `Downloaded ${name}.` });
@@ -646,7 +567,7 @@ export default function ReportStudio() {
         onDuplicate={(id) => run(() => duplicateReport(id), "Report duplicated.")}
       />
     );
-  }, [view, report, reports, status, error, busy, notice, catalogue]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view, report, reports, status, error, busy, notice, catalogue, pending, startMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main className="report-studio">

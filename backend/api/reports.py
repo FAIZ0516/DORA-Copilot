@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database.db import Report, get_db
+from ..database.doradb import DoraDbConfigurationError, doradb_session
 from ..llm import GenerativeAIClient
 from ..report_repository import ReportNotFound, ReportRepository
 from ..schemas import (
@@ -38,6 +39,7 @@ from ..schemas import (
     ReportUpdateRequest,
 )
 from ..services.report_composition import compose_sections
+from ..services.report_generation import run_template_questions
 from ..services.report_evidence import (
     detect_scope_conflicts,
     evidence_timestamp,
@@ -57,6 +59,7 @@ from ..services.report_templates import (
     STATUSES,
     TEMPLATE_IDS,
     TONES,
+    questions_for_template,
     template_catalogue,
 )
 from .dependencies import development_session
@@ -588,6 +591,103 @@ def compose_report(
         warnings=result["warnings"],
         conflicts=result["conflicts"],
     )
+
+
+
+@router.post("/{report_id}/generate", response_model=ReportComposeResponse)
+def generate_report(
+    report_id: UUID,
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> ReportComposeResponse:
+    """Fill a template by answering its standard questions from live data.
+
+    This is what makes a template useful on its own: the questions are fixed,
+    so running the same report next week asks the same things and reports
+    whatever the data says then. Answers come from the existing governed agent,
+    so each one arrives with its approved query ids, row counts, warnings and
+    validation attached -- the report is evidence-backed, not model prose.
+    """
+
+    from ..doradb_agent import DoraDbAgent
+
+    report = _resolve(session, report_id, user_id)
+    questions = questions_for_template(report.template)
+    if not questions:
+        raise HTTPException(
+            status_code=422,
+            detail="This template has no standard questions. Add answers from a "
+            "conversation instead, or write the sections yourself.",
+        )
+    if not settings.doradb_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="The database is not configured, so a report cannot be generated from live data.",
+        )
+
+    repository = _repository(session)
+    try:
+        with doradb_session() as doradb:
+            answers = run_template_questions(
+                agent_factory=lambda: DoraDbAgent(doradb),
+                questions=questions,
+                scope=report.scope or {},
+                session_id=f"report-{report.id}",
+            )
+    except DoraDbConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception:  # noqa: BLE001 - never surface provider or driver internals
+        logger.exception("Report generation failed for report %s", report_id)
+        raise HTTPException(
+            status_code=502,
+            detail="The report could not be generated. Your report is unchanged.",
+        ) from None
+
+    warnings = [f"{item['question']}: {item['error']}" for item in answers if item.get("error")]
+    produced = [item for item in answers if not item.get("error")]
+    if not produced:
+        raise HTTPException(
+            status_code=502,
+            detail="None of the template questions could be answered from the current data.",
+        )
+
+    for item in produced:
+        evidence = snapshot_from_message(
+            question=item["question"],
+            answer=item["answer"],
+            structured_content=item["structured_content"],
+            selection="full",
+        )
+        source = repository.add_source(
+            report,
+            conversation_id=None,
+            message_id=None,
+            selection="full",
+            evidence=evidence,
+            scope=scope_from_message(item["structured_content"]),
+            data_as_of=evidence_timestamp(item["structured_content"]) or datetime.now(timezone.utc),
+        )
+        # Charts and tables become their own blocks so exports lay them out.
+        if evidence.get("chart"):
+            repository.add_section(
+                report, type="chart",
+                title=(evidence["chart"] or {}).get("title") or "Chart",
+                payload=evidence["chart"], content_classification="observed_fact",
+                content_mode="rewrite", source_ids=[str(source.id)],
+            )
+        if evidence.get("table"):
+            repository.add_section(
+                report, type="data_table",
+                title=(evidence["table"] or {}).get("title") or "Supporting data",
+                payload=evidence["table"], content_classification="observed_fact",
+                content_mode="rewrite", source_ids=[str(source.id)],
+            )
+
+    session.refresh(report)
+    composed = compose_report(report_id, ReportComposeRequest(), user_id=user_id, session=session)
+    if warnings:
+        composed.warnings = [*warnings, *composed.warnings]
+    return composed
 
 
 @router.post("/{report_id}/validate", response_model=ReportResponse)
