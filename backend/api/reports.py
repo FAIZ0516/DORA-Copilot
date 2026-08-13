@@ -463,23 +463,19 @@ def add_source(
     # can lay them out, rather than being flattened into prose.
     repository = _repository(session)
     if request.selection in {"full", "chart"} and evidence.get("chart"):
-        repository.add_section(
+        repository.place_visual(
             report,
             type="chart",
             title=(evidence["chart"] or {}).get("title") or "Chart",
             payload=evidence["chart"],
-            content_classification="observed_fact",
-            content_mode=request.content_mode,
             source_ids=[str(source.id)],
         )
     if request.selection in {"full", "table"} and evidence.get("table"):
-        repository.add_section(
+        repository.place_visual(
             report,
             type="data_table",
             title=(evidence["table"] or {}).get("title") or "Supporting data",
             payload=evidence["table"],
-            content_classification="observed_fact",
-            content_mode=request.content_mode,
             source_ids=[str(source.id)],
         )
     if request.selection in {"full", "narrative", "recommendations", "warnings"}:
@@ -674,19 +670,19 @@ def generate_report(
             data_as_of=evidence_timestamp(item["structured_content"]) or datetime.now(timezone.utc),
         )
         # Charts and tables become their own blocks so exports lay them out.
+        # Placed next to the analysis they illustrate, not appended in a block
+        # of unexplained diagrams at the end.
         if evidence.get("chart"):
-            repository.add_section(
+            repository.place_visual(
                 report, type="chart",
                 title=(evidence["chart"] or {}).get("title") or "Chart",
-                payload=evidence["chart"], content_classification="observed_fact",
-                content_mode="rewrite", source_ids=[str(source.id)],
+                payload=evidence["chart"], source_ids=[str(source.id)],
             )
         if evidence.get("table"):
-            repository.add_section(
+            repository.place_visual(
                 report, type="data_table",
                 title=(evidence["table"] or {}).get("title") or "Supporting data",
-                payload=evidence["table"], content_classification="observed_fact",
-                content_mode="rewrite", source_ids=[str(source.id)],
+                payload=evidence["table"], source_ids=[str(source.id)],
             )
 
     session.refresh(report)

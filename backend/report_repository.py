@@ -217,6 +217,70 @@ class ReportRepository:
         self.session.refresh(report)
         return section
 
+    # Blocks that close a report. A chart belongs with the analysis it
+    # illustrates, so it is placed before these rather than after them.
+    TRAILING_TYPES = frozenset(
+        {"data_quality", "scope_limitation", "methodology", "page_break"}
+    )
+
+    def place_visual(
+        self,
+        report: Report,
+        *,
+        type: str,
+        title: str,
+        payload: dict[str, Any],
+        source_ids: list[str],
+        after: int | None = None,
+    ) -> ReportSection:
+        """Put a chart or table where it explains something.
+
+        Appending every visual to the end left a report of prose followed by a
+        block of unexplained diagrams. Preference order:
+
+        1. Fill an empty placeholder the template already reserved for this kind
+           of block -- that is where the template author wanted it.
+        2. Otherwise sit directly after the narrative section it belongs to.
+        3. Otherwise land before the closing data-quality and methodology
+           blocks, never after them.
+        """
+
+        placeholder = next(
+            (
+                section
+                for section in sorted(report.sections, key=lambda s: s.position)
+                if section.type == type and not section.payload
+            ),
+            None,
+        )
+        if placeholder is not None:
+            placeholder.payload = payload
+            if title:
+                placeholder.title = title
+            placeholder.source_ids = list({*(placeholder.source_ids or []), *source_ids})
+            self.session.commit()
+            self.session.refresh(report)
+            return placeholder
+
+        if after is None:
+            trailing = [
+                section.position
+                for section in report.sections
+                if section.type in self.TRAILING_TYPES
+            ]
+            after = (min(trailing) - 1) if trailing else None
+
+        return self.add_section(
+            report,
+            type=type,
+            title=title,
+            payload=payload,
+            position=(after + 1) if after is not None else None,
+            content_classification="observed_fact",
+            content_mode="rewrite",
+            source_ids=source_ids,
+        )
+
     def get_section(self, report: Report, section_id: UUID) -> ReportSection:
         for section in report.sections:
             if section.id == section_id:

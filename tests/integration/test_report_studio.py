@@ -476,3 +476,71 @@ def test_a_report_survives_reload(client):
     reopened = client.get(f"/api/reports/{report['id']}", headers=USER_A).json()
     assert reopened["title"] == "Renamed"
     assert len(reopened["sections"]) == len(report["sections"])
+
+
+def test_visuals_land_with_the_analysis_not_in_a_heap_at_the_end(client):
+    """A chart belongs beside the section it illustrates.
+
+    Appending every visual produced a report of prose followed by a block of
+    unexplained diagrams, with the data-quality and methodology blocks stranded
+    above them.
+    """
+
+    conversation_id, message_id = _seed_conversation(
+        client, user_id="user-alpha-0001", squad="TITAN",
+        question="Show the work status", answer="Mostly done.",
+    )
+    report = _create(client)  # sprint_performance: reserves a chart and a table slot
+    body = client.post(
+        f"/api/reports/{report['id']}/sources",
+        json={"conversation_id": str(conversation_id), "message_id": str(message_id)},
+        headers=USER_A,
+    ).json()
+
+    sections = sorted(body["sections"], key=lambda s: s["position"])
+    charts = [s for s in sections if s["type"] == "chart" and s["payload"]]
+    tables = [s for s in sections if s["type"] == "data_table" and s["payload"]]
+    assert charts and tables
+
+    # The template already reserved a slot for each, so they filled it rather
+    # than creating duplicates at the end.
+    assert len([s for s in sections if s["type"] == "chart"]) == 1
+    assert len([s for s in sections if s["type"] == "data_table"]) == 1
+
+    # And they sit above the closing blocks, not after them.
+    closing = [
+        s["position"] for s in sections if s["type"] in {"data_quality", "methodology"}
+    ]
+    assert closing
+    assert charts[0]["position"] < min(closing)
+    assert tables[0]["position"] < min(closing)
+
+
+def test_extra_visuals_go_before_the_closing_blocks(client):
+    """With no placeholder left, a second chart still lands in the body."""
+
+    report = _create(client, template="weekly_management_update")  # no chart slot
+    first = _seed_conversation(
+        client, user_id="user-alpha-0001", squad="TITAN",
+        question="First question", answer="First answer.",
+    )
+    second = _seed_conversation(
+        client, user_id="user-alpha-0001", squad="TITAN",
+        question="Second question", answer="Second answer.",
+    )
+    for conversation_id, message_id in (first, second):
+        body = client.post(
+            f"/api/reports/{report['id']}/sources",
+            json={"conversation_id": str(conversation_id), "message_id": str(message_id),
+                  "selection": "chart"},
+            headers=USER_A,
+        ).json()
+
+    sections = sorted(body["sections"], key=lambda s: s["position"])
+    charts = [s for s in sections if s["type"] == "chart"]
+    closing = [s["position"] for s in sections if s["type"] == "methodology"]
+    # Both charts are kept -- "if there are a lot of diagrams, put them all".
+    assert len(charts) == 2
+    assert all(chart["position"] < min(closing) for chart in charts)
+    # Positions stay contiguous after the inserts.
+    assert [s["position"] for s in sections] == list(range(1, len(sections) + 1))
