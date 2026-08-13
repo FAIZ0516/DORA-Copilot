@@ -381,3 +381,26 @@ def test_a_library_voice_failure_names_the_setting_to_change() -> None:
     source = inspect.getsource(tts.create_audio_stream)
     assert "library voices" in source
     assert "ELEVENLABS_VOICE_ID" in source
+
+
+def test_a_library_voice_falls_back_instead_of_failing_the_answer() -> None:
+    """A free plan refuses library voices, and their picker promotes them.
+
+    Two reasonable voice choices in a row were refused with HTTP 402, so the
+    product now recovers rather than going mute.
+    """
+
+    import inspect
+
+    from backend import tts
+
+    source = inspect.getsource(tts.create_audio_stream)
+    assert "_premade_voice_id()" in source
+    assert "_resolved_voice_id = fallback" in source
+    # The retry must not loop: it only fires when the fallback differs.
+    assert "fallback != voice_id" in source
+    # The lookup opens its own client -- the shared error path already closed
+    # the caller's before this point.
+    lookup = inspect.getsource(tts._premade_voice_id)
+    assert "httpx.AsyncClient" in lookup
+    assert 'category") == "premade"' in lookup
