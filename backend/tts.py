@@ -113,11 +113,17 @@ def adjust_characters(session: Session, delta: int) -> UsageSnapshot:
 _resolved_voice_id: str | None = None
 
 
-async def _premade_voice_id() -> str | None:
-    """First premade voice on this account, or None if it cannot be read.
+async def _premade_voice_id(wanted: str | None = None) -> str | None:
+    """The closest usable premade voice to the one that was refused.
 
-    Opens its own client: the caller's is already closed by the shared error
-    path before this runs.
+    Falls back on similarity rather than "whatever is first": a Malay woman's
+    voice replaced by a male American one is a worse answer than a female one
+    that at least matches. Premade voices are English-accented, but the
+    configured multilingual model still pronounces other languages, so gender
+    is the attribute worth preserving.
+
+    Opens its own client: the shared error path closes the caller's before
+    this runs.
     """
 
     ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -131,12 +137,25 @@ async def _premade_voice_id() -> str | None:
             )
             if response.status_code != 200:
                 return None
-            for voice in response.json().get("voices", []):
-                if voice.get("category") == "premade" and voice.get("voice_id"):
-                    return str(voice["voice_id"])
+            voices = response.json().get("voices", [])
     except httpx.HTTPError:
         return None
-    return None
+
+    target = next((v for v in voices if v.get("voice_id") == wanted), None)
+    wanted_labels = (target or {}).get("labels") or {}
+    usable = [v for v in voices if v.get("category") == "premade" and v.get("voice_id")]
+    if not usable:
+        return None
+
+    def score(voice: dict) -> tuple[int, int]:
+        labels = voice.get("labels") or {}
+        return (
+            1 if labels.get("language") == wanted_labels.get("language") else 0,
+            1 if labels.get("gender") == wanted_labels.get("gender") else 0,
+        )
+
+    best = max(usable, key=score)
+    return str(best["voice_id"])
 
 
 async def create_audio_stream(text: str, session: Session) -> AudioStream:
@@ -190,7 +209,7 @@ async def create_audio_stream(text: str, session: Session) -> AudioStream:
         # the premade ones on the account. The raw 402 body says nothing about
         # which setting is wrong, so name it -- this cost a debugging session.
         if response.status_code == 402 and "library voices" in detail.lower():
-            fallback = await _premade_voice_id()
+            fallback = await _premade_voice_id(voice_id)
             if fallback and fallback != voice_id:
                 logger.warning(
                     "ElevenLabs voice %s is a library voice this plan cannot use; "

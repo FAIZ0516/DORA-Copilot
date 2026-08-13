@@ -395,7 +395,7 @@ def test_a_library_voice_falls_back_instead_of_failing_the_answer() -> None:
     from backend import tts
 
     source = inspect.getsource(tts.create_audio_stream)
-    assert "_premade_voice_id()" in source
+    assert "_premade_voice_id(voice_id)" in source
     assert "_resolved_voice_id = fallback" in source
     # The retry must not loop: it only fires when the fallback differs.
     assert "fallback != voice_id" in source
@@ -404,3 +404,24 @@ def test_a_library_voice_falls_back_instead_of_failing_the_answer() -> None:
     lookup = inspect.getsource(tts._premade_voice_id)
     assert "httpx.AsyncClient" in lookup
     assert 'category") == "premade"' in lookup
+
+
+def test_the_fallback_voice_matches_the_one_it_replaces() -> None:
+    """Replacing a Malay woman's voice with a male American one is a worse
+    answer than picking a female voice that at least matches."""
+
+    import inspect
+
+    from backend import tts
+
+    source = inspect.getsource(tts._premade_voice_id)
+    # Similarity, not "whatever came back first".
+    assert "def score(" in source
+    assert 'labels.get("gender") == wanted_labels.get("gender")' in source
+    assert 'labels.get("language") == wanted_labels.get("language")' in source
+    assert "max(usable, key=score)" in source
+    # Only voices the plan can actually use are candidates.
+    assert 'category") == "premade"' in source
+    # The refused voice is passed in so its labels can be matched.
+    caller = inspect.getsource(tts.create_audio_stream)
+    assert "_premade_voice_id(voice_id)" in caller
