@@ -52,7 +52,6 @@ export default function NewReport({ catalogue, start, pending, busy, initialScop
   const [tone, setTone] = useState("executive");
   const [detail, setDetail] = useState("standard");
   const [recommendations, setRecommendations] = useState(true);
-  const [generate, setGenerate] = useState(true);
   // The launcher passes the dashboard's scope in the URL. Ignoring it meant a
   // report started from a JAEGER view was created for all squads.
   const [scope, setScope] = useState({
@@ -72,7 +71,6 @@ export default function NewReport({ catalogue, start, pending, busy, initialScop
     setTitle(chosen.default_title);
     setAudience(chosen.default_audience);
     setTone(chosen.default_tone);
-    setGenerate((chosen.questions?.length || 0) > 0);
   }, [chosen, mode]);
 
   function submit(event) {
@@ -88,7 +86,7 @@ export default function NewReport({ catalogue, start, pending, busy, initialScop
         include_recommendations: recommendations,
         scope: cleaned,
       },
-      { generate: generate && (chosen?.questions?.length || 0) > 0 },
+      { generate: (chosen?.questions?.length || 0) > 0 },
     );
   }
 
@@ -211,24 +209,19 @@ export default function NewReport({ catalogue, start, pending, busy, initialScop
 
           <fieldset>
             <legend>When you press Create</legend>
-            <label className="report-toggle">
-              <input
-                type="checkbox"
-                checked={generate}
-                disabled={questionCount === 0}
-                onChange={(event) => setGenerate(event.target.checked)}
-              />
-              <span>
-                <strong>
-                  <Sparkles aria-hidden="true" /> Answer the {questionCount || "standard"} questions from live data now
-                </strong>
-                <small>
-                  {questionCount === 0
-                    ? "This template has no standard questions — you will add evidence yourself."
-                    : "Zara runs them through the governed queries and writes the report. This takes a minute."}
-                </small>
-              </span>
-            </label>
+            {questionCount > 0 ? (
+              <p className="report-autofill-note">
+                <Sparkles aria-hidden="true" />
+                Zara answers this report&rsquo;s {questionCount} standard questions from live
+                data and writes every section. Nothing to fill in — you can edit anything
+                afterwards.
+              </p>
+            ) : (
+              <p className="report-autofill-note is-muted">
+                A blank report starts empty. Add answers from a conversation, or write the
+                sections yourself.
+              </p>
+            )}
             <label className="report-toggle">
               <input type="checkbox" checked={recommendations} onChange={(event) => setRecommendations(event.target.checked)} />
               <span>
@@ -243,7 +236,7 @@ export default function NewReport({ catalogue, start, pending, busy, initialScop
             <button type="button" onClick={onCancel}>Cancel</button>
             <button type="submit" className="primary" disabled={busy}>
               {busy ? <Loader2 className="is-spinning" aria-hidden="true" /> : <FileText aria-hidden="true" />}
-              {busy ? "Working…" : generate ? "Create and generate" : "Create report"}
+              {busy ? "Building your report…" : questionCount > 0 ? "Create and fill it" : "Create report"}
             </button>
           </div>
         </>

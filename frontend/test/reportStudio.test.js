@@ -303,13 +303,14 @@ test("reports in the list are distinguishable from one another", () => {
 
 const newReportSrc = read("../src/features/report-studio/NewReport.jsx");
 
-test("a template report generates by default, whichever door you came through", () => {
-  // Tying this to ?start=template meant a report begun from the chat or
-  // library path was created empty, with every section reading
-  // "Not written yet."
-  assert.match(newReportSrc, /useState\(true\)/);
-  assert.match(newReportSrc, /setGenerate\(\(chosen\.questions\?\.length \|\| 0\) > 0\)/);
+test("choosing a template always fills the report -- it is not a choice", () => {
+  // Offering generation as a checkbox was the mistake: picking a template IS
+  // the request to have the report written. A report begun from the chat or
+  // library path used to be created empty, every section "Not written yet."
+  assert.match(newReportSrc, /generate: \(chosen\?\.questions\?\.length \|\| 0\) > 0/);
+  assert.doesNotMatch(newReportSrc, /setGenerate/);
   assert.doesNotMatch(newReportSrc, /useState\(mode === "template"\)/);
+  assert.match(newReportSrc, /Create and fill it/);
 });
 
 test("the dashboard scope in the URL is applied, not discarded", () => {
@@ -319,10 +320,19 @@ test("the dashboard scope in the URL is applied, not discarded", () => {
   assert.match(studioSource, /scopeFromQuery/);
 });
 
-test("an empty template report offers to fill itself in one click", () => {
-  assert.match(studioSource, /report\.sources\.length === 0 && report\.template !== "blank"/);
-  assert.match(studioSource, /This report has no data yet/);
-  assert.match(studioSource, /Fill from live data/);
-  const studioCss = read("../src/features/report-studio/report-studio.css");
-  assert.match(studioCss, /\.report-fill-prompt \{/);
+test("an empty template report fills itself with no button to press", () => {
+  // However it was created or reopened, a template report with no evidence
+  // answers its own questions rather than showing a wall of empty sections.
+  assert.match(studioSource, /report\.template === "blank" \|\| report\.sources\.length > 0/);
+  assert.match(studioSource, /filledRef\.current\.has\(report\.id\)/);
+  assert.match(studioSource, /generateReport\(report\.id\)/);
+  assert.match(studioSource, /Answering this report's questions from live data/);
+  // Guarded so it runs once per report, never in a loop.
+  assert.match(studioSource, /filledRef\.current\.add\(report\.id\)/);
+});
+
+test("the dev proxy target is configurable and defaults to the documented port", () => {
+  const viteConfig = read("../vite.config.js");
+  assert.match(viteConfig, /loadEnv\(mode, "\.\.", ""\)/);
+  assert.match(viteConfig, /env\.VITE_API_PROXY_TARGET \|\| "http:\/\/127\.0\.0\.1:8000"/);
 });

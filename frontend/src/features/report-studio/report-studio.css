@@ -216,14 +216,6 @@
   .report-page { padding: 22px 18px; }
 }
 
-/* Shown when a template report has no evidence yet: the one action that turns
-   a shell of empty sections into a finished report. */
-.report-fill-prompt {
-  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px;
-  margin: 14px 24px 0; padding: 15px 18px;
-  border: 1px solid rgba(79,70,229,.3); border-radius: 13px;
-  background: linear-gradient(120deg, rgba(79,70,229,.09), rgba(14,165,233,.07));
-}
-.report-fill-prompt strong { display: block; font-size: 0.84rem; }
-.report-fill-prompt p { margin: 3px 0 0; color: var(--chart-ink-muted); font-size: 0.73rem; line-height: 1.5; max-width: 60ch; }
-.report-fill-prompt button { min-height: 38px; padding: 0 16px; font-size: 0.76rem; }
+.report-autofill-note { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; padding: 11px 13px; border-radius: 11px; background: linear-gradient(120deg, rgba(79,70,229,.09), rgba(14,165,233,.07)); color: var(--chart-ink); font-size: 0.74rem; line-height: 1.55; }
+.report-autofill-note svg { flex: none; margin-top: 2px; color: var(--chart-series-1); }
+.report-autofill-note.is-muted { background: var(--chart-track); color: var(--chart-ink-muted); }

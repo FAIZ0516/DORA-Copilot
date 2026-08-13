@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -265,22 +265,6 @@ function ReportEditor({ report, busy, notice, onBack, onPatch, onSection, onMove
 
       {notice && <div className={`report-notice report-notice--${notice.tone}`} role="status">{notice.text}</div>}
 
-      {report.sources.length === 0 && report.template !== "blank" && (
-        <div className="report-fill-prompt">
-          <div>
-            <strong>This report has no data yet</strong>
-            <p>
-              Answer its standard questions from {scopeLine(report.scope)} and Zara will write
-              every section for you. You can edit anything afterwards.
-            </p>
-          </div>
-          <button type="button" className="primary" onClick={onGenerate} disabled={busy}>
-            {busy ? <Loader2 className="is-spinning" aria-hidden="true" /> : <Wand2 aria-hidden="true" />}
-            {busy ? "Generating…" : "Fill from live data"}
-          </button>
-        </div>
-      )}
-
       {report.conflicts?.length > 0 && (
         <div className="report-conflicts" role="alert">
           <AlertTriangle aria-hidden="true" />
@@ -414,6 +398,32 @@ export default function ReportStudio() {
 
   const [pending, setPending] = useState(false);
   const [autoRan, setAutoRan] = useState(false);
+  const [filling, setFilling] = useState(false);
+  const filledRef = useRef(new Set());
+
+  // A template report with no evidence fills itself. Waiting for the user to
+  // press a button was the whole complaint: choosing a template is the request
+  // to have the report written.
+  useEffect(() => {
+    if (!report || busy || filling) return;
+    if (report.template === "blank" || report.sources.length > 0) return;
+    if (filledRef.current.has(report.id)) return;
+    filledRef.current.add(report.id);
+    setFilling(true);
+    setNotice({ tone: "info", text: "Answering this report's questions from live data…" });
+    generateReport(report.id)
+      .then((result) => {
+        setReport(result.report);
+        setNotice(
+          result.warnings?.length
+            ? { tone: "warn", text: result.warnings.join(" ") }
+            : { tone: "info", text: `Written from ${result.report.sources.length} evidence sources.` },
+        );
+        refreshLibrary();
+      })
+      .catch((failure) => setNotice({ tone: "warn", text: failure.message }))
+      .finally(() => setFilling(false));
+  }, [report, busy, filling]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A deep link opens that report directly instead of the library.
   useEffect(() => {
@@ -578,7 +588,7 @@ export default function ReportStudio() {
       return (
         <ReportEditor
           report={report}
-          busy={busy}
+          busy={busy || filling}
           notice={notice}
           onBack={() => { setView("library"); setReport(null); setNotice(null); refreshLibrary(); }}
           onPatch={patch}
@@ -638,7 +648,7 @@ export default function ReportStudio() {
         onDuplicate={(id) => run(() => duplicateReport(id), "Report duplicated.")}
       />
     );
-  }, [view, report, reports, status, error, busy, notice, catalogue, pending, startMode, autoTemplate, deepLinkId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view, report, reports, status, error, busy, filling, notice, catalogue, pending, startMode, autoTemplate, deepLinkId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <main className="report-studio">
