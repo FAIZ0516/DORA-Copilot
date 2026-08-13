@@ -92,7 +92,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "executive_summary": {
         "questions": [
             "Summarise the current delivery position, including completion, open work and blockers.",
-            "Show a bar chart of open work by status category.",
+            "Show a bar chart of open bugs by priority.",
             "What are the most significant delivery risks right now, with the evidence behind each?",
             "Which work is oldest or most at risk of slipping?",
         ],
@@ -115,8 +115,8 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "sprint_performance": {
         "questions": [
             "Show the current delivery position: completed, in progress and to do.",
-            "Show a bar chart of work by status category.",
-            "Show a bar chart of work by issue type.",
+            "Show a bar chart of open bugs by priority.",
+            "Show a bar chart of the DORA delivery metrics by year.",
             "Which high-priority bugs and impeded tickets need attention, ranked by age?",
             "How does completion compare across squads?",
         ],
@@ -141,7 +141,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "risk_and_action": {
         "questions": [
             "Which squads currently need attention, and what is the reason for each?",
-            "Show a bar chart of open bugs by squad.",
+            "Show a bar chart of open bugs by priority.",
             "Show the oldest unresolved work and explain why those items are still open.",
             "Which high-priority open bugs should be addressed first?",
         ],
@@ -163,7 +163,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "weekly_management_update": {
         "questions": [
             "Summarise the current delivery position for a management update.",
-            "Show a line chart of ticket creation compared with resolution by month.",
+            "Show a bar chart of the DORA delivery metrics by year.",
             "What needs a decision or escalation this week, based on the evidence?",
         ],
         "label": "Weekly Management Update",
