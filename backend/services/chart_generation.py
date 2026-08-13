@@ -139,6 +139,32 @@ def _yearly_chart(
     }
 
 
+# Column names are not report language. A generated chart title must read the
+# way a person would say it, not the way the warehouse spells it.
+_READABLE_COLUMNS = {
+    "jira_key": "ticket",
+    "key": "ticket",
+    "issuetype": "issue type",
+    "issue_type": "issue type",
+    "status_category": "status",
+    "dcpsquad": "squad",
+    "fixversions": "release",
+    "fixversion": "release",
+    "age_days": "age in days",
+    "open_bugs": "open bugs",
+    "release_year": "year",
+    "sprints": "sprint",
+    "assignee": "owner",
+}
+
+
+def _readable(column: str) -> str:
+    """Turn a column name into words a report reader would use."""
+
+    key = str(column or "").strip().lower()
+    return _READABLE_COLUMNS.get(key, key.replace("_", " "))
+
+
 def build_chart_spec(
     *,
     query_id: str,
@@ -214,16 +240,61 @@ def build_chart_spec(
             "data": points,
         }
 
-    counts = Counter(str(row.get("issuetype") or "Unknown") for row in rows)
+    # Generic fallback for any query without a bespoke chart above.
+    #
+    # This used to count rows by `issuetype` whatever the query returned, so a
+    # result with no issuetype column (open bugs by priority, for example)
+    # collapsed into a single "Unknown" bar titled "Returned Jira references by
+    # issue type" -- a chart that contradicted the answer above it. Chart the
+    # shape the rows actually have instead, and draw nothing when they have no
+    # sensible category/value pair.
     safe_type = (
         requested_type
         if requested_type not in {"line", "area", "scatter", "radar"}
         else "bar"
     )
+    sample = rows[0]
+    category_key = next(
+        (
+            key
+            for key, value in sample.items()
+            if not isinstance(value, (int, float)) or isinstance(value, bool)
+        ),
+        None,
+    )
+    value_key = next(
+        (
+            key
+            for key, value in sample.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        ),
+        None,
+    )
+    if category_key is None or value_key is None:
+        # Counting by a category is still meaningful when no measure came back.
+        if category_key is None:
+            return None
+        counts = Counter(str(row.get(category_key) or "Unknown") for row in rows)
+        label = _readable(category_key)
+        return {
+            "type": safe_type,
+            "title": f"Returned rows by {label}",
+            "x_key": "category",
+            "x_label": label.title(),
+            "series": [{"key": "count", "label": "Rows", "unit": "rows"}],
+            "data": [{"category": name, "count": count} for name, count in counts.items()],
+        }
+
+    category_label = _readable(category_key)
+    value_label = _readable(value_key)
     return {
         "type": safe_type,
-        "title": "Returned Jira references by issue type",
-        "x_key": "type",
-        "series": [{"key": "count", "label": "References", "unit": "references"}],
-        "data": [{"type": name, "count": count} for name, count in counts.items()],
+        "title": f"{value_label.title()} by {category_label}",
+        "x_key": "category",
+        "x_label": category_label.title(),
+        "series": [{"key": "value", "label": value_label.title(), "unit": ""}],
+        "data": [
+            {"category": str(row.get(category_key) or "Unknown"), "value": row.get(value_key)}
+            for row in rows
+        ],
     }
