@@ -22,6 +22,7 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from .report_charts import describe, draw_chart, truncation_note
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -95,6 +96,10 @@ def _styles() -> dict[str, ParagraphStyle]:
         "cell": ParagraphStyle(
             "cell", parent=base["Normal"], fontName="Helvetica", fontSize=7.6, leading=10,
             textColor=INK,
+        ),
+        "chart_caption": ParagraphStyle(
+            "chart_caption", parent=base["Normal"], fontName="Helvetica", fontSize=8.2,
+            leading=12.5, textColor=MUTED, spaceBefore=4, spaceAfter=6,
         ),
         "cell_head": ParagraphStyle(
             "cell_head", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.6,
@@ -233,44 +238,28 @@ def _data_table(payload: dict[str, Any], styles: dict[str, ParagraphStyle]) -> l
 
 
 def _chart_block(payload: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:
-    """Render a chart as a labelled value table.
+    """A real vector chart, with a factual reading of it underneath.
 
-    A print-quality raster of the on-screen Chart.js canvas is not available
-    server-side, and a bitmap would not survive printing well anyway. The
-    underlying series are rendered as an exact, readable table instead -- no
-    figure is lost, and it stays legible in greyscale.
+    Charts used to export as a table of values. Accurate, but a management
+    report is read at a glance, so the numbers are now drawn. Vector output
+    stays sharp in print and needs no headless browser on the server. The
+    caption states only what the data already says, so it cannot drift from
+    the plot beside it.
     """
 
-    series = [s for s in (payload.get("series") or []) if isinstance(s, dict)]
-    data = [row for row in (payload.get("data") or []) if isinstance(row, dict)]
-    x_key = payload.get("x_key") or "label"
-    if not series or not data:
+    flow: list[Any] = []
+    drawing = draw_chart(payload, PAGE_WIDTH - 2 * MARGIN)
+    if drawing is None:
         return [Paragraph("No chart data was available for this section.", styles["note"])]
-    def _series_heading(entry: dict[str, Any]) -> str:
-        unit = entry.get("unit")
-        label = entry.get("label") or entry.get("key") or ""
-        return f"{label} ({unit})" if unit else str(label)
 
-    headers = [Paragraph(_escape(payload.get("x_label") or x_key), styles["cell_head"])] + [
-        Paragraph(_escape(_series_heading(entry)), styles["cell_head"]) for entry in series
-    ]
-    body = [
-        [Paragraph(_escape(row.get(x_key)), styles["cell"])]
-        + [Paragraph(_escape(row.get(s.get("key"))), styles["cell"]) for s in series]
-        for row in data[:40]
-    ]
-    width = (PAGE_WIDTH - 2 * MARGIN) / (len(series) + 1)
-    table = Table([headers, *body], colWidths=[width] * (len(series) + 1), repeatRows=1, hAlign="LEFT")
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, SURFACE]),
-        ("GRID", (0, 0), (-1, -1), 0.4, RULE),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
-    return [table]
+    flow.append(drawing)
+    note = truncation_note(payload)
+    if note:
+        flow.append(Paragraph(_escape(note), styles["note"]))
+    reading = describe(payload)
+    if reading:
+        flow.append(Paragraph(_escape(reading), styles["chart_caption"]))
+    return flow
 
 
 def _cover(report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:

@@ -92,6 +92,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "executive_summary": {
         "questions": [
             "Summarise the current delivery position, including completion, open work and blockers.",
+            "Show a bar chart of open work by status category.",
             "What are the most significant delivery risks right now, with the evidence behind each?",
             "Which work is oldest or most at risk of slipping?",
         ],
@@ -114,7 +115,8 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "sprint_performance": {
         "questions": [
             "Show the current delivery position: completed, in progress and to do.",
-            "Break the work down by status category and issue type.",
+            "Show a bar chart of work by status category.",
+            "Show a bar chart of work by issue type.",
             "Which high-priority bugs and impeded tickets need attention, ranked by age?",
             "How does completion compare across squads?",
         ],
@@ -139,6 +141,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "risk_and_action": {
         "questions": [
             "Which squads currently need attention, and what is the reason for each?",
+            "Show a bar chart of open bugs by squad.",
             "Show the oldest unresolved work and explain why those items are still open.",
             "Which high-priority open bugs should be addressed first?",
         ],
@@ -160,7 +163,7 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "weekly_management_update": {
         "questions": [
             "Summarise the current delivery position for a management update.",
-            "How has ticket creation compared with resolution recently?",
+            "Show a line chart of ticket creation compared with resolution by month.",
             "What needs a decision or escalation this week, based on the evidence?",
         ],
         "label": "Weekly Management Update",
@@ -180,7 +183,8 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "dora_performance": {
         "questions": [
             "Show release frequency, change failure rate, lead time and delivery cycle time by year.",
-            "How have the DORA measures trended over the available periods?",
+            "Show a line chart of release frequency by year.",
+            "Show a bar chart of change failure rate by year.",
             "How do the DORA measures compare across squads?",
         ],
         "label": "DORA Performance Report",
