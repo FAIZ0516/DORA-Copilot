@@ -9,6 +9,7 @@ from . import (
     role_dashboard,
     system,
     tts,
+    voice,
     workspace,
 )
 
@@ -20,6 +21,7 @@ ROUTERS = (
     role_dashboard.router,
     system.router,
     tts.router,
+    voice.router,
     workspace.router,
 )
 

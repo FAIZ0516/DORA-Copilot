@@ -334,3 +334,36 @@ class ReportComposeResponse(BaseModel):
     updated_sections: list[UUID] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     conflicts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
+# Realtime voice                                                              #
+# --------------------------------------------------------------------------- #
+
+
+class VoiceSessionRequest(BaseModel):
+    """Open a voice session. Authenticated over HTTP, unlike the socket."""
+
+    conversation_id: UUID | None = None
+    workspace: Literal["business", "technical"] = "technical"
+    project_key: str | None = Field(default=None, min_length=2, max_length=16)
+    dashboard_context: DashboardContext | None = None
+
+
+class VoiceSessionResponse(BaseModel):
+    # Opaque and short-lived: it identifies the session, it is not a credential
+    # for anything else, and it expires on its own.
+    session_token: str
+    expires_in_seconds: int
+    sample_rate: int
+    frame_bytes: int
+    end_silence_ms: int
+    max_utterance_seconds: int
+
+
+class VoiceCapabilityResponse(BaseModel):
+    enabled: bool
+    stt_available: bool
+    vad_available: bool
+    tts_configured: bool
+    detail: str | None = None

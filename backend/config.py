@@ -84,6 +84,24 @@ class Settings(BaseSettings):
     elevenlabs_max_chars_per_request: int = Field(default=2000, ge=1, le=5000)
     elevenlabs_monthly_char_limit: int = Field(default=10_000, ge=1, le=1_000_000)
 
+    # Realtime voice conversation. Speech recognition and voice-activity
+    # detection run locally; DeepSeek remains the only LLM, and every question
+    # still goes through the governed agent.
+    voice_mode_enabled: bool = True
+    voice_stt_provider: Literal["faster-whisper"] = "faster-whisper"
+    voice_tts_provider: Literal["elevenlabs"] = "elevenlabs"
+    voice_vad_provider: Literal["silero"] = "silero"
+    # Silence that ends an utterance. Too short cuts people off mid-sentence;
+    # too long makes the assistant feel unresponsive.
+    voice_end_silence_ms: int = Field(default=700, ge=200, le=5_000)
+    voice_max_utterance_seconds: int = Field(default=30, ge=5, le=120)
+    # Guards against a stuck client streaming audio forever.
+    voice_session_ttl_seconds: int = Field(default=1_800, ge=60, le=14_400)
+    voice_sample_rate: int = Field(default=16_000, ge=8_000, le=48_000)
+    whisper_model: str = "small"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
+
     model_config = SettingsConfigDict(
         env_file=(ROOT_DIR / ".env", ROOT_DIR / "backend" / ".env"),
         env_file_encoding="utf-8",
