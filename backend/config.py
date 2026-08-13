@@ -77,7 +77,9 @@ class Settings(BaseSettings):
     ollama_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
 
     elevenlabs_api_key: str = ""
-    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    # A premade voice, which every plan can use over the API. The previous
+    # default was a library voice that a free plan is refused with HTTP 402.
+    elevenlabs_voice_id: str = "XrExE9yKIg1WjnnlVkGX"
     elevenlabs_model_id: str = "eleven_flash_v2_5"
     elevenlabs_output_format: str = "mp3_22050_32"
     elevenlabs_timeout_seconds: float = Field(default=45.0, ge=1.0, le=120.0)

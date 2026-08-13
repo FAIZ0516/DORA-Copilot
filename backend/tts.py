@@ -149,6 +149,16 @@ async def create_audio_stream(text: str, session: Session) -> AudioStream:
         await client.aclose()
         adjust_characters(session, -estimated_cost)
         detail = payload.decode("utf-8", errors="replace")[:300]
+        # A free ElevenLabs plan cannot use "library" voices over the API, only
+        # the premade ones on the account. The raw 402 body says nothing about
+        # which setting is wrong, so name it -- this cost a debugging session.
+        if response.status_code == 402 and "library voices" in detail.lower():
+            raise TTSProviderError(
+                f"The configured ElevenLabs voice ({settings.elevenlabs_voice_id}) is a "
+                "library voice, which a free plan cannot use over the API. Set "
+                "ELEVENLABS_VOICE_ID to one of the premade voices on your account, "
+                "or upgrade the plan."
+            )
         raise TTSProviderError(
             f"ElevenLabs returned HTTP {response.status_code}: {detail}"
         )

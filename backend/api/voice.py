@@ -188,7 +188,7 @@ async def _speak(socket: WebSocket, session: VoiceSession, answer: str, turn_id:
             tts_session = SessionLocal()
             try:
                 stream = await create_audio_stream(segment, tts_session)
-                chunks = [chunk async for chunk in stream.iterator]
+                chunks = [chunk async for chunk in stream.chunks]
             finally:
                 tts_session.close()
         except TTSQuotaExceededError as exc:

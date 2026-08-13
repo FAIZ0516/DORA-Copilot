@@ -350,3 +350,34 @@ def test_server_events_omit_empty_fields_on_the_wire() -> None:
     payload = ServerEvent(type="session.ready", state=VoiceState.LISTENING).dumps()
     assert "session.ready" in payload
     assert "chart" not in payload
+
+
+def test_the_speak_path_reads_the_stream_field_that_actually_exists() -> None:
+    """AudioStream exposes `chunks`; `iterator` silently never existed.
+
+    The mistake was invisible until TTS itself started working, because the
+    provider error fired first. Pinning it here keeps that from recurring.
+    """
+
+    import inspect
+
+    import backend.api.voice as voice_module
+    from backend.tts import AudioStream
+
+    assert "chunks" in AudioStream.__annotations__
+    assert "iterator" not in AudioStream.__annotations__
+    source = inspect.getsource(voice_module._speak)
+    assert "stream.chunks" in source
+    assert "stream.iterator" not in source
+
+
+def test_a_library_voice_failure_names_the_setting_to_change() -> None:
+    """A free ElevenLabs plan refuses library voices with an opaque 402."""
+
+    import inspect
+
+    from backend import tts
+
+    source = inspect.getsource(tts.create_audio_stream)
+    assert "library voices" in source
+    assert "ELEVENLABS_VOICE_ID" in source
