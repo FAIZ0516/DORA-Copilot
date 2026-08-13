@@ -256,7 +256,7 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
 
       {!isPortfolio && <button className="back-to-portfolio" type="button" onClick={() => changeSquad("")}><ArrowLeft aria-hidden="true" /> All Squads</button>}
       <MetricInfoDrawer metric={drawerMetric} scope={context.dashboardContext()} updatedAt={payload?.generated_at} onClose={() => setDrawerMetric(null)} onAsk={(question, patch) => { setDrawerMetric(null); ask(question, patch); }} />
-      <ReportGenerationDrawer open={reportOpen} scope={context.dashboardContext()} onClose={() => setReportOpen(false)} onGenerate={ask} />
+      <ReportGenerationDrawer open={reportOpen} scope={context.dashboardContext()} onClose={() => setReportOpen(false)} />
     </section>
   );
 }

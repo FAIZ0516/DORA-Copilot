@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import DataTable from "./DataTable";
 import MetricChart from "./MetricChart";
 import RoleDashboard from "./RoleDashboard";
+import AddToReportMenu from "./chat/AddToReportMenu";
 import SuggestedQuestionChips from "./chat/SuggestedQuestionChips";
 import ConversationPanel from "./history/ConversationPanel";
 import ThreePanelWorkspace from "./layout/ThreePanelWorkspace";
@@ -355,6 +356,7 @@ export default function Chat({
             <div className="copilot-message-body">
               <div className="copilot-message-meta"><span>{message.role === "assistant" ? "Zara" : "You"}</span><div>
                 {message.role === "assistant" && <button type="button" onClick={() => copyMessage(message)} aria-label="Copy response" title="Copy response"><Copy aria-hidden="true" /><span>{copiedId === message.id ? "Copied" : "Copy"}</span></button>}
+                {message.role === "assistant" && !message.error && <AddToReportMenu conversationId={message.metadata?.conversation_id || activeConversationId} messageId={message.metadata?.message_id} hasChart={Boolean(message.chart)} hasTable={Boolean(message.table)} />}
                 {message.role === "assistant" && <button type="button" onClick={() => speak(message)} aria-label={speakingId === message.id ? "Stop speaking" : "Read response aloud"} title="Read response aloud">{speakingId === message.id ? <Square aria-hidden="true" /> : <Volume2 aria-hidden="true" />}</button>}
               </div></div>
               <div className="copilot-message-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown></div>

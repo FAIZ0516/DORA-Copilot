@@ -160,7 +160,7 @@ def chat(
         result["metadata"]["workspace"] = request.workspace
         result["metadata"]["project_scope"] = project_scope
         result["metadata"]["dashboard_context"] = dashboard_context
-        repository.add_message(
+        assistant_message = repository.add_message(
             conversation,
             role="assistant",
             content=result["answer"],
@@ -177,6 +177,7 @@ def chat(
                 "knowledge_sections": result.get("metadata", {}).get("knowledge_sections", []),
             },
         )
+        result["metadata"]["message_id"] = str(assistant_message.id)
         repository.update_state(
             conversation,
             update_persistent_state(
