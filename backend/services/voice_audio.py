@@ -8,6 +8,11 @@ dependencies are absent.
 Neither of these is a language model. Whisper transcribes audio and Silero
 detects speech; DeepSeek remains the only LLM, and every transcript still goes
 through the governed agent.
+
+Silero runs on onnxruntime directly rather than through its PyTorch wrapper.
+The wrapper only ever used torch to carry arrays into onnxruntime and back, so
+this is the same arithmetic without loading the largest dependency in the
+project to act as a container.
 """
 
 from __future__ import annotations
@@ -50,23 +55,70 @@ class VoiceModelUnavailable(RuntimeError):
 # Voice activity detection                                                    #
 # --------------------------------------------------------------------------- #
 
-_vad_model = None
+_vad_session = None
 _vad_load_error: str | None = None
+
+# Silero conditions each frame on the last 64 samples of the previous one, so
+# the tensor it actually scores is 576 wide. Omitting this does not fail -- it
+# quietly returns different, worse probabilities.
+VAD_CONTEXT_SAMPLES = 64
+# Shape of Silero's recurrent state: (2, batch, 128).
+VAD_STATE_SHAPE = (2, 1, 128)
+
+
+def _vad_model_path():
+    """Locate the ONNX model inside the installed silero-vad package.
+
+    ``find_spec`` reads the package's location without executing it, which is
+    the point: importing ``silero_vad`` pulls in PyTorch, and PyTorch is the
+    single largest thing this process would ever load.
+    """
+
+    from pathlib import Path
+
+    spec = importlib.util.find_spec("silero_vad")
+    if spec is None or not spec.submodule_search_locations:
+        raise FileNotFoundError("the silero-vad package is not installed")
+    root = Path(list(spec.submodule_search_locations)[0])
+    # The 'half' variant is fp16 and not what the reference wrapper uses.
+    models = sorted(p for p in root.rglob("*.onnx") if "half" not in p.name)
+    if not models:
+        raise FileNotFoundError(f"no ONNX model found under {root}")
+    return models[0]
 
 
 def load_vad():
-    """Load Silero once per process, remembering failure so we retry cheaply."""
+    """Open the shared ONNX session once per process.
 
-    global _vad_model, _vad_load_error
-    if _vad_model is not None:
-        return _vad_model
+    Silero ships as an ONNX graph, and the library's own wrapper runs it
+    through onnxruntime -- it uses PyTorch only to hold arrays on the way in
+    and out, calling ``.numpy()`` before every inference. Going straight to
+    onnxruntime with numpy is the same arithmetic (verified bit-identical)
+    without a ~200 MB dependency loaded to act as a container.
+
+    The session is shared because it is stateless. The recurrent state that is
+    *not* stateless lives in ``SileroVad``, one per conversation.
+    """
+
+    global _vad_session, _vad_load_error
+    if _vad_session is not None:
+        return _vad_session
     if _vad_load_error is not None:
         raise VoiceModelUnavailable(_vad_load_error)
     try:
-        from silero_vad import load_silero_vad
+        import onnxruntime
 
-        _vad_model = load_silero_vad(onnx=True)
-        return _vad_model
+        options = onnxruntime.SessionOptions()
+        # One thread each: frames are tiny and arrive continuously, so thread
+        # pool coordination costs more than the inference it parallelises.
+        options.inter_op_num_threads = 1
+        options.intra_op_num_threads = 1
+        _vad_session = onnxruntime.InferenceSession(
+            str(_vad_model_path()),
+            providers=["CPUExecutionProvider"],
+            sess_options=options,
+        )
+        return _vad_session
     except Exception as exc:  # noqa: BLE001 - surfaced as a health error
         _vad_load_error = (
             "Silero VAD could not be loaded. Install the 'silero-vad' package "
@@ -79,39 +131,79 @@ def load_vad():
 def vad_available() -> bool:
     """Whether Silero can be loaded, without paying to load it here."""
 
-    if _vad_model is not None:
+    if _vad_session is not None:
         return True
     if _vad_load_error is not None:
         return False
     return importlib.util.find_spec("silero_vad") is not None
 
 
-def speech_probabilities(frames: list[bytes], *, model=None) -> list[float]:
-    """Score several frames in one call.
+class SileroVad:
+    """One conversation's voice-activity detector.
 
-    The socket used to hand each 32 ms frame to a worker thread on its own --
-    roughly thirty thread hops a second, whose scheduling overhead dwarfed the
-    inference. Scoring a whole socket message at once keeps the audio path
-    ahead of the speaker.
+    Silero is recurrent: each frame's score depends on the state left by the
+    frames before it. That state was previously held on the single shared model
+    object, so two simultaneous voice sessions would have interleaved their
+    audio through one detector and corrupted each other's utterance
+    boundaries. It belongs to the session, so it lives here.
     """
 
-    model = model or load_vad()
-    return [speech_probability(frame, model=model) for frame in frames]
+    def __init__(self, session=None) -> None:
+        self._session = session or load_vad()
+        self.reset()
+
+    def reset(self) -> None:
+        """Forget the conversation so far. Used between utterances."""
+
+        import numpy as np
+
+        self._state = np.zeros(VAD_STATE_SHAPE, dtype=np.float32)
+        self._context = np.zeros((1, VAD_CONTEXT_SAMPLES), dtype=np.float32)
+
+    def probabilities(self, frames: list[bytes]) -> list[float]:
+        """Score consecutive frames in one call.
+
+        The socket used to hand each 32 ms frame to a worker thread on its own
+        -- roughly thirty thread hops a second, whose scheduling overhead
+        dwarfed the inference. Scoring a whole socket message at once keeps the
+        audio path ahead of the speaker. The frames must stay in order: the
+        state carried between them is the whole point.
+        """
+
+        return [self.probability(frame) for frame in frames]
+
+    def probability(self, frame: bytes) -> float:
+        """Probability that one 512-sample frame contains speech."""
+
+        import numpy as np
+
+        samples = np.frombuffer(frame, dtype=np.int16).astype(np.float32) / 32768.0
+        if samples.size != VAD_FRAME_SAMPLES:
+            padded = np.zeros(VAD_FRAME_SAMPLES, dtype=np.float32)
+            padded[: min(samples.size, VAD_FRAME_SAMPLES)] = samples[:VAD_FRAME_SAMPLES]
+            samples = padded
+
+        window = np.concatenate([self._context, samples.reshape(1, -1)], axis=1)
+        output, self._state = self._session.run(
+            None,
+            {
+                "input": window,
+                "state": self._state,
+                "sr": np.array(settings.voice_sample_rate, dtype=np.int64),
+            },
+        )
+        self._context = window[..., -VAD_CONTEXT_SAMPLES:]
+        return float(output[0][0])
 
 
-def speech_probability(frame: bytes, *, model=None) -> float:
-    """Probability that one 512-sample frame contains speech."""
+def speech_probabilities(frames: list[bytes], *, detector: SileroVad | None = None) -> list[float]:
+    """Score frames with a throwaway detector.
 
-    import numpy as np
-    import torch
+    Convenience for tests and one-shot scoring only. A live session must hold
+    its own :class:`SileroVad`, or every batch starts from a blank state.
+    """
 
-    model = model or load_vad()
-    samples = np.frombuffer(frame, dtype=np.int16).astype(np.float32) / 32768.0
-    if samples.size != VAD_FRAME_SAMPLES:
-        padded = np.zeros(VAD_FRAME_SAMPLES, dtype=np.float32)
-        padded[: min(samples.size, VAD_FRAME_SAMPLES)] = samples[:VAD_FRAME_SAMPLES]
-        samples = padded
-    return float(model(torch.from_numpy(samples), settings.voice_sample_rate).item())
+    return (detector or SileroVad()).probabilities(frames)
 
 
 @dataclass
@@ -411,16 +503,17 @@ def transcribe_pcm(pcm: bytes, *, sample_rate: int | None = None, model=None) ->
 
 __all__ = [
     "MIN_UTTERANCE_MS",
+    "VAD_CONTEXT_SAMPLES",
     "VAD_FRAME_BYTES",
     "VAD_FRAME_SAMPLES",
     "VAD_SPEECH_THRESHOLD",
+    "SileroVad",
     "UtteranceDetector",
     "VoiceModelUnavailable",
     "load_vad",
     "load_whisper",
     "pcm_to_wav_file",
     "speech_probabilities",
-    "speech_probability",
     "stt_available",
     "pcm_to_wav_bytes",
     "transcribe_pcm",

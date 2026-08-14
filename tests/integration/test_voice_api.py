@@ -362,3 +362,22 @@ def test_the_socket_keeps_reading_while_a_turn_is_in_flight(monkeypatch, client)
 
     # And the guard that keeps mid-turn audio out of the detector is present.
     assert "if busy():" in body
+
+
+def test_the_echo_guard_does_not_apply_when_the_user_cut_in():
+    """A turn the user interrupted ends with them mid-sentence.
+
+    The guard exists to ignore the tail of the assistant's own voice after it
+    finishes speaking. Applying it after a barge-in instead stays deaf through
+    the start of what the user is saying: "no, stop, show me MBK instead"
+    reached the agent as "instead please". Cancelling already stopped both the
+    synthesis and the browser's playback, so there is nothing left to guard.
+    """
+
+    import inspect
+
+    import backend.api.voice as voice_module
+
+    body = inspect.getsource(voice_module.voice_socket)
+    assert "cut_in = True" in body, "barge-in must record that it cut the turn short"
+    assert "if not cut_in:" in body, "the guard must be skipped after a barge-in"

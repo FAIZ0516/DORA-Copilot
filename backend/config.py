@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     # own voice can reach the microphone, and a syllable of that must not be
     # mistaken for the user cutting in.
     voice_barge_in_ms: int = Field(default=600, ge=200, le=3_000)
+    # Audio kept from just before speech is detected. Silero needs to hear a
+    # little speech before it will say so, and without this that run-up is
+    # discarded -- "Give me a full breakdown" was reaching the agent as "me a
+    # full breakdown". Whisper is unbothered by the leading silence.
+    voice_preroll_ms: int = Field(default=800, ge=0, le=3_000)
     # After the assistant stops, the room still carries the tail of its voice
     # and the browser's echo canceller needs a moment to settle. Audio in this
     # window is discarded rather than transcribed as a question.

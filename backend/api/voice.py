@@ -29,6 +29,7 @@ import asyncio
 import base64
 import logging
 import time
+from collections import deque
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -45,10 +46,10 @@ from ..schemas import (
 )
 from ..services.voice_audio import (
     VAD_FRAME_BYTES,
+    VAD_FRAME_SAMPLES,
+    SileroVad,
     UtteranceDetector,
     VoiceModelUnavailable,
-    load_vad,
-    speech_probabilities,
     stt_available,
     transcribe_pcm,
     vad_available,
@@ -376,7 +377,9 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
     await socket.accept()
     sender = _Sender(socket)
     try:
-        load_vad()
+        # Its own detector. Silero is recurrent, and a shared one would let two
+        # simultaneous conversations interleave their audio through one state.
+        vad = SileroVad()
     except VoiceModelUnavailable as exc:
         await _send(sender, ServerEvent(type="error", detail=str(exc), recoverable=False))
         await socket.close(code=CLOSE_UNAUTHORISED, reason="Voice models unavailable.")
@@ -391,8 +394,16 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
     barge_in = UtteranceDetector(start_speech_ms=float(settings.voice_barge_in_ms))
     buffer = bytearray()
     pending = bytearray()
+    # A rolling window of the frames just gone, so an utterance can begin
+    # slightly before the detector noticed it.
+    recent: deque[bytes] = deque(
+        maxlen=max(1, int(settings.voice_preroll_ms / (VAD_FRAME_SAMPLES / settings.voice_sample_rate * 1000)))
+    )
     turn_task: asyncio.Task[None] | None = None
     deaf_until = 0.0
+    # Whether the turn now finishing was cut short by the user rather than
+    # ending on its own. It decides whether the echo guard applies.
+    cut_in = False
 
     def busy() -> bool:
         return turn_task is not None and not turn_task.done()
@@ -436,9 +447,21 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                 session.active_turn = None
                 detector.reset()
                 barge_in.reset()
+                vad.reset()
                 buffer.clear()
                 pending.clear()
-                deaf_until = time.monotonic() + settings.voice_echo_guard_ms / 1000
+                if not cut_in:
+                    # Silence and echo, not a run-up to anything.
+                    recent.clear()
+                # Only wait out the echo if the assistant finished on its own.
+                # A turn the user cut into ends with them mid-sentence, and
+                # staying deaf through it clipped the front of what they said --
+                # "no, stop, show me MBK instead" arrived as "instead please".
+                # There is also nothing left to guard against: cancelling
+                # stopped the synthesis and the browser's playback with it.
+                if not cut_in:
+                    deaf_until = time.monotonic() + settings.voice_echo_guard_ms / 1000
+                cut_in = False
 
             pending.extend(chunk)
 
@@ -453,7 +476,7 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
             if not frames:
                 continue
             try:
-                scores = await asyncio.to_thread(speech_probabilities, frames)
+                scores = await asyncio.to_thread(vad.probabilities, frames)
             except VoiceModelUnavailable as exc:
                 await _send(sender, ServerEvent(type="error", detail=str(exc), recoverable=False))
                 return
@@ -466,6 +489,13 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                 # said. The only thing worth detecting now is a real
                 # interruption.
                 if busy():
+                    # Once the user has cut in, what follows is them talking,
+                    # and the turn takes a moment to wind down. Keeping those
+                    # frames is what preserves the front of the interruption.
+                    if cut_in:
+                        recent.append(frame)
+                    else:
+                        recent.clear()
                     if barge_in.feed(probability) == "start":
                         barge_in.reset()
                         interrupted = session.active_turn
@@ -483,7 +513,7 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                         # cleanly.
                         detector.reset()
                         buffer.clear()
-                        deaf_until = time.monotonic() + settings.voice_echo_guard_ms / 1000
+                        cut_in = True
                     continue
 
                 # The assistant has just stopped; let the room fall quiet.
@@ -491,15 +521,25 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                     continue
 
                 event = detector.feed(probability)
+                if event == "start":
+                    # Start the utterance with the audio from just before it was
+                    # detected. Silero has to hear speech before it can report
+                    # it, so by the time it does, the first syllable is already
+                    # behind us -- that is where the missing first words went.
+                    buffer = bytearray(b"".join(recent))
+                    buffer.extend(frame)
+                    recent.clear()
+                    await _set_state(sender, session, VoiceState.USER_SPEAKING)
+                    continue
+
                 if detector.speaking:
                     buffer.extend(frame)
                     if len(buffer) > MAX_UTTERANCE_BYTES:
                         event = "timeout"
+                else:
+                    recent.append(frame)
 
-                if event == "start":
-                    buffer = bytearray(frame)
-                    await _set_state(sender, session, VoiceState.USER_SPEAKING)
-                elif event in {"end", "timeout"}:
+                if event in {"end", "timeout"}:
                     utterance = bytes(buffer)
                     buffer = bytearray()
                     if event == "timeout":
