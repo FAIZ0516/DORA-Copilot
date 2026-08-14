@@ -208,3 +208,21 @@ def test_an_explicit_model_wins_over_the_configured_provider(groq, monkeypatch):
 
     _intercept(monkeypatch, _fail)
     assert transcribe_pcm(_pcm(), model=_Whisper()) == "local transcription still works"
+
+
+def test_a_rejected_key_points_at_the_usual_cause(groq, monkeypatch):
+    """Settings load once at import, so a key rotated after start-up is stale.
+
+    That was the cause every time this fired, and the bare "key was rejected"
+    sent us hunting the key itself instead of the process holding it.
+    """
+
+    _intercept(monkeypatch, lambda url, **kw: _response(401, {"error": "invalid api key"}))
+    with pytest.raises(VoiceModelUnavailable) as failure:
+        transcribe_pcm(_pcm())
+    message = str(failure.value)
+    assert "restart the backend" in message
+    assert "GROQ_API_KEY" in message
+    # Still no secret and no provider body.
+    assert "test-key-not-real" not in message
+    assert "invalid api key" not in message

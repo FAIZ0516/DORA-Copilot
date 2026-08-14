@@ -341,7 +341,14 @@ def transcribe_with_groq(pcm: bytes, *, sample_rate: int | None = None) -> str:
         ) from exc
 
     if response.status_code == 401:
-        raise VoiceModelUnavailable("The speech recognition key was rejected.")
+        # Settings are read once at import, so a key rotated after the server
+        # started is still the old one in memory. That has been the cause every
+        # time this fired, so say it rather than leaving it to be rediscovered.
+        raise VoiceModelUnavailable(
+            "The speech recognition key was rejected. If you just changed "
+            "GROQ_API_KEY, restart the backend -- it still holds the previous "
+            "key from when it started."
+        )
     if response.status_code == 429:
         raise VoiceModelUnavailable(
             "Speech recognition is rate limited right now. Try again shortly."
