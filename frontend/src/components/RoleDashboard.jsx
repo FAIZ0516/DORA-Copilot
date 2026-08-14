@@ -32,7 +32,7 @@ import {
 } from "../services/dashboard";
 import { DeliveryAnalytics, ProductivityOverview } from "./DashboardVisuals";
 import MetricInfoDrawer from "./MetricInfoDrawer";
-import ReportGenerationDrawer from "./ReportGenerationDrawer";
+import { reportStudioUrl } from "./ReportGenerationDrawer";
 
 function number(value, suffix = "") {
   if (value === null || value === undefined) return "Unavailable";
@@ -271,7 +271,6 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
   const [error, setError] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
   const [drawerMetric, setDrawerMetric] = useState(null);
-  const [reportOpen, setReportOpen] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState("");
   const [issueView, setIssueView] = useState("all");
   const [issueFilters, setIssueFilters] = useState({ issue_type: "", status: "", priority: "", assignee: "", page: 1, page_size: 20, sort_by: "updated", sort_order: "desc" });
@@ -332,10 +331,20 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
   const isPortfolio = !context.selectedSquad || context.activeView === "portfolio";
   const title = isPortfolio ? "All Squads Overview" : `${context.selectedSquad} Performance`;
   const lastRefresh = payload?.generated_at ? new Date(payload.generated_at).toLocaleString() : "Waiting for data";
+  const reportScope = {
+    ...context.dashboardContext(),
+    feature: selectedFeature || undefined,
+    issue_type: issueFilters.issue_type || undefined,
+    status: issueFilters.status || undefined,
+    priority: issueFilters.priority || undefined,
+  };
+  function generateReport() {
+    window.location.assign(reportStudioUrl(reportScope));
+  }
 
   return (
     <section className="role-dashboard" aria-label="Engineering performance dashboard">
-      <header className="workspace-dashboard-header" id="dashboard-top" data-section="dashboard"><div><p>{isPortfolio ? "Engineering Performance" : `Engineering Performance › ${context.selectedSquad}`}</p><h1>{title}</h1><div className="dashboard-header-meta"><span><strong>Squad</strong>{context.selectedSquad || "All squads"}</span><span><strong>Sprint</strong>{context.selectedSprint || "All sprints"}</span><span><strong>Date range</strong>{context.dateRange.from || context.dateRange.to ? `${context.dateRange.from || "Start"} — ${context.dateRange.to || "Today"}` : "All available dates"}</span><span><strong>Last refresh</strong>{lastRefresh}</span></div></div><div className="dashboard-header-actions"><span className={`data-connection-pill ${databaseConnected ? "connected" : "offline"}`}><Database aria-hidden="true" />{databaseConnected ? "Live DoraDB" : "Database unavailable"}</span><button id="generate-report-button" className="primary" type="button" onClick={() => setReportOpen(true)} disabled={disabled}><FileText aria-hidden="true" /> Generate Report</button><button type="button" onClick={() => ask(`Summarise the current ${context.selectedSquad || "all-squads"} dashboard and tell me what I should prioritise next.`)}><Sparkles aria-hidden="true" /> Ask Zara</button></div></header>
+      <header className="workspace-dashboard-header" id="dashboard-top" data-section="dashboard"><div><p>{isPortfolio ? "Engineering Performance" : `Engineering Performance › ${context.selectedSquad}`}</p><h1>{title}</h1><div className="dashboard-header-meta"><span><strong>Squad</strong>{context.selectedSquad || "All squads"}</span><span><strong>Sprint</strong>{context.selectedSprint || "All sprints"}</span><span><strong>Date range</strong>{context.dateRange.from || context.dateRange.to ? `${context.dateRange.from || "Start"} — ${context.dateRange.to || "Today"}` : "All available dates"}</span><span><strong>Last refresh</strong>{lastRefresh}</span></div></div><div className="dashboard-header-actions"><span className={`data-connection-pill ${databaseConnected ? "connected" : "offline"}`}><Database aria-hidden="true" />{databaseConnected ? "Live DoraDB" : "Database unavailable"}</span><button id="generate-report-button" className="primary" type="button" onClick={generateReport} disabled={disabled}><FileText aria-hidden="true" /> Generate Report</button><button type="button" onClick={() => ask(`Summarise the current ${context.selectedSquad || "all-squads"} dashboard and tell me what I should prioritise next.`)}><Sparkles aria-hidden="true" /> Ask Zara</button></div></header>
 
       <DashboardFilters context={context} options={options} projects={projects} squads={squads} onProjectChange={changeProject} onSquadChange={changeSquad} onRefresh={() => setRefreshToken((value) => value + 1)} loading={status === "loading"} featureOptions={featureOptions} selectedFeature={selectedFeature} onFeatureChange={setSelectedFeature} issueView={issueView} onIssueViewChange={changeIssueView} onReset={resetFilters} />
 
@@ -351,7 +360,6 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
 
       {!isPortfolio && <button className="back-to-portfolio" type="button" onClick={() => changeSquad("")}><ArrowLeft aria-hidden="true" /> All Squads</button>}
       <MetricInfoDrawer metric={drawerMetric} scope={context.dashboardContext()} updatedAt={payload?.generated_at} onClose={() => setDrawerMetric(null)} onAsk={(question, patch) => { setDrawerMetric(null); ask(question, patch); }} />
-      <ReportGenerationDrawer open={reportOpen} scope={context.dashboardContext()} onClose={() => setReportOpen(false)} />
     </section>
   );
 }

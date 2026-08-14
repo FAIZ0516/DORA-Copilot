@@ -393,7 +393,7 @@ def render_pdf(report: dict[str, Any]) -> bytes:
             table = _kpi_table(payload, styles)
             if table is not None:
                 block.append(table)
-        elif type_ == "data_table":
+        elif type_ in {"data_table", "feature_status"}:
             block.extend(_data_table(payload, styles))
         elif type_ == "chart":
             block.extend(_chart_block(payload, styles))
@@ -459,7 +459,7 @@ def render_docx(report: dict[str, Any]) -> bytes:
                     cells = table.add_row().cells
                     cells[0].text = str(item.get("label", ""))
                     cells[1].text = str(item.get("value", ""))
-        elif section.get("type") in {"data_table", "chart"}:
+        elif section.get("type") in {"data_table", "feature_status", "chart"}:
             columns, rows = _tabular(payload)
             if columns:
                 table = document.add_table(rows=1, cols=len(columns))

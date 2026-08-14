@@ -22,6 +22,7 @@ SECTION_TYPES = (
     "key_finding",
     "chart",
     "data_table",
+    "feature_status",
     "risk",
     "recommendation",
     "action_list",
@@ -89,12 +90,26 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "default_title": "New report",
         "sections": [_section("cover", "")],
     },
+    "weekly_scrum": {
+        "questions": [
+            "Recalculate the current dashboard KPI and status chart evidence for this squad and sprint.",
+        ],
+        "label": "Weekly Scrum Report",
+        "description": "A weekly squad update with real Feature statuses, highlights and actions.",
+        "default_title": "Weekly Scrum Report",
+        "default_audience": "delivery_manager",
+        "default_tone": "professional",
+        "sections": [
+            _section("cover", ""),
+            _section("feature_status", "Feature Status Overview"),
+            _section("executive_summary", "Executive Summary"),
+            _section("key_finding", "Key Explanation / Highlights"),
+            _section("action_list", "Actionable Insights"),
+        ],
+    },
     "executive_summary": {
         "questions": [
-            "Summarise the current delivery position, including completion, open work and blockers.",
-            "Show a bar chart of open bugs by priority.",
-            "What are the most significant delivery risks right now, with the evidence behind each?",
-            "Which work is oldest or most at risk of slipping?",
+            "Recalculate the current dashboard KPI and status chart evidence using verified server-side data.",
         ],
         "label": "Executive Summary",
         "description": "A short leadership briefing: position, risks, and what to decide.",

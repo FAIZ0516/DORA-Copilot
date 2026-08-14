@@ -50,6 +50,12 @@ export const createReport = (payload) =>
 export const updateReport = (id, payload) =>
   request(`/api/reports/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
 
+export const applyReportTemplate = (id, template) =>
+  request(`/api/reports/${id}/template`, {
+    method: "POST",
+    body: JSON.stringify({ template }),
+  });
+
 export const archiveReport = (id) => request(`/api/reports/${id}`, { method: "DELETE" });
 
 export const duplicateReport = (id, title) =>
@@ -85,6 +91,12 @@ export const composeReport = (id, sectionIds = []) =>
     body: JSON.stringify({ section_ids: sectionIds }),
   });
 
+export const refineReportSection = (id, sectionId, instruction) =>
+  request(`/api/reports/${id}/refine`, {
+    method: "POST",
+    body: JSON.stringify({ section_id: sectionId, instruction }),
+  });
+
 export const generateReport = (id) => request(`/api/reports/${id}/generate`, { method: "POST" });
 
 export const validateReport = (id) => request(`/api/reports/${id}/validate`, { method: "POST" });
@@ -94,11 +106,11 @@ export const validateReport = (id) => request(`/api/reports/${id}/validate`, { m
  * browser as a blob, so there is no public URL and nothing is left on a server
  * for someone else to fetch.
  */
-export async function exportReport(id, format = "pdf", sectionId = null) {
+async function fetchReportExport(id, format = "pdf", sectionId = null, preview = false) {
   const response = await fetch(`${API_BASE}/api/reports/${id}/export`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ format, section_id: sectionId }),
+    body: JSON.stringify({ format, section_id: sectionId, preview }),
   });
   if (!response.ok) {
     let detail = `Export failed (${response.status})`;
@@ -113,15 +125,26 @@ export async function exportReport(id, format = "pdf", sectionId = null) {
   const disposition = response.headers.get("content-disposition") || "";
   const match = disposition.match(/filename="?([^"]+)"?/);
   const blob = await response.blob();
+  return { blob, filename: match ? match[1] : `report.${format}` };
+}
+
+export async function exportReport(id, format = "pdf", sectionId = null) {
+  const { blob, filename } = await fetchReportExport(id, format, sectionId, false);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = match ? match[1] : `report.${format}`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
   return link.download;
+}
+
+/** Return an in-memory PDF URL rendered by the same endpoint as PDF export. */
+export async function previewReportPdf(id) {
+  const { blob, filename } = await fetchReportExport(id, "pdf", null, true);
+  return { url: URL.createObjectURL(blob), filename };
 }
 
 /** Where an unsaved "add this answer to a report" hand-off is parked. */

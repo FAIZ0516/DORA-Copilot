@@ -356,6 +356,42 @@ _BASE_QUERIES = {
           AND j.status = 'IMPEDED'
         GROUP BY ageing_bucket, issuetype, priority, squad_coverage
     """,
+    "jira_weekly_scrum_feature_status": """
+        WITH scoped_feature_keys AS (
+            SELECT j.key AS feature_key
+            FROM public.tbl_gdt_dte_jira_issues AS j
+            WHERE UPPER(j.project_key) = UPPER(:project_key)
+              AND LOWER(COALESCE(j.issuetype, '')) = 'feature'
+              AND UPPER(BTRIM(j.dcpsquad)) = UPPER(CAST(:report_dcpsquad AS text))
+              AND EXISTS (
+                  SELECT 1 FROM json_array_elements(COALESCE(j.sprints -> 'sprints', '[]'::json)) AS direct_sprint(value)
+                  WHERE BTRIM(COALESCE(direct_sprint.value ->> 'name', '')) = CAST(:report_sprint AS text)
+              )
+            UNION
+            SELECT BTRIM(child.featurelink_key) AS feature_key
+            FROM public.tbl_gdt_dte_jira_issues AS child
+            WHERE UPPER(child.project_key) = UPPER(:project_key)
+              AND child.featurelink_key IS NOT NULL
+              AND BTRIM(child.featurelink_key) <> ''
+              AND UPPER(BTRIM(child.dcpsquad)) = UPPER(CAST(:report_dcpsquad AS text))
+              AND EXISTS (
+                  SELECT 1 FROM json_array_elements(COALESCE(child.sprints -> 'sprints', '[]'::json)) AS child_sprint(value)
+                  WHERE BTRIM(COALESCE(child_sprint.value ->> 'name', '')) = CAST(:report_sprint AS text)
+              )
+        )
+        SELECT
+            scoped.feature_key,
+            NULLIF(BTRIM(feature.summary), '') AS feature_summary,
+            NULLIF(BTRIM(feature.status), '') AS status,
+            NULLIF(BTRIM(feature.status_category), '') AS status_category,
+            CAST(:report_dcpsquad AS text) AS dcpsquad,
+            CAST(:report_sprint AS text) AS sprint
+        FROM scoped_feature_keys AS scoped
+        LEFT JOIN public.tbl_gdt_dte_jira_issues AS feature
+          ON UPPER(feature.project_key) = UPPER(:project_key)
+         AND feature.key = scoped.feature_key
+         AND LOWER(COALESCE(feature.issuetype, '')) = 'feature'
+    """,
     "dora_metrics_by_year": """
         WITH dora AS (
             SELECT
@@ -780,6 +816,7 @@ _FILTER_COLUMNS = {
         "ageing_bucket": "approved.ageing_bucket",
     },
     "jira_impeded_breakdown": {},
+    "jira_weekly_scrum_feature_status": {},
     "dora_metrics_by_year": {
         "release_year": "approved.release_year",
     },
@@ -848,6 +885,7 @@ _ORDER_BY = {
     "jira_dashboard_data_quality": "approved.missing_squad_count DESC",
     "jira_open_work_breakdown": "approved.issue_count DESC, approved.ageing_bucket",
     "jira_impeded_breakdown": "approved.issue_count DESC, approved.ageing_bucket",
+    "jira_weekly_scrum_feature_status": "approved.feature_key",
     "dora_metrics_by_year": "approved.release_year DESC",
     "dora_metrics_by_squad": "approved.release_year DESC",
     "dora_metrics_all_squads": "approved.dcpsquad, approved.release_year DESC",
@@ -975,6 +1013,12 @@ def _normalize_filters(query_id: str, raw_filters: dict[str, Any]) -> dict[str, 
         raise DoraDbQueryRejected("list_dimension_values requires a dimension filter")
     if query_id == "dora_metrics_by_squad" and "dcpsquad" not in normalized:
         raise DoraDbQueryRejected("dora_metrics_by_squad requires a squad filter")
+    if query_id == "jira_weekly_scrum_feature_status" and not {
+        "dcpsquad", "sprint"
+    }.issubset(normalized):
+        raise DoraDbQueryRejected(
+            "jira_weekly_scrum_feature_status requires squad and sprint filters"
+        )
     if query_id in LARGE_QUERY_IDS and not (
         set(normalized) & LARGE_QUERY_REQUIRED_FILTERS
     ):
@@ -1042,6 +1086,9 @@ def _build_statement(
         params["dashboard_dcpsquad"] = filters.get("dcpsquad")
         params["dashboard_fixversion"] = filters.get("fixversion")
         params["dashboard_sprint"] = filters.get("sprint")
+    if query_id == "jira_weekly_scrum_feature_status":
+        params["report_dcpsquad"] = filters["dcpsquad"]
+        params["report_sprint"] = filters["sprint"]
     conditions: list[str] = []
     for key, column in _FILTER_COLUMNS[query_id].items():
         if key not in filters:

@@ -6,11 +6,18 @@ the same things and reports whatever the data says then.
 
 from __future__ import annotations
 
+import json
+from decimal import Decimal
+
 from backend.services.report_generation import (
+    current_view_dashboard_evidence,
     dashboard_context_for,
+    normalize_report_scope,
     run_template_questions,
     scope_to_question,
+    weekly_scrum_feature_evidence,
 )
+from backend.schemas import ReportScope
 from backend.services.report_templates import TEMPLATES, questions_for_template
 
 
@@ -125,3 +132,140 @@ def test_each_question_gets_its_own_session_so_answers_do_not_bleed() -> None:
     )
     assert len(agent.asked) == 2
     assert agent.asked[0] != agent.asked[1]
+
+
+def test_weekly_scrum_template_has_the_fixed_mvp_sections() -> None:
+    types = [item["type"] for item in TEMPLATES["weekly_scrum"]["sections"]]
+    assert types == ["cover", "feature_status", "executive_summary", "key_finding", "action_list"]
+
+
+def test_feature_status_requires_verified_squad_and_sprint() -> None:
+    result = weekly_scrum_feature_evidence(None, {"project": "DCPM", "squad": "MBK"})
+    assert result["state"] == "needs_input"
+    assert result["rows"] == []
+
+
+def test_feature_status_preserves_real_stored_status(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.services.report_generation.query_doradb",
+        lambda *_args, **_kwargs: {
+            "query_id": "jira_weekly_scrum_feature_status", "row_count": 1,
+            "rows": [{"feature_key": "DCPM-42", "feature_summary": "Payments upgrade", "status": "READY FOR TEST", "status_category": "In Progress"}],
+        },
+    )
+    result = weekly_scrum_feature_evidence(object(), {"project": "DCPM", "squad": "MBK", "sprint": "Sprint 24"})
+    assert result["state"] == "ready"
+    assert result["rows"] == [{"feature": "DCPM-42", "feature_name": "Payments upgrade", "status": "READY FOR TEST", "status_category": "In Progress"}]
+    assert [column["label"] for column in result["columns"]] == ["Feature ID", "Feature Name", "Status"]
+
+
+def test_feature_status_falls_back_to_key_when_summary_is_missing(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.services.report_generation.query_doradb",
+        lambda *_args, **_kwargs: {
+            "query_id": "jira_weekly_scrum_feature_status", "row_count": 1,
+            "rows": [{"feature_key": "DCPM-77", "feature_summary": None, "status": "In Development", "status_category": "In Progress"}],
+        },
+    )
+    result = weekly_scrum_feature_evidence(object(), {"project": "DCPM", "squad": "KAIJU", "sprint": "Sprint 24"})
+    assert result["rows"][0]["feature_name"] == "DCPM-77"
+    assert result["rows"][0]["status"] == "In Development"
+
+
+def _dashboard_payload() -> dict:
+    return {
+        "view": "squad_detail",
+        "squad": "JAEGER",
+        "applied_filters": {"project": "DCPM", "squad": "JAEGER", "date_field": "created"},
+        "generated_at": "2026-08-14T10:00:00+00:00",
+        "empty": False,
+        "kpis": {
+            "total_work": 2682,
+            "completed_work": 2480,
+            "completion_pct": Decimal("92.47"),
+            "active_work": 202,
+            "open_bugs": 53,
+            "high_priority_open_bugs": 9,
+            "impeded_work": 16,
+            "oldest_unresolved_days": 101,
+            "status": "Needs Attention",
+        },
+        "metric_registry": {
+            "active_work": {"formula": "Count where resolved is null and status_category is not Done."},
+            "completion_pct": {"formula": "100 × end-state issue count ÷ total issue count."},
+            "open_bugs": {"formula": "Unresolved Bug tickets outside Done."},
+            "total_work": {"formula": "Count of distinct Jira issue keys in scope."},
+        },
+        "work_status": [
+            {"status_category": "Done", "issue_count": 2480},
+            {"status_category": "In Progress", "issue_count": 202},
+        ],
+        "attention_items": [
+            {"metric": "impeded_work", "value": 16, "threshold": 1, "reason": "current impeded work is present"},
+        ],
+        "data_quality": {"unknown_status_count": 0},
+        "data_quality_notes": ["Done is an end-state category and can include rejected or cancelled work."],
+    }
+
+
+def test_scope_normalization_drops_ui_all_labels_and_browser_values() -> None:
+    scope = normalize_report_scope({
+        "project": "dcpm",
+        "squad": " JAEGER ",
+        "sprint": "All sprints",
+        "release": "All releases",
+        "date_from": "All available dates",
+        "current_metric_value": 92.47,
+        "selected_squad_row": {"completion_pct": 92.47},
+    })
+    assert scope == {"project": "DCPM", "squad": "JAEGER"}
+
+    contract = ReportScope.model_validate({
+        "project": "dcpm", "sprint": "All sprints", "release": "All releases",
+        "current_metric_value": 1,
+    })
+    assert contract.model_dump(exclude_none=True) == {"project": "DCPM"}
+
+
+def test_current_view_reuses_the_squad_dashboard_calculation(monkeypatch) -> None:
+    calls = []
+
+    def dashboard(_session, **kwargs):
+        calls.append(kwargs)
+        return _dashboard_payload()
+
+    monkeypatch.setattr("backend.services.report_generation.get_squad_dashboard", dashboard)
+    result = current_view_dashboard_evidence(
+        object(),
+        {"project": "DCPM", "squad": "JAEGER", "sprint": "All sprints", "release": "All releases"},
+    )
+
+    assert calls == [{
+        "project": "DCPM", "squad": "JAEGER", "release": None,
+        "sprint": None, "date_from": None, "date_to": None,
+    }]
+    assert result["state"] == "ready"
+    assert result["evidence"]["answer_source"] == "server_side_dashboard"
+    assert result["evidence"]["query_ids"] == ["dashboard_service.get_squad_dashboard"]
+    assert result["evidence"]["metrics"]["completion_pct"] == 92.47
+    json.dumps(result)  # PostgreSQL numerics must be safe for the JSON evidence column.
+
+
+def test_verified_dashboard_data_populates_supported_sections_only(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.services.report_generation.get_squad_dashboard",
+        lambda *_args, **_kwargs: _dashboard_payload(),
+    )
+    result = current_view_dashboard_evidence(object(), {"project": "DCPM", "squad": "JAEGER"})
+    sections = result["sections"]
+    assert {
+        "executive_summary", "kpi_group", "key_finding", "risk",
+        "recommendation", "data_quality", "methodology",
+    } <= sections.keys()
+    assert "92.47%" in sections["executive_summary"]["content"]
+    key_measures = sections["kpi_group"]["payload"]
+    assert key_measures["state"] == "ready"
+    assert {item["key"] for item in key_measures["items"]} >= {
+        "completion_pct", "active_work", "open_bugs", "impeded_work", "completed_work",
+    }
+    assert "Feature Status" not in sections

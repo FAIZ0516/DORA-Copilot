@@ -15,6 +15,7 @@ from backend.services.report_composition import (
     extract_numbers,
     fact_check,
     normalize_number,
+    parse_refinement_response,
     parse_response,
 )
 from backend.services.report_evidence import detect_scope_conflicts, staleness
@@ -106,6 +107,62 @@ def test_model_json_is_validated_not_trusted() -> None:
     assert parse_response('Here you go: {"sections":[]} thanks') is not None
 
 
+def test_selected_section_refinement_has_a_dedicated_strict_contract() -> None:
+    canonical = parse_refinement_response(
+        '{"section":{"section_id":"sec-1","title":"Summary","content":"Shorter."}}',
+        expected_section_id="sec-1",
+    )
+    assert canonical is not None and canonical.content == "Shorter."
+    # A provider returning the valid selected-section object without its
+    # envelope is normalized, then validated against the same strict schema.
+    bare = parse_refinement_response(
+        '{"section_id":"sec-1","title":"Summary","content":"Shorter."}',
+        expected_section_id="sec-1",
+    )
+    assert bare is not None
+    assert parse_refinement_response(
+        '{"section":{"section_id":"another-section","content":"Wrong target."}}',
+        expected_section_id="sec-1",
+    ) is None
+
+
+def test_refinement_accepts_one_selected_section_and_preserves_numbers() -> None:
+    llm = _Llm(
+        '{"section":{"section_id":"sec-1","title":"Summary",'
+        '"content":"TITAN is at 43.2% completion."}}'
+    )
+    result = compose_sections(
+        llm=llm,
+        sections=[{**SECTIONS[0], "content": ORIGINAL, "source_ids": ["src-1"]}],
+        sources=SOURCES,
+        audience="senior_leadership",
+        tone="executive",
+        detail_level="standard",
+        instructions={"sec-1": "Make this shorter."},
+        include_manual=True,
+    )
+    assert result["sections"] == {"sec-1": "TITAN is at 43.2% completion."}
+
+
+def test_refinement_cannot_change_a_verified_number() -> None:
+    llm = _Llm(
+        '{"section":{"section_id":"sec-1","title":"Summary",'
+        '"content":"TITAN is at 99% completion."}}'
+    )
+    result = compose_sections(
+        llm=llm,
+        sections=[{**SECTIONS[0], "content": ORIGINAL, "source_ids": ["src-1"]}],
+        sources=SOURCES,
+        audience="senior_leadership",
+        tone="executive",
+        detail_level="standard",
+        instructions={"sec-1": "Make this management-friendly."},
+        include_manual=True,
+    )
+    assert result["sections"] == {}
+    assert any("99%" in warning for warning in result["warnings"])
+
+
 def test_composition_accepts_a_faithful_rewrite() -> None:
     llm = _Llm(
         '{"sections":[{"section_id":"sec-1","title":"Summary",'
@@ -140,6 +197,18 @@ def test_composition_rejects_an_invented_figure_and_keeps_the_old_text() -> None
     # publishing an unverifiable number.
     assert result["sections"] == {}
     assert any("15" in warning for warning in result["warnings"])
+
+
+def test_numeric_fact_check_is_scoped_to_the_selected_sections_sources() -> None:
+    llm = _Llm('{"sections":[{"section_id":"sec-1","content":"TITAN has 3 open bugs."}]}')
+    scoped_sections = [{**SECTIONS[0], "source_ids": ["summary-source"]}]
+    scoped_sources = [
+        {"id": "summary-source", "scope": {"squad": "TITAN"}, "evidence": {"answer": "TITAN is at 43.2% completion.", "warnings": []}},
+        {"id": "bug-source", "scope": {"squad": "TITAN"}, "evidence": {"answer": "TITAN has 3 open bugs.", "warnings": []}},
+    ]
+    result = compose_sections(llm=llm, sections=scoped_sections, sources=scoped_sources, audience="delivery_manager", tone="professional", detail_level="standard")
+    assert result["sections"] == {}
+    assert any("3" in warning for warning in result["warnings"])
 
 
 def test_a_hand_edited_section_is_never_regenerated() -> None:
@@ -186,7 +255,7 @@ def test_unparseable_model_output_changes_nothing() -> None:
         detail_level="standard",
     )
     assert result["sections"] == {}
-    assert any("schema" in warning.lower() for warning in result["warnings"])
+    assert any("verified content was kept" in warning.lower() for warning in result["warnings"])
 
 
 def test_composition_without_sources_asks_for_evidence_instead_of_inventing() -> None:

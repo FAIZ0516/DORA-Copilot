@@ -35,6 +35,7 @@ APPROVED_QUERY_IDS = {
     "jira_dashboard_data_quality",
     "jira_open_work_breakdown",
     "jira_impeded_breakdown",
+    "jira_weekly_scrum_feature_status",
     "dora_metrics_by_year",
     "dora_metrics_by_squad",
     "dora_metrics_all_squads",
@@ -278,6 +279,23 @@ QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
             "priority",
             "squad_coverage",
             "issue_count",
+        ],
+    },
+    "jira_weekly_scrum_feature_status": {
+        "purpose": (
+            "Feature issues in one verified squad and sprint, returning each "
+            "Feature key, short Jira title, own current status, and broad status category."
+        ),
+        "default_limit": 200,
+        "allowed_filters": ["project_key", "dcpsquad", "sprint"],
+        "required_filters": ["dcpsquad", "sprint"],
+        "expected_columns": [
+            "feature_key",
+            "feature_summary",
+            "status",
+            "status_category",
+            "dcpsquad",
+            "sprint",
         ],
     },
     "dora_metrics_by_year": {
