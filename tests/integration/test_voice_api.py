@@ -176,7 +176,7 @@ def test_a_voice_turn_runs_through_the_governed_agent(monkeypatch, client):
         async def send_json(self, payload):
             sent.append(str(payload))
 
-    asyncio.run(voice_module._handle_utterance(_Socket(), session, b"\x00\x01" * 16000))
+    asyncio.run(voice_module._handle_utterance(voice_module._Sender(_Socket()), session, b"\x00\x01" * 16000))
 
     # The turn went through run_chat_turn with the caller's identity intact.
     assert seen["user_id"] == "voice-user-alpha1"
@@ -214,7 +214,7 @@ def test_an_empty_transcript_never_reaches_the_agent(monkeypatch, client):
         async def send_json(self, payload):
             pass
 
-    asyncio.run(voice_module._handle_utterance(_Socket(), session, b"\x00\x01" * 16000))
+    asyncio.run(voice_module._handle_utterance(voice_module._Sender(_Socket()), session, b"\x00\x01" * 16000))
     assert called is False
     assert session.state is VoiceState.LISTENING
 
@@ -251,8 +251,114 @@ def test_a_cancelled_turn_discards_its_answer_instead_of_speaking_it(monkeypatch
         async def send_json(self, payload):
             sent.append(str(payload))
 
-    asyncio.run(voice_module._handle_utterance(_Socket(), session, b"\x00\x01" * 16000))
+    asyncio.run(voice_module._handle_utterance(voice_module._Sender(_Socket()), session, b"\x00\x01" * 16000))
 
     joined = " ".join(sent)
     assert "assistant.interrupted" in joined
     assert "stale answer nobody asked for any more" not in joined
+
+
+# --------------------------------------------------------------------------- #
+# Audio captured while the assistant holds the floor                          #
+# --------------------------------------------------------------------------- #
+#
+# The socket used to await the whole turn inside its receive loop. The browser
+# streams continuously, so everything captured while the assistant thought and
+# spoke -- including its own voice returning through the speakers -- queued up
+# and was then replayed into the detector as if it had just been said. That is
+# what made the assistant answer questions nobody asked, always starting after
+# the first reply.
+
+
+def _busy_frames(count):
+    """Frames Silero would score as confident speech."""
+
+    from backend.services.voice_audio import VAD_FRAME_BYTES
+
+    return [b"\x40\x00" * (VAD_FRAME_BYTES // 2) for _ in range(count)]
+
+
+def test_audio_arriving_while_the_assistant_works_is_never_transcribed(monkeypatch, client):
+    """Nothing captured mid-turn may become the next question."""
+
+    import asyncio
+
+    import backend.api.voice as voice_module
+    from backend.services.voice_audio import UtteranceDetector
+    from backend.voice_session import VoiceState, registry
+
+    transcribed = []
+    monkeypatch.setattr(
+        voice_module, "transcribe_pcm", lambda pcm, **_k: transcribed.append(pcm) or ""
+    )
+
+    session = registry.create(user_id="u", conversation_id=None, project_key=None)
+    session.state = VoiceState.LISTENING
+
+    # A turn that takes a while, exactly like a real agent call.
+    async def _slow_turn(*_args, **_kwargs):
+        await asyncio.sleep(0.2)
+
+    async def _drive():
+        turn = asyncio.create_task(_slow_turn())
+        session.active_turn = "t-1"
+        detector = UtteranceDetector()
+        barge = UtteranceDetector(start_speech_ms=float(10_000))  # never fires
+        heard = bytearray()
+        for _frame in _busy_frames(200):
+            if not turn.done():
+                barge.feed(0.99)
+                continue
+            if detector.feed(0.99) == "start":
+                heard.extend(_frame)
+        await turn
+        return bytes(heard)
+
+    assert asyncio.run(_drive()) == b""
+    # And the agent was never handed any of it.
+    assert transcribed == []
+    registry.close(session.token)
+
+
+def test_interrupting_takes_sustained_speech_not_one_stray_frame():
+    """The bar for barge-in is far higher than for starting an utterance.
+
+    While the assistant is audible its own voice can reach the microphone. A
+    frame or two of that must not count as the user cutting in.
+    """
+
+    from backend.config import settings
+    from backend.services.voice_audio import UtteranceDetector
+
+    barge = UtteranceDetector(start_speech_ms=float(settings.voice_barge_in_ms))
+    normal = UtteranceDetector()
+
+    # Three frames (~96 ms) is enough to begin a normal utterance ...
+    assert [normal.feed(0.99) for _ in range(3)][-1] == "start"
+    # ... and nowhere near enough to interrupt.
+    assert all(barge.feed(0.99) is None for _ in range(3))
+
+    # Sustained speech does interrupt.
+    frames_needed = int(settings.voice_barge_in_ms / barge.frame_ms()) + 1
+    assert any(barge.feed(0.99) == "start" for _ in range(frames_needed))
+
+
+def test_the_socket_keeps_reading_while_a_turn_is_in_flight(monkeypatch, client):
+    """The receive loop must not block on the turn.
+
+    Blocking is what let a turn's worth of audio accumulate in the socket
+    buffer; the backlog, not the microphone, was the source of the phantom
+    speech.
+    """
+
+    import asyncio
+    import inspect
+
+    import backend.api.voice as voice_module
+
+    body = inspect.getsource(voice_module.voice_socket)
+    assert "asyncio.create_task(" in body, "the turn must not be awaited inline"
+    assert "await _handle_utterance(" not in body
+
+    # And the guard that keeps mid-turn audio out of the detector is present.
+    assert "if busy():" in body

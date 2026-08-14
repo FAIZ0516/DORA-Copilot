@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     # too long makes the assistant feel unresponsive.
     voice_end_silence_ms: int = Field(default=700, ge=200, le=5_000)
     voice_max_utterance_seconds: int = Field(default=30, ge=5, le=120)
+    # Sustained speech needed to interrupt the assistant. Much higher than the
+    # bar for starting a normal utterance: while the assistant is talking, its
+    # own voice can reach the microphone, and a syllable of that must not be
+    # mistaken for the user cutting in.
+    voice_barge_in_ms: int = Field(default=600, ge=200, le=3_000)
+    # After the assistant stops, the room still carries the tail of its voice
+    # and the browser's echo canceller needs a moment to settle. Audio in this
+    # window is discarded rather than transcribed as a question.
+    voice_echo_guard_ms: int = Field(default=500, ge=0, le=3_000)
     # Guards against a stuck client streaming audio forever.
     voice_session_ttl_seconds: int = Field(default=1_800, ge=60, le=14_400)
     voice_sample_rate: int = Field(default=16_000, ge=8_000, le=48_000)

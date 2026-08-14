@@ -165,6 +165,10 @@ class VoiceSession:
     state: VoiceState = VoiceState.IDLE
     # Incremented per assistant response so a cancel names the turn it means.
     turn: int = 0
+    # The turn currently being answered. The socket loop reads this to know what
+    # a barge-in should cancel; it used to guess the id before starting the
+    # turn, which broke as soon as turns stopped being strictly sequential.
+    active_turn: str | None = None
     # Set when the user interrupts; the in-flight turn checks it and discards
     # its own result rather than speaking a stale answer.
     cancelled_turns: set[str] = field(default_factory=set)

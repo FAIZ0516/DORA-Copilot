@@ -79,6 +79,11 @@ export function useRealtimeVoiceSession({ onTranscript, onAnswer, sessionPayload
         handlersRef.current.onAnswer?.(event);
         break;
       case "assistant.interrupted":
+        // The server detects barge-in too, from the microphone. When it is the
+        // one that noticed, the browser is still holding queued audio for the
+        // abandoned turn, so this has to stop playback — otherwise the
+        // assistant keeps talking over someone who has already cut in.
+        transportRef.current?.stopPlayback();
         setVoice((current) => ({ ...current, interrupted: true }));
         break;
       case "assistant.audio_started":

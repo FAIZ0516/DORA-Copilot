@@ -15,6 +15,12 @@ agent.
 Blocking work (transcription, the agent turn, speech synthesis) runs in a
 worker thread so the event loop keeps reading audio, which is what makes
 interrupting the assistant possible mid-answer.
+
+The turn itself also runs as a background task rather than being awaited inside
+the receive loop. That matters for correctness, not just responsiveness: the
+browser streams audio continuously, so a loop that stops reading while the
+assistant thinks and speaks accumulates that whole period in the socket buffer
+and then replays it as if it had just been spoken.
 """
 
 from __future__ import annotations
@@ -22,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -158,16 +165,36 @@ def close_session(token: str, user_id: str = Depends(development_session)) -> No
         registry.close(token)
 
 
-async def _send(socket: WebSocket, event: ServerEvent) -> None:
-    await socket.send_text(event.dumps())
+class _Sender:
+    """Serialises socket writes.
+
+    The receive loop and the in-flight turn both send, and concurrent writes to
+    one WebSocket interleave frames and corrupt the stream.
+    """
+
+    def __init__(self, socket: WebSocket) -> None:
+        self._socket = socket
+        self._lock = asyncio.Lock()
+
+    async def event(self, event: ServerEvent) -> None:
+        async with self._lock:
+            await self._socket.send_text(event.dumps())
+
+    async def json(self, payload: dict[str, Any]) -> None:
+        async with self._lock:
+            await self._socket.send_json(payload)
 
 
-async def _set_state(socket: WebSocket, session: VoiceSession, target: VoiceState) -> None:
+async def _send(sender: _Sender, event: ServerEvent) -> None:
+    await sender.event(event)
+
+
+async def _set_state(sender: _Sender, session: VoiceSession, target: VoiceState) -> None:
     if session.transition(target):
-        await _send(socket, ServerEvent(type="state", state=target))
+        await _send(sender, ServerEvent(type="state", state=target))
 
 
-async def _speak(socket: WebSocket, session: VoiceSession, answer: str, turn_id: str) -> None:
+async def _speak(sender: _Sender, session: VoiceSession, answer: str, turn_id: str) -> None:
     """Synthesise and stream the answer one segment at a time.
 
     Segments are requested lazily and the cancellation flag is checked before
@@ -179,10 +206,10 @@ async def _speak(socket: WebSocket, session: VoiceSession, answer: str, turn_id:
     if not segments:
         return
     await _send(
-        socket,
+        sender,
         ServerEvent(type="assistant.audio_started", turn_id=turn_id, segments=segments),
     )
-    await _set_state(socket, session, VoiceState.ASSISTANT_SPEAKING)
+    await _set_state(sender, session, VoiceState.ASSISTANT_SPEAKING)
 
     for index, segment in enumerate(segments):
         if session.is_cancelled(turn_id):
@@ -198,15 +225,15 @@ async def _speak(socket: WebSocket, session: VoiceSession, answer: str, turn_id:
             finally:
                 tts_session.close()
         except TTSQuotaExceededError as exc:
-            await _send(socket, ServerEvent(type="error", detail=str(exc), recoverable=True))
+            await _send(sender, ServerEvent(type="error", detail=str(exc), recoverable=True))
             break
         except (TTSNotConfiguredError, TTSProviderError) as exc:
-            await _send(socket, ServerEvent(type="error", detail=str(exc), recoverable=True))
+            await _send(sender, ServerEvent(type="error", detail=str(exc), recoverable=True))
             break
         except Exception:  # noqa: BLE001 - never leak provider internals
             logger.exception("Voice synthesis failed")
             await _send(
-                socket,
+                sender,
                 ServerEvent(
                     type="error", detail="The answer could not be spoken.", recoverable=True
                 ),
@@ -215,7 +242,7 @@ async def _speak(socket: WebSocket, session: VoiceSession, answer: str, turn_id:
 
         if session.is_cancelled(turn_id):
             break
-        await socket.send_json(
+        await sender.json(
             {
                 "type": "assistant.audio_chunk",
                 "turn_id": turn_id,
@@ -226,37 +253,38 @@ async def _speak(socket: WebSocket, session: VoiceSession, answer: str, turn_id:
         )
 
     if session.is_cancelled(turn_id):
-        await _send(socket, ServerEvent(type="assistant.interrupted", turn_id=turn_id))
-        await _set_state(socket, session, VoiceState.INTERRUPTED)
+        await _send(sender, ServerEvent(type="assistant.interrupted", turn_id=turn_id))
+        await _set_state(sender, session, VoiceState.INTERRUPTED)
     else:
-        await _send(socket, ServerEvent(type="assistant.audio_finished", turn_id=turn_id))
-    await _set_state(socket, session, VoiceState.LISTENING)
+        await _send(sender, ServerEvent(type="assistant.audio_finished", turn_id=turn_id))
+    await _set_state(sender, session, VoiceState.LISTENING)
 
 
-async def _handle_utterance(socket: WebSocket, session: VoiceSession, pcm: bytes) -> None:
+async def _handle_utterance(sender: _Sender, session: VoiceSession, pcm: bytes) -> None:
     """Transcribe an utterance, answer it, and speak the answer."""
 
     turn_id = session.next_turn_id()
-    await _set_state(socket, session, VoiceState.TRANSCRIBING)
+    session.active_turn = turn_id
+    await _set_state(sender, session, VoiceState.TRANSCRIBING)
     try:
         transcript = await asyncio.to_thread(transcribe_pcm, pcm)
     except VoiceModelUnavailable as exc:
-        await _send(socket, ServerEvent(type="error", detail=str(exc), recoverable=False))
-        await _set_state(socket, session, VoiceState.ERROR)
+        await _send(sender, ServerEvent(type="error", detail=str(exc), recoverable=False))
+        await _set_state(sender, session, VoiceState.ERROR)
         return
 
     transcript = (transcript or "").strip()
     if not transcript:
         # Silence, a cough or a door. Never send an empty question to the agent.
-        await _set_state(socket, session, VoiceState.LISTENING)
+        await _set_state(sender, session, VoiceState.LISTENING)
         return
     if session.is_cancelled(turn_id):
-        await _set_state(socket, session, VoiceState.LISTENING)
+        await _set_state(sender, session, VoiceState.LISTENING)
         return
 
-    await _send(socket, ServerEvent(type="transcript.final", turn_id=turn_id, text=transcript))
-    await _send(socket, ServerEvent(type="assistant.thinking", turn_id=turn_id))
-    await _set_state(socket, session, VoiceState.THINKING)
+    await _send(sender, ServerEvent(type="transcript.final", turn_id=turn_id, text=transcript))
+    await _send(sender, ServerEvent(type="assistant.thinking", turn_id=turn_id))
+    await _set_state(sender, session, VoiceState.THINKING)
 
     def _turn() -> dict[str, Any]:
         # Its own database session: this runs in a worker thread, and a
@@ -279,30 +307,30 @@ async def _handle_utterance(socket: WebSocket, session: VoiceSession, pcm: bytes
         result = await asyncio.to_thread(_turn)
     except ConversationNotFound:
         await _send(
-            socket,
+            sender,
             ServerEvent(type="error", detail="That conversation is no longer available.", recoverable=False),
         )
-        await _set_state(socket, session, VoiceState.ERROR)
+        await _set_state(sender, session, VoiceState.ERROR)
         return
     except Exception:  # noqa: BLE001 - never leak internals over the socket
         logger.exception("Voice turn failed")
         await _send(
-            socket,
+            sender,
             ServerEvent(
                 type="error",
                 detail="That question could not be answered just now.",
                 recoverable=True,
             ),
         )
-        await _set_state(socket, session, VoiceState.LISTENING)
+        await _set_state(sender, session, VoiceState.LISTENING)
         return
 
     # A DoraDB query cannot be safely killed once running, so an interrupted
     # turn is allowed to finish under its existing timeout and its result is
     # discarded here instead. The database safety timeout is never removed.
     if session.is_cancelled(turn_id):
-        await _send(socket, ServerEvent(type="assistant.interrupted", turn_id=turn_id))
-        await _set_state(socket, session, VoiceState.LISTENING)
+        await _send(sender, ServerEvent(type="assistant.interrupted", turn_id=turn_id))
+        await _set_state(sender, session, VoiceState.LISTENING)
         return
 
     metadata = result.get("metadata") or {}
@@ -314,7 +342,7 @@ async def _handle_utterance(socket: WebSocket, session: VoiceSession, pcm: bytes
         session.conversation_id = _UUID(str(metadata["conversation_id"]))
 
     await _send(
-        socket,
+        sender,
         ServerEvent(
             type="assistant.text",
             turn_id=turn_id,
@@ -326,7 +354,7 @@ async def _handle_utterance(socket: WebSocket, session: VoiceSession, pcm: bytes
             warnings=list(result.get("warnings") or []),
         ),
     )
-    await _speak(socket, session, result.get("answer") or "", turn_id)
+    await _speak(sender, session, result.get("answer") or "", turn_id)
 
 
 @router.websocket("/session/{token}")
@@ -346,21 +374,31 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
         return
 
     await socket.accept()
+    sender = _Sender(socket)
     try:
         load_vad()
     except VoiceModelUnavailable as exc:
-        await _send(socket, ServerEvent(type="error", detail=str(exc), recoverable=False))
+        await _send(sender, ServerEvent(type="error", detail=str(exc), recoverable=False))
         await socket.close(code=CLOSE_UNAUTHORISED, reason="Voice models unavailable.")
         registry.close(token)
         return
 
     detector = UtteranceDetector()
+    # A second, deliberately harder-to-trigger detector used only while the
+    # assistant holds the floor. Interrupting takes sustained speech; a stray
+    # frame of the assistant's own voice returning through the speakers does
+    # not clear this bar.
+    barge_in = UtteranceDetector(start_speech_ms=float(settings.voice_barge_in_ms))
     buffer = bytearray()
     pending = bytearray()
-    speaking_turn: str | None = None
+    turn_task: asyncio.Task[None] | None = None
+    deaf_until = 0.0
+
+    def busy() -> bool:
+        return turn_task is not None and not turn_task.done()
 
     await _send(
-        socket,
+        sender,
         ServerEvent(type="session.ready", state=VoiceState.LISTENING, conversation_id=str(session.conversation_id or "")),
     )
     session.transition(VoiceState.LISTENING)
@@ -376,20 +414,32 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                     event = ClientEvent.model_validate_json(text)
                 except ValidationError:
                     await _send(
-                        socket,
+                        sender,
                         ServerEvent(type="error", detail="Unrecognised voice event.", recoverable=True),
                     )
                     continue
                 if event.type == "session.stop":
                     break
                 if event.type == "response.cancel":
-                    session.cancel(event.turn_id or speaking_turn)
-                    await _set_state(socket, session, VoiceState.INTERRUPTED)
+                    session.cancel(event.turn_id or session.active_turn)
+                    await _set_state(sender, session, VoiceState.INTERRUPTED)
                 continue
 
             chunk = message.get("bytes")
             if not chunk:
                 continue
+
+            # A turn that has just finished leaves the room echoing and the
+            # detectors mid-utterance. Start the next one from silence.
+            if turn_task is not None and turn_task.done():
+                turn_task = None
+                session.active_turn = None
+                detector.reset()
+                barge_in.reset()
+                buffer.clear()
+                pending.clear()
+                deaf_until = time.monotonic() + settings.voice_echo_guard_ms / 1000
+
             pending.extend(chunk)
 
             # Silero needs exact frames; anything left over waits for more
@@ -405,10 +455,41 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
             try:
                 scores = await asyncio.to_thread(speech_probabilities, frames)
             except VoiceModelUnavailable as exc:
-                await _send(socket, ServerEvent(type="error", detail=str(exc), recoverable=False))
+                await _send(sender, ServerEvent(type="error", detail=str(exc), recoverable=False))
                 return
 
             for frame, probability in zip(frames, scores):
+                # While the assistant is transcribing, thinking or speaking,
+                # nothing arriving here is a question. It is room noise, or the
+                # assistant's own voice coming back through the speakers.
+                # Transcribing it is what produced answers to things nobody
+                # said. The only thing worth detecting now is a real
+                # interruption.
+                if busy():
+                    if barge_in.feed(probability) == "start":
+                        barge_in.reset()
+                        interrupted = session.active_turn
+                        if interrupted:
+                            session.cancel(interrupted)
+                            await _send(
+                                sender,
+                                ServerEvent(type="assistant.interrupted", turn_id=interrupted),
+                            )
+                        # The audio that triggered this is discarded rather than
+                        # kept as the start of a question: at this exact moment
+                        # the assistant is still audible, so it is the least
+                        # trustworthy audio in the session. The speaker is still
+                        # talking, and the next frames start their utterance
+                        # cleanly.
+                        detector.reset()
+                        buffer.clear()
+                        deaf_until = time.monotonic() + settings.voice_echo_guard_ms / 1000
+                    continue
+
+                # The assistant has just stopped; let the room fall quiet.
+                if time.monotonic() < deaf_until:
+                    continue
+
                 event = detector.feed(probability)
                 if detector.speaking:
                     buffer.extend(frame)
@@ -417,35 +498,33 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
 
                 if event == "start":
                     buffer = bytearray(frame)
-                    # Barge-in: speaking over the assistant cancels it here, on
-                    # the server, as well as stopping playback in the browser.
-                    if session.state == VoiceState.ASSISTANT_SPEAKING and speaking_turn:
-                        session.cancel(speaking_turn)
-                        await _send(
-                            socket,
-                            ServerEvent(type="assistant.interrupted", turn_id=speaking_turn),
-                        )
-                    await _set_state(socket, session, VoiceState.USER_SPEAKING)
+                    await _set_state(sender, session, VoiceState.USER_SPEAKING)
                 elif event in {"end", "timeout"}:
                     utterance = bytes(buffer)
                     buffer = bytearray()
                     if event == "timeout":
                         await _send(
-                            socket,
+                            sender,
                             ServerEvent(
                                 type="error",
                                 detail="That was longer than voice mode can handle in one turn.",
                                 recoverable=True,
                             ),
                         )
-                    speaking_turn = f"{session.token[:8]}-{session.turn + 1}"
-                    await _handle_utterance(socket, session, utterance)
+                    # Answered in the background so this loop keeps reading the
+                    # microphone. Awaiting it here is what let a whole turn's
+                    # worth of audio queue up and then be replayed as speech.
+                    turn_task = asyncio.create_task(
+                        _handle_utterance(sender, session, utterance)
+                    )
     except WebSocketDisconnect:
         logger.debug("Voice socket disconnected: %s", token[:8])
     except Exception:  # noqa: BLE001 - a socket failure must not take the app down
         logger.exception("Voice session failed")
     finally:
         # One place that always runs: the token dies with the socket.
+        if turn_task is not None and not turn_task.done():
+            turn_task.cancel()
         registry.close(token)
         try:
             await socket.close()
