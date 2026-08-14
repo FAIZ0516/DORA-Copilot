@@ -12,10 +12,16 @@ through the governed agent.
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
+import io
+import ssl
 import tempfile
 import wave
+
+import httpx
+import truststore
 from dataclasses import dataclass, field
 
 from ..config import settings
@@ -71,11 +77,13 @@ def load_vad():
 
 
 def vad_available() -> bool:
-    try:
-        load_vad()
-    except VoiceModelUnavailable:
+    """Whether Silero can be loaded, without paying to load it here."""
+
+    if _vad_model is not None:
+        return True
+    if _vad_load_error is not None:
         return False
-    return True
+    return importlib.util.find_spec("silero_vad") is not None
 
 
 def speech_probabilities(frames: list[bytes], *, model=None) -> list[float]:
@@ -212,11 +220,18 @@ def load_whisper():
 
 
 def stt_available() -> bool:
-    try:
-        load_whisper()
-    except VoiceModelUnavailable:
-        return False
-    return True
+    """Can this deployment transcribe, judged without loading anything.
+
+    The health endpoint used to answer this by loading Whisper, which
+    downloaded the model and allocated it just to say "yes" -- the behaviour
+    that exhausted memory on a small instance. Groq needs only a key, and the
+    local engine only needs its package present, which ``find_spec`` answers
+    without importing it.
+    """
+
+    if settings.voice_stt_provider == "groq":
+        return settings.groq_configured
+    return importlib.util.find_spec("faster_whisper") is not None
 
 
 def pcm_to_wav_file(pcm: bytes, *, sample_rate: int | None = None) -> str:
@@ -272,6 +287,77 @@ def _clean_transcript(segments) -> str:
     return " ".join(kept).strip()
 
 
+def pcm_to_wav_bytes(pcm: bytes, *, sample_rate: int | None = None) -> bytes:
+    """Wrap raw PCM in a WAV container in memory, for upload."""
+
+    rate = sample_rate or settings.voice_sample_rate
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(BYTES_PER_SAMPLE)
+        output.setframerate(rate)
+        output.writeframes(pcm)
+    return buffer.getvalue()
+
+
+def transcribe_with_groq(pcm: bytes, *, sample_rate: int | None = None) -> str:
+    """Transcribe through Groq's hosted Whisper. Loads no model locally.
+
+    This is what lets voice mode run on a small instance: the utterance is a
+    few seconds of 16 kHz mono, so the upload is tiny and nothing is held in
+    memory afterwards.
+
+    Errors are deliberately generic. The key is never echoed, and neither is
+    the provider body, which can quote request content.
+    """
+
+    if not settings.groq_configured:
+        raise VoiceModelUnavailable(
+            "Hosted speech recognition is selected but GROQ_API_KEY is not set."
+        )
+
+    audio = pcm_to_wav_bytes(pcm, sample_rate=sample_rate)
+    ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    try:
+        with httpx.Client(
+            timeout=settings.groq_stt_timeout_seconds, verify=ssl_context
+        ) as client:
+            response = client.post(
+                f"{settings.groq_base_url.rstrip('/')}/audio/transcriptions",
+                headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                files={"file": ("utterance.wav", audio, "audio/wav")},
+                data={
+                    "model": settings.groq_stt_model,
+                    # Pinning the language stops a short clip being detected as
+                    # the wrong one and returned as an invented translation.
+                    **({"language": settings.voice_language} if settings.voice_language else {}),
+                    "response_format": "json",
+                    "temperature": "0",
+                },
+            )
+    except httpx.HTTPError as exc:
+        raise VoiceModelUnavailable(
+            f"Could not reach the speech recognition service ({exc.__class__.__name__})."
+        ) from exc
+
+    if response.status_code == 401:
+        raise VoiceModelUnavailable("The speech recognition key was rejected.")
+    if response.status_code == 429:
+        raise VoiceModelUnavailable(
+            "Speech recognition is rate limited right now. Try again shortly."
+        )
+    if response.is_error:
+        # Status only -- the body can echo request content.
+        logger.warning("Groq transcription failed with HTTP %s", response.status_code)
+        raise VoiceModelUnavailable(
+            f"Speech recognition failed (HTTP {response.status_code})."
+        )
+
+    text = str((response.json() or {}).get("text") or "").strip()
+    # The same phantom phrases Whisper produces locally over silence.
+    return "" if text.lower() in _HALLUCINATIONS else text
+
+
 def transcribe_pcm(pcm: bytes, *, sample_rate: int | None = None, model=None) -> str:
     """Transcribe 16-bit mono PCM. Blocking -- call it off the event loop."""
 
@@ -280,6 +366,11 @@ def transcribe_pcm(pcm: bytes, *, sample_rate: int | None = None, model=None) ->
     if duration_ms < MIN_UTTERANCE_MS:
         # Too short to be a question; never send this to the agent.
         return ""
+
+    # An explicit model always wins, so tests and the local engine keep working
+    # regardless of which provider is configured.
+    if model is None and settings.voice_stt_provider == "groq":
+        return transcribe_with_groq(pcm, sample_rate=rate)
 
     engine = model or load_whisper()
     # Hand Whisper the samples directly rather than a file path. Passing a path
@@ -324,6 +415,8 @@ __all__ = [
     "speech_probabilities",
     "speech_probability",
     "stt_available",
+    "pcm_to_wav_bytes",
     "transcribe_pcm",
+    "transcribe_with_groq",
     "vad_available",
 ]

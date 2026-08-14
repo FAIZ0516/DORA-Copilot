@@ -90,7 +90,10 @@ class Settings(BaseSettings):
     # detection run locally; DeepSeek remains the only LLM, and every question
     # still goes through the governed agent.
     voice_mode_enabled: bool = True
-    voice_stt_provider: Literal["faster-whisper"] = "faster-whisper"
+    # "groq" sends the utterance to Groq's hosted Whisper and loads no model
+    # locally -- the local model is what exhausted memory on the small Render
+    # instance. "faster-whisper" keeps everything on the machine.
+    voice_stt_provider: Literal["faster-whisper", "groq"] = "faster-whisper"
     voice_tts_provider: Literal["elevenlabs"] = "elevenlabs"
     voice_vad_provider: Literal["silero"] = "silero"
     # Silence that ends an utterance. Too short cuts people off mid-sentence;
@@ -109,6 +112,12 @@ class Settings(BaseSettings):
     # Below these, a segment is noise Whisper narrated rather than speech.
     whisper_no_speech_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     whisper_logprob_threshold: float = Field(default=-1.0, ge=-5.0, le=0.0)
+    # Hosted speech recognition. The key is read from the environment and is
+    # never logged, echoed in an error, or written to a tracked file.
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_stt_model: str = "whisper-large-v3-turbo"
+    groq_stt_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
     whisper_model: str = "small"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
@@ -137,6 +146,10 @@ class Settings(BaseSettings):
     @property
     def ollama_configured(self) -> bool:
         return bool(self.ollama_base_url.strip() and self.ollama_model.strip())
+
+    @property
+    def groq_configured(self) -> bool:
+        return bool(self.groq_api_key and self.groq_base_url.strip() and self.groq_stt_model.strip())
 
     @property
     def deepseek_configured(self) -> bool:

@@ -91,10 +91,16 @@ def capabilities() -> VoiceCapabilityResponse:
     detail = None
     if not stt or not vad:
         missing = [name for name, ok in (("speech recognition", stt), ("voice detection", vad)) if not ok]
-        detail = (
-            f"Voice mode needs local {' and '.join(missing)}, which could not be "
-            "loaded. Install the voice dependencies from backend/requirements.txt."
-        )
+        if not stt and settings.voice_stt_provider == "groq":
+            detail = (
+                "Hosted speech recognition is selected but GROQ_API_KEY is not "
+                "configured on the server."
+            )
+        else:
+            detail = (
+                f"Voice mode needs local {' and '.join(missing)}, which could not be "
+                "loaded. Install the voice dependencies from backend/requirements.txt."
+            )
     return VoiceCapabilityResponse(
         enabled=True, stt_available=stt, vad_available=vad,
         tts_configured=bool(settings.elevenlabs_api_key), detail=detail,
