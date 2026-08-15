@@ -32,6 +32,10 @@ SECTION_TYPES = (
     "page_break",
 )
 
+# Provenance remains stored and available to validators, but these internal
+# sections are not part of the authored report surface or exported document.
+HIDDEN_REPORT_SECTION_TYPES = frozenset({"methodology"})
+
 # Blocks whose wording may be model-generated. Everything else is either
 # structured data (chart/table/KPI) or deterministic text the code owns.
 NARRATIVE_TYPES = frozenset(
@@ -101,10 +105,14 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "default_tone": "professional",
         "sections": [
             _section("cover", ""),
+            _section("kpi_group", "Delivery at a Glance"),
             _section("feature_status", "Feature Status Overview"),
             _section("executive_summary", "Executive Summary"),
-            _section("key_finding", "Key Explanation / Highlights"),
-            _section("action_list", "Actionable Insights"),
+            _section("key_finding", "Key Highlights / What the Data Shows"),
+            _section("risk", "Risks Requiring Attention"),
+            _section("action_list", "Actionable Insights / Recommended Actions"),
+            _section("data_quality", "Data Quality and Limitations"),
+            _section("methodology", "Evidence and Methodology"),
         ],
     },
     "executive_summary": {
@@ -292,6 +300,7 @@ __all__ = [
     "CLASSIFICATIONS",
     "CONTENT_MODES",
     "DETAIL_LEVELS",
+    "HIDDEN_REPORT_SECTION_TYPES",
     "NARRATIVE_TYPES",
     "SECTION_TYPES",
     "SELECTIONS",

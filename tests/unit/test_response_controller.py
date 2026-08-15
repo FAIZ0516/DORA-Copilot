@@ -200,6 +200,21 @@ def test_policy_always_carries_structure_rules() -> None:
     assert "one-sentence direct answer" in rendered
     assert "markdown bullet list" in rendered
     assert "wall of text" in rendered
+    assert "do not use a generic 'worth knowing' section" in rendered
+
+
+def test_scope_guardrail_remains_after_answer_format_cleanup() -> None:
+    """Removing a generic heading must not weaken squad-scope enforcement."""
+
+    from backend.services.entity_grounding import detect_squad_scope_mismatch
+
+    mismatch = detect_squad_scope_mismatch(
+        "Which squad needs the most attention?",
+        active_squad="TITAN",
+        catalogue={"squad": ["TITAN", "JAEGER"]},
+    )
+    assert mismatch is not None
+    assert mismatch["requested_squad"] is None
 
 
 def test_enumeration_requests_use_bullets_for_live_intent_names() -> None:

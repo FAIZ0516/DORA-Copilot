@@ -10,13 +10,15 @@ const drawerSource = readFileSync(new URL("../src/components/MetricInfoDrawer.js
 const chatSource = readFileSync(new URL("../src/components/Chat.jsx", import.meta.url), "utf8");
 const visualsSource = readFileSync(new URL("../src/components/DashboardVisuals.jsx", import.meta.url), "utf8");
 const reportDrawerSource = readFileSync(new URL("../src/components/ReportGenerationDrawer.jsx", import.meta.url), "utf8");
+const workspaceCss = readFileSync(new URL("../src/workspace.css", import.meta.url), "utf8");
+const legacyCss = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 // The dashboard is intentionally role-neutral: every user enters the same
 // All Squads view and can drill into a squad from there.
 const roleConfigSource = readFileSync(new URL("../src/config/roleDashboardConfig.js", import.meta.url), "utf8");
 
 test("the unified entry opens All Squads without a role or squad selection screen", () => {
   assert.match(roleConfigSource, /UNIFIED_DASHBOARD_CONFIG/);
-  assert.match(roleConfigSource, /dashboardTitle: "All Squads Overview"/);
+  assert.match(roleConfigSource, /dashboardTitle: "All DCP Squads Overview"/);
   assert.doesNotMatch(roleConfigSource, /scrum_master|head_of_department/);
   assert.doesNotMatch(appSource, /role-selection/);
   assert.doesNotMatch(appSource, /selectedRole|Switch to Head/);
@@ -24,13 +26,15 @@ test("the unified entry opens All Squads without a role or squad selection scree
   assert.doesNotMatch(dashboardSource, /setSelectedSquad\(nextSquads\[0\]\.name\)/);
   assert.match(dashboardSource, /<DashboardFilters/);
   assert.equal(defaultDashboardView(), "portfolio");
+  assert.match(chatSource, /openConversation\(savedId, \{ restoreDashboardScope: false \}\)/);
 });
 
 test("All Squads drills into a selected squad and can return to the portfolio", () => {
   assert.equal(defaultDashboardView("head_of_department"), "portfolio");
   assert.match(dashboardSource, /function viewSquad/);
   assert.match(dashboardSource, /context\.setSelectedSquad\(row\.squad \|\| row\.name\)/);
-  assert.match(dashboardSource, /All Squads Overview/);
+  assert.match(dashboardSource, /All DCP Squads Overview/);
+  assert.match(dashboardSource, /DCP-\$\{context\.selectedSquad\} Overview/);
   assert.match(dashboardSource, /> All Squads<\/button>/);
 });
 
@@ -124,6 +128,14 @@ test("dashboard prompts retain independent structured dashboard context", () => 
   assert.match(drawerSource, /current_metric_value: metric\.value/);
 });
 
+test("KPI suggestions fill the composer without auto-sending and retain scope", () => {
+  assert.match(chatSource, /onSuggest=\{fillQuestion\}/);
+  assert.match(dashboardSource, /<PrimaryKpiRow[^>]*onAsk=\{suggest\}/);
+  assert.match(chatSource, /pendingDashboardContextRef\.current = dashboardOverride/);
+  assert.match(chatSource, /dashboardOverride \|\| pendingDashboardContextRef\.current \|\| dashboard\.dashboardContext\(\)/);
+  assert.doesNotMatch(dashboardSource, /<PrimaryKpiRow[^>]*onAsk=\{ask\}/);
+});
+
 test("unsupported metrics are hidden and API limitations use honest wording", () => {
   assert.doesNotMatch(dashboardSource, /Test Pass Rate/);
   assert.doesNotMatch(dashboardSource, /Worst Employee/);
@@ -145,10 +157,16 @@ test("feature and ticket table removes Age and row View actions", () => {
   assert.match(issueTable, />Sort</);
 });
 
-test("workspace exposes the requested analytics controls and actions", () => {
-  for (const label of ["Squad", "Sprint", "Project", "Feature", "Ticket View", "More Filters"]) {
-    assert.match(dashboardSource, new RegExp(`>${label}<|${label} `));
+test("workspace exposes the compact primary dashboard controls and actions", () => {
+  const controls = dashboardSource.slice(
+    dashboardSource.indexOf("export function DashboardFilters"),
+    dashboardSource.indexOf("function RiskAttentionPanel"),
+  );
+  for (const label of ["Squad", "Sprint", "Feature", "Advanced filters"]) {
+    assert.match(controls, new RegExp(`>${label}<|${label} `));
   }
+  assert.doesNotMatch(controls, />Project</);
+  assert.doesNotMatch(controls, />Ticket View</);
   assert.match(dashboardSource, /Generate Report/);
   assert.match(dashboardSource, /Ask Zara/);
   assert.match(dashboardSource, /Risks Requiring Attention/);
@@ -226,12 +244,20 @@ test("squad-level risks stay unprefixed when there is no squad on the reason", (
   assert.doesNotMatch(risks[0].evidence, /—|: current impeded/);
 });
 
-test("Ask Zara asks instead of only typing the question into the composer", () => {
-  // The dashboard buttons are labelled with an action, so they perform it.
-  // Suggestion chips keep the fill-only behaviour on purpose (see
-  // threePanelWorkspace.test.js), which is why these are two functions.
+test("dashboard actions send while KPI suggestion choices remain editable", () => {
   assert.match(chatSource, /function askZara/);
   assert.match(chatSource, /sendMessage\(question, dashboardOverride\)/);
   assert.match(chatSource, /onAsk=\{askZara\}/);
+  assert.match(chatSource, /onSuggest=\{fillQuestion\}/);
   assert.match(chatSource, /onSuggestionClick=\{fillQuestion\}/);
+});
+
+test("dashboard popovers establish local unclipped stacking contexts", () => {
+  assert.match(workspaceCss, /\.dashboard-filter-area:has\(\.more-filters\[open\]\) \{ z-index: 4; \}/);
+  assert.match(workspaceCss, /\.dashboard-filter-area \{[^}]*position: relative;[^}]*overflow: visible;/s);
+  assert.match(workspaceCss, /\.dashboard-filter-bar \{[^}]*overflow: visible;/s);
+  assert.match(workspaceCss, /\.role-metric-card \{[^}]*overflow: visible;/s);
+  assert.match(workspaceCss, /\.role-metric-card:focus-within/);
+  assert.match(workspaceCss, /\.metric-ask-menu\.is-open/);
+  assert.doesNotMatch(legacyCss, /\.role-metric-card \{[^}]*overflow: hidden;/s);
 });

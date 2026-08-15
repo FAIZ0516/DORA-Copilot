@@ -50,7 +50,7 @@ export default function NewReport({ catalogue, pending, busy, initialScope, onCr
         <label><span>Sprint</span><select required value={scope.sprint} disabled={!scope.squad} onChange={(event) => setScope({ ...scope, sprint: event.target.value })}><option value="">Select sprint</option>{(filters.sprints || []).map((item) => <option key={item.value} value={item.value}>{item.value}</option>)}</select></label>
         <label><span>Template</span><select required value={template} onChange={(event) => setTemplate(event.target.value)}><option value="weekly_scrum">Weekly Scrum Report</option></select></label>
       </div>{optionsError && <p className="report-option-error">Available options could not be loaded: {optionsError}</p>}</fieldset>
-      <section className="report-question-preview"><h3>Weekly Scrum content</h3><ul><li>Feature Status Overview</li><li>Executive Summary</li><li>Key Explanation / Highlights</li><li>Actionable Insights</li></ul></section>
+      <section className="report-question-preview"><h3>Weekly Scrum content</h3><ul><li>Delivery at a Glance</li><li>Feature Delivery Status</li><li>Executive Summary</li><li>Key Highlights / What the Data Shows</li><li>Risks Requiring Attention</li><li>Recommended Actions</li><li>Data Quality and Limitations</li></ul></section>
       <div className="report-new-actions"><button type="button" onClick={onCancel}>Cancel</button><button type="submit" className="primary" disabled={busy || !scope.squad || !scope.sprint}>{busy ? <Loader2 className="is-spinning" /> : <FileText />}Create report</button></div>
     </form>
   );

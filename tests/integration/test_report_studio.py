@@ -123,7 +123,8 @@ def test_create_report_from_template_builds_its_sections(client):
     assert report["version"] == 1
     types = [section["type"] for section in report["sections"]]
     assert types[0] == "cover"
-    assert "executive_summary" in types and "methodology" in types
+    assert "executive_summary" in types and "data_quality" in types
+    assert "methodology" not in types
     # Positions are contiguous and ordered.
     assert [s["position"] for s in report["sections"]] == list(range(1, len(types) + 1))
 
@@ -155,7 +156,8 @@ def test_weekly_scrum_template_can_be_applied_inside_the_same_report(client):
     assert applied["id"] == report["id"]
     assert applied["template"] == "weekly_scrum"
     assert [section["type"] for section in applied["sections"]] == [
-        "cover", "feature_status", "executive_summary", "key_finding", "action_list",
+        "cover", "kpi_group", "feature_status", "executive_summary", "key_finding",
+        "risk", "action_list", "data_quality",
     ]
 
 
@@ -681,7 +683,7 @@ def test_current_view_generates_from_dashboard_without_chat_evidence(client, mon
     states = {section["type"]: section["state"] for section in body["sections"]}
     for section_type in (
         "executive_summary", "kpi_group", "key_finding", "risk",
-        "recommendation", "data_quality", "methodology",
+        "recommendation", "data_quality",
     ):
         assert states[section_type] == "ready"
 
@@ -712,15 +714,72 @@ def test_weekly_scrum_only_leaves_unsupported_feature_status_needing_input(clien
     assert states["feature_status"] == "needs_input"
     assert states["executive_summary"] == "ready"
     assert states["key_finding"] == "ready"
+    assert states["risk"] == "ready"
     assert states["action_list"] == "ready"
+    assert states["data_quality"] == "ready"
+    assert "methodology" not in states
+
+
+def test_weekly_scrum_feature_evidence_keeps_id_name_and_status(client, monkeypatch):
+    reports_api = _enable_current_view_generation(monkeypatch)
+    monkeypatch.setattr(
+        reports_api,
+        "weekly_scrum_feature_evidence",
+        lambda *_args, **_kwargs: {
+            "state": "ready",
+            "reason": "",
+            "columns": [
+                {"key": "feature", "label": "Feature ID"},
+                {"key": "feature_name", "label": "Feature Name"},
+                {"key": "status", "label": "Status"},
+            ],
+            "rows": [{
+                "feature": "DCPM-42",
+                "feature_name": "Payments upgrade",
+                "status": "READY FOR TEST",
+                "status_category": "In Progress",
+            }],
+            "query_id": "jira_weekly_scrum_feature_status",
+            "row_count": 1,
+            "data_as_of": "2026-08-14T10:00:00+00:00",
+        },
+    )
+    report = _create(
+        client,
+        template="weekly_scrum",
+        scope={"project": "DCPM", "squad": "JAEGER", "sprint": "Sprint 24"},
+    )
+
+    response = client.post(f"/api/reports/{report['id']}/generate", headers=USER_A)
+    assert response.status_code == 200, response.text
+    body = response.json()["report"]
+    feature = next(section for section in body["sections"] if section["type"] == "feature_status")
+    assert [column["label"] for column in feature["payload"]["columns"]] == [
+        "Feature ID", "Feature Name", "Status",
+    ]
+    assert feature["payload"]["rows"][0] == {
+        "feature": "DCPM-42",
+        "feature_name": "Payments upgrade",
+        "status": "READY FOR TEST",
+        "status_category": "In Progress",
+    }
+    source = next(item for item in body["sources"] if item["query_ids"] == ["jira_weekly_scrum_feature_status"])
+    from backend.database.db import ReportSource
+
+    session = client.session_factory()
+    try:
+        stored = session.get(ReportSource, uuid.UUID(source["id"]))
+        assert stored.evidence["answer"] == "DCPM-42 | Payments upgrade | READY FOR TEST"
+    finally:
+        session.close()
 
 
 def test_visuals_land_with_the_analysis_not_in_a_heap_at_the_end(client):
     """A chart belongs beside the section it illustrates.
 
     Appending every visual produced a report of prose followed by a block of
-    unexplained diagrams, with the data-quality and methodology blocks stranded
-    above them.
+    unexplained diagrams, with the data-quality closing block stranded above
+    them.
     """
 
     conversation_id, message_id = _seed_conversation(
@@ -745,9 +804,7 @@ def test_visuals_land_with_the_analysis_not_in_a_heap_at_the_end(client):
     assert len([s for s in sections if s["type"] == "data_table"]) == 1
 
     # And they sit above the closing blocks, not after them.
-    closing = [
-        s["position"] for s in sections if s["type"] in {"data_quality", "methodology"}
-    ]
+    closing = [s["position"] for s in sections if s["type"] == "data_quality"]
     assert closing
     assert charts[0]["position"] < min(closing)
     assert tables[0]["position"] < min(closing)
@@ -775,9 +832,8 @@ def test_extra_visuals_go_before_the_closing_blocks(client):
 
     sections = sorted(body["sections"], key=lambda s: s["position"])
     charts = [s for s in sections if s["type"] == "chart"]
-    closing = [s["position"] for s in sections if s["type"] == "methodology"]
     # Both charts are kept -- "if there are a lot of diagrams, put them all".
     assert len(charts) == 2
-    assert all(chart["position"] < min(closing) for chart in charts)
+    assert all(section["type"] != "methodology" for section in sections)
     # Positions stay contiguous after the inserts.
     assert [s["position"] for s in sections] == list(range(1, len(sections) + 1))

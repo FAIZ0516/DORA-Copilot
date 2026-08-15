@@ -140,7 +140,7 @@ function ReportLibrary({ reports, status, error, onOpen, onNew, onDuplicate, onR
           <dl>
             <div><dt>Template</dt><dd>{label(report.template)}</dd></div>
             <div><dt>Sections</dt><dd>{report.section_count}</dd></div>
-            <div><dt>Evidence</dt><dd>{report.source_count} source{report.source_count === 1 ? "" : "s"}</dd></div>
+            <div><dt>Verified data</dt><dd>{report.source_count ? "Available" : "Pending"}</dd></div>
             <div><dt>Version</dt><dd>v{report.version}</dd></div>
             <div><dt>Edited</dt><dd>{new Date(report.updated_at).toLocaleString()}</dd></div>
             <div>
@@ -252,7 +252,8 @@ function SectionBlock({ section, index, total, busy, selected, onSelect, onChang
 }
 
 function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSection, onMove, onRemove, onAdd, onGenerate, onApplyTemplate, onPreview, onExport, onExportCsv, onDuplicate, onSaveDraft, onCopy, onRefine }) {
-  const visible = report.sections.filter((section) => section.visible);
+  const sections = report.sections.filter((section) => section.type !== "methodology");
+  const visible = sections.filter((section) => section.visible);
   const [selectedSection, setSelectedSection] = useState(null);
   const [mode, setMode] = useState("edit");
   const [preview, setPreview] = useState(null);
@@ -346,26 +347,12 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
         <nav className="report-navigator" aria-label="Report sections">
           <h3>Sections</h3>
           <ol>
-            {report.sections.map((section) => (
+            {sections.map((section) => (
               <li key={section.id} className={section.visible ? "" : "is-hidden"}>
                 <a href={`#section-${section.id}`}>{section.title || label(section.type)}</a>
               </li>
             ))}
           </ol>
-          <h3>Evidence</h3>
-          {report.sources.length === 0 ? (
-            <p className="report-placeholder">No sources yet. Use “Add to report” on a Zara answer.</p>
-          ) : (
-            <ul className="report-source-list">
-              {report.sources.map((source) => (
-                <li key={source.id}>
-                  <strong>{source.label}</strong>
-                  <small>{scopeLine(source.scope)}</small>
-                  {source.query_ids?.length > 0 && <small>{source.query_ids.length} verified calculation{source.query_ids.length === 1 ? "" : "s"}</small>}
-                </li>
-              ))}
-            </ul>
-          )}
           <h3>Add a block</h3>
           <div className="report-add-blocks">
             {ADDABLE_BLOCKS.map(([type, text]) => (
@@ -383,15 +370,15 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
             <p className="report-page-scope">{scopeLine(report.scope)}</p>
             <p className="report-page-meta">
               Version v{report.version} · {visible.length} visible section{visible.length === 1 ? "" : "s"} ·{" "}
-              {report.data_as_of ? `Data as of ${new Date(report.data_as_of).toLocaleString()}` : "No evidence attached"}
+              {report.data_as_of ? `Data as of ${new Date(report.data_as_of).toLocaleString()}` : "Awaiting verified data"}
             </p>
           </div>
-          {report.sections.map((section, index) => (
+          {sections.map((section, index) => (
             <div id={`section-${section.id}`} key={section.id}>
               <SectionBlock
                 section={section}
                 index={index}
-                total={report.sections.length}
+                total={sections.length}
                 busy={busy}
                 selected={selectedSection?.id === section.id}
                 onSelect={setSelectedSection}

@@ -22,6 +22,22 @@ export function loadPanelLayout(storage = globalThis.window?.localStorage) {
   }
 }
 
+/** Convert visibility state into flexible desktop grid tracks. */
+export function panelColumns(panels) {
+  const openCount = Object.values(panels).filter(Boolean).length;
+  if (openCount === 1) {
+    return ["history", "dashboard", "chat"]
+      .map((panel) => panels[panel] ? "minmax(0, 1fr)" : "48px")
+      .join(" ");
+  }
+  const dashboardOpen = panels.dashboard;
+  return [
+    panels.history ? (dashboardOpen ? "minmax(210px, 236px)" : "minmax(210px, 1fr)") : "48px",
+    panels.dashboard ? "minmax(420px, 1fr)" : "48px",
+    panels.chat ? (dashboardOpen ? "minmax(320px, 360px)" : "minmax(320px, 1fr)") : "48px",
+  ].join(" ");
+}
+
 export function usePanelLayout() {
   const [panels, setPanels] = useState(() => loadPanelLayout());
   const [mobilePanel, setMobilePanel] = useState("dashboard");

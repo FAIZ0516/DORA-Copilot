@@ -1,7 +1,7 @@
 export const UNIFIED_DASHBOARD_CONFIG = {
   workspace: "technical",
   label: "Engineering Performance",
-  dashboardTitle: "All Squads Overview",
+  dashboardTitle: "All DCP Squads Overview",
   dashboardSubtitle: "Portfolio signals, squad drill-down, delivery risk, and supporting Jira ticket evidence.",
   initialQuestions: [
     "Which squads currently need attention?",

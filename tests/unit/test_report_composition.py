@@ -30,9 +30,13 @@ class _Llm:
     def __init__(self, payload: str) -> None:
         self._payload = payload
         self.calls = 0
+        self.last_system = ""
+        self.last_user = ""
 
-    def complete(self, *_args: object, **_kwargs: object) -> str:
+    def complete(self, system: str, user: str, **_kwargs: object) -> str:
         self.calls += 1
+        self.last_system = system
+        self.last_user = user
         return self._payload
 
 
@@ -142,6 +146,47 @@ def test_refinement_accepts_one_selected_section_and_preserves_numbers() -> None
         include_manual=True,
     )
     assert result["sections"] == {"sec-1": "TITAN is at 43.2% completion."}
+    assert "Make this shorter." in llm.last_user
+    assert "current_content=" in llm.last_user
+    assert "VERIFIED EVIDENCE" in llm.last_user
+
+
+def test_management_friendly_refinement_reaches_the_flexible_llm_path() -> None:
+    llm = _Llm(
+        '{"section":{"section_id":"sec-1","title":"Summary",'
+        '"content":"For management: TITAN is at 43.2% completion."}}'
+    )
+    result = compose_sections(
+        llm=llm,
+        sections=[{**SECTIONS[0], "content": ORIGINAL, "source_ids": ["src-1"]}],
+        sources=SOURCES,
+        audience="senior_leadership",
+        tone="executive",
+        detail_level="standard",
+        instructions={"sec-1": "Explain this for management."},
+        include_manual=True,
+    )
+    assert result["sections"]["sec-1"].startswith("For management")
+    assert "Explain this for management." in llm.last_user
+
+
+def test_valid_bullet_style_refinement_is_accepted() -> None:
+    llm = _Llm(
+        '{"section":{"section_id":"sec-1","title":"Summary",'
+        '"content":"- TITAN completed 812 tickets.\\n- Total scope is 1,876 tickets.\\n- Completion is 43.2%."}}'
+    )
+    result = compose_sections(
+        llm=llm,
+        sections=[{**SECTIONS[0], "content": ORIGINAL, "source_ids": ["src-1"]}],
+        sources=SOURCES,
+        audience="senior_leadership",
+        tone="executive",
+        detail_level="standard",
+        instructions={"sec-1": "Rewrite this as three concise bullet points."},
+        include_manual=True,
+    )
+    assert result["sections"]["sec-1"].count("- ") == 3
+    assert "paragraph/list presentation" in llm.last_system
 
 
 def test_refinement_cannot_change_a_verified_number() -> None:

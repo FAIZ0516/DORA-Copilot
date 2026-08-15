@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -59,9 +59,20 @@ function DashboardSkeleton() {
  * strong percentage is never asked why it is low and a metric at zero never
  * offers questions about items that do not exist.
  */
-function MetricAskMenu({ card, scope, onAsk }) {
+export function MetricAskMenu({ card, scope, onAsk }) {
   const [open, setOpen] = useState(false);
+  const closeTimer = useRef(null);
   const options = useMemo(() => buildMetricQuestions(card, scope), [card, scope]);
+
+  function keepOpen() {
+    window.clearTimeout(closeTimer.current);
+    setOpen(true);
+  }
+
+  function closeSoon() {
+    window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => setOpen(false), 180);
+  }
 
   useEffect(() => {
     if (!open) return undefined;
@@ -70,8 +81,18 @@ function MetricAskMenu({ card, scope, onAsk }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+
   return (
-    <div className={`metric-ask-menu ${open ? "is-open" : ""}`}>
+    <div
+      className={`metric-ask-menu ${open ? "is-open" : ""}`}
+      onMouseEnter={keepOpen}
+      onMouseLeave={closeSoon}
+      onFocusCapture={keepOpen}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) closeSoon();
+      }}
+    >
       <button
         className="metric-ask-action"
         type="button"
@@ -158,20 +179,17 @@ function PortfolioKpiRow({ payload, onInfo }) {
   );
 }
 
-function DashboardFilters({
+export function DashboardFilters({
   context,
   options,
-  projects,
   squads,
-  onProjectChange,
   onSquadChange,
   onRefresh,
   loading,
   featureOptions,
   selectedFeature,
   onFeatureChange,
-  issueView,
-  onIssueViewChange,
+  issueView = "all",
   onReset,
 }) {
   const active = [
@@ -186,13 +204,11 @@ function DashboardFilters({
       <div className="dashboard-filter-bar">
         <label><span>Squad</span><select value={context.selectedSquad} onChange={(event) => onSquadChange(event.target.value)}><option value="">All squads</option>{squads.map((squad) => <option key={squad.name} value={squad.name}>{squad.name}</option>)}</select></label>
         <label><span>Sprint</span><select value={context.selectedSprint} onChange={(event) => context.setSelectedSprint(event.target.value)}><option value="">All sprints</option>{(options?.sprints || []).map((item) => <option key={item.value} value={item.value}>{item.value}</option>)}</select></label>
-        <label><span>Project</span><select value={context.selectedProject} onChange={(event) => onProjectChange(event.target.value)}>{(projects?.length ? projects : [{ key: context.selectedProject, label: context.selectedProject }]).map((item) => <option key={item.key} value={item.key}>{item.label || item.key}</option>)}</select></label>
         <label><span>Feature</span><select value={selectedFeature} onChange={(event) => onFeatureChange(event.target.value)} disabled={!featureOptions.length}><option value="">All visible features</option>{featureOptions.map((feature) => <option value={feature} key={feature}>{feature}</option>)}</select></label>
-        <label><span>Ticket View</span><select value={issueView} onChange={(event) => onIssueViewChange(event.target.value)}><option value="all">All tickets</option><option value="features">Features</option><option value="bugs">Bugs</option><option value="tests">Tests</option></select></label>
-        <details className="more-filters"><summary>More Filters <ChevronDown aria-hidden="true" /></summary><div>
+        <details className="more-filters"><summary>Advanced filters <ChevronDown aria-hidden="true" /></summary><div>
           <label><span>Release</span><select value={context.selectedRelease} onChange={(event) => context.setSelectedRelease(event.target.value)}><option value="">All releases</option>{(options?.releases || []).map((item) => <option key={item.value} value={item.value}>{item.value}</option>)}</select></label>
-          <label><span>Created from</span><input type="date" min={options?.date_range?.minimum || undefined} max={context.dateRange.to || options?.date_range?.maximum || undefined} value={context.dateRange.from} onChange={(event) => context.setDateRange((current) => ({ ...current, from: event.target.value }))} /></label>
-          <label><span>Created to</span><input type="date" min={context.dateRange.from || options?.date_range?.minimum || undefined} max={options?.date_range?.maximum || undefined} value={context.dateRange.to} onChange={(event) => context.setDateRange((current) => ({ ...current, to: event.target.value }))} /></label>
+          <label><span>Created from</span><input type="date" min={options?.date_range?.minimum || undefined} max={context.dateRange.to || options?.date_range?.maximum || undefined} value={context.dateRange.from} onChange={(event) => { const value = event.target.value; context.setDateRange((current) => ({ ...current, from: value })); }} /></label>
+          <label><span>Created to</span><input type="date" min={context.dateRange.from || options?.date_range?.minimum || undefined} max={options?.date_range?.maximum || undefined} value={context.dateRange.to} onChange={(event) => { const value = event.target.value; context.setDateRange((current) => ({ ...current, to: value })); }} /></label>
           <button type="button" onClick={onRefresh} disabled={loading}><RefreshCw className={loading ? "is-spinning" : ""} aria-hidden="true" /> Refresh data</button>
         </div></details>
         <button className="filter-reset-button" type="button" onClick={onReset} disabled={!active.length}><RotateCcw aria-hidden="true" /> Reset</button>
@@ -261,7 +277,7 @@ function IssueTable({ payload, filterOptions, filters, setFilters, onPage }) {
   );
 }
 
-export default function RoleDashboard({ projectKey, projects = [], databaseConnected, onProjectChange, onAsk, disabled = false }) {
+export default function RoleDashboard({ projectKey, databaseConnected, onAsk, onSuggest = onAsk, disabled = false }) {
   const context = useDashboardContext();
   const [squads, setSquads] = useState([]);
   const [options, setOptions] = useState(null);
@@ -311,6 +327,7 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
   }, [context.selectedSquad, context.activeView, filterRequest, issueFilters, refreshToken]);
 
   function ask(question, patch = {}) { if (patch.selected_metric) context.setSelectedMetric(patch.selected_metric); if (patch.current_metric_value !== undefined) context.setCurrentMetricValue(patch.current_metric_value); onAsk(question, context.dashboardContext(patch)); }
+  function suggest(question, patch = {}) { if (patch.selected_metric) context.setSelectedMetric(patch.selected_metric); if (patch.current_metric_value !== undefined) context.setCurrentMetricValue(patch.current_metric_value); onSuggest(question, context.dashboardContext(patch)); }
   // The scope questions are written against. Dashboard context is also sent as
   // structured metadata, but the question itself has to stand alone -- the
   // assistant answers the sentence it is given.
@@ -321,15 +338,13 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
   function openMetric(metric) { context.setSelectedMetric(metric.key); context.setCurrentMetricValue(metric.value); setDrawerMetric(metric); }
   function viewSquad(row) { context.setSelectedSquad(row.squad || row.name); context.setSelectedSquadRow(row); context.setActiveView("squad_detail"); setIssueFilters((current) => ({ ...current, page: 1 })); window.requestAnimationFrame(() => document.getElementById("dashboard-top")?.scrollIntoView({ behavior: "smooth", block: "start" })); }
   function changeSquad(value) { if (!value) { context.setActiveView("portfolio"); context.setSelectedSquad(""); context.setSelectedSquadRow(null); } else viewSquad({ squad: value }); }
-  function changeProject(value) { context.setSelectedProject(value); context.setSelectedSquad(""); context.setSelectedSquadRow(null); context.setActiveView("portfolio"); context.setSelectedRelease(""); context.setSelectedSprint(""); context.setDateRange({ from: "", to: "" }); onProjectChange?.(value); }
-  function changeIssueView(value) { const types = { all: "", features: "Feature", bugs: "Bug", tests: "Test" }; setIssueView(value); setIssueFilters((current) => ({ ...current, issue_type: types[value], page: 1 })); setSelectedFeature(""); }
   function resetFilters() { context.setSelectedSquad(""); context.setSelectedSquadRow(null); context.setActiveView("portfolio"); context.setSelectedRelease(""); context.setSelectedSprint(""); context.setDateRange({ from: "", to: "" }); context.setSelectedMetric(""); context.setCurrentMetricValue(null); setSelectedFeature(""); setIssueView("all"); setIssueFilters({ issue_type: "", status: "", priority: "", assignee: "", page: 1, page_size: 20, sort_by: "updated", sort_order: "desc" }); }
   function focusRisk(risk) { setSelectedFeature(""); setIssueFilters((current) => ({ ...current, issue_type: risk.metric === "high_priority_open_bugs" ? "Bug" : "", priority: risk.metric === "high_priority_open_bugs" ? "High" : "", status: risk.metric === "impeded_work" ? "IMPEDED" : "", sort_by: "updated", page: 1 })); window.requestAnimationFrame(() => document.getElementById("feature-issue-table")?.scrollIntoView({ behavior: "smooth", block: "start" })); }
 
   const featureOptions = buildFeatureOptions(issues);
   const visibleIssues = filterIssuesForFeature(issues, selectedFeature);
   const isPortfolio = !context.selectedSquad || context.activeView === "portfolio";
-  const title = isPortfolio ? "All Squads Overview" : `${context.selectedSquad} Performance`;
+  const title = isPortfolio ? "All DCP Squads Overview" : `DCP-${context.selectedSquad} Overview`;
   const lastRefresh = payload?.generated_at ? new Date(payload.generated_at).toLocaleString() : "Waiting for data";
   const reportScope = {
     ...context.dashboardContext(),
@@ -346,7 +361,7 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
     <section className="role-dashboard" aria-label="Engineering performance dashboard">
       <header className="workspace-dashboard-header" id="dashboard-top" data-section="dashboard"><div><p>{isPortfolio ? "Engineering Performance" : `Engineering Performance › ${context.selectedSquad}`}</p><h1>{title}</h1><div className="dashboard-header-meta"><span><strong>Squad</strong>{context.selectedSquad || "All squads"}</span><span><strong>Sprint</strong>{context.selectedSprint || "All sprints"}</span><span><strong>Date range</strong>{context.dateRange.from || context.dateRange.to ? `${context.dateRange.from || "Start"} — ${context.dateRange.to || "Today"}` : "All available dates"}</span><span><strong>Last refresh</strong>{lastRefresh}</span></div></div><div className="dashboard-header-actions"><span className={`data-connection-pill ${databaseConnected ? "connected" : "offline"}`}><Database aria-hidden="true" />{databaseConnected ? "Live DoraDB" : "Database unavailable"}</span><button id="generate-report-button" className="primary" type="button" onClick={generateReport} disabled={disabled}><FileText aria-hidden="true" /> Generate Report</button><button type="button" onClick={() => ask(`Summarise the current ${context.selectedSquad || "all-squads"} dashboard and tell me what I should prioritise next.`)}><Sparkles aria-hidden="true" /> Ask Zara</button></div></header>
 
-      <DashboardFilters context={context} options={options} projects={projects} squads={squads} onProjectChange={changeProject} onSquadChange={changeSquad} onRefresh={() => setRefreshToken((value) => value + 1)} loading={status === "loading"} featureOptions={featureOptions} selectedFeature={selectedFeature} onFeatureChange={setSelectedFeature} issueView={issueView} onIssueViewChange={changeIssueView} onReset={resetFilters} />
+      <DashboardFilters context={context} options={options} squads={squads} onSquadChange={changeSquad} onRefresh={() => setRefreshToken((value) => value + 1)} loading={status === "loading"} featureOptions={featureOptions} selectedFeature={selectedFeature} onFeatureChange={setSelectedFeature} issueView={issueView} onReset={resetFilters} />
 
       {status === "loading" && !payload && <DashboardSkeleton />}
       {status === "error" && <div className="dashboard-error-state" role="alert"><AlertTriangle /><div><strong>Dashboard data could not be loaded</strong><p>{error}</p></div><button type="button" onClick={() => setRefreshToken((value) => value + 1)}>Retry</button></div>}
@@ -354,7 +369,7 @@ export default function RoleDashboard({ projectKey, projects = [], databaseConne
       {payload?.empty && status !== "loading" && <div className="dashboard-empty-state"><BarChart3 /><strong>No Jira tickets found in the selected scope.</strong><p>Clear a release, sprint, feature, or created-date filter and try again.</p><button type="button" onClick={resetFilters}>Clear filters</button></div>}
 
       {payload && !payload.empty && <>
-        {isPortfolio ? <><PortfolioKpiRow payload={payload} onInfo={openMetric} /><PortfolioView payload={payload} onSquad={viewSquad} onAsk={ask} /></> : <><PrimaryKpiRow payload={payload} onInfo={openMetric} onAsk={ask} scope={askScope} /><DeliveryAnalytics payload={payload} /><RiskAttentionPanel payload={payload} onViewIssue={focusRisk} onAsk={ask} squad={context.selectedSquad} /><ProductivityOverview payload={payload} issues={visibleIssues} onAsk={ask} />{payload.release_information?.length > 0 && <section className="release-information"><header><h3>Release Information</h3><span>Rule-based source dates</span></header>{payload.release_information.map((release) => <article key={`${release.fixversion}-${release.release_date}`}><strong>{release.fixversion}</strong><span>Release date {release.release_date || "Unavailable"}</span><span>Plan {release.release_plan_start || "—"} → {release.release_plan_end || "—"}</span><span>Actual {release.release_actual_start || "—"} → {release.release_actual_end || "—"}</span></article>)}</section>}<IssueTable payload={visibleIssues} filterOptions={options} filters={issueFilters} setFilters={setIssueFilters} onPage={(page) => setIssueFilters((current) => ({ ...current, page }))} /></>}
+        {isPortfolio ? <><PortfolioKpiRow payload={payload} onInfo={openMetric} /><PortfolioView payload={payload} onSquad={viewSquad} onAsk={ask} /></> : <><PrimaryKpiRow payload={payload} onInfo={openMetric} onAsk={suggest} scope={askScope} /><DeliveryAnalytics payload={payload} /><RiskAttentionPanel payload={payload} onViewIssue={focusRisk} onAsk={ask} squad={context.selectedSquad} /><ProductivityOverview payload={payload} issues={visibleIssues} onAsk={ask} />{payload.release_information?.length > 0 && <section className="release-information"><header><h3>Release Information</h3><span>Rule-based source dates</span></header>{payload.release_information.map((release) => <article key={`${release.fixversion}-${release.release_date}`}><strong>{release.fixversion}</strong><span>Release date {release.release_date || "Unavailable"}</span><span>Plan {release.release_plan_start || "—"} → {release.release_plan_end || "—"}</span><span>Actual {release.release_actual_start || "—"} → {release.release_actual_end || "—"}</span></article>)}</section>}<IssueTable payload={visibleIssues} filterOptions={options} filters={issueFilters} setFilters={setIssueFilters} onPage={(page) => setIssueFilters((current) => ({ ...current, page }))} /></>}
         {(payload.data_quality_notes || []).length > 0 && <section className="dashboard-quality-note"><CircleHelp aria-hidden="true" /><div><strong>Data quality &amp; interpretation</strong>{payload.data_quality_notes.map((note) => <p key={note}>{note}</p>)}</div></section>}
       </>}
 

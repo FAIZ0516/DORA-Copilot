@@ -70,6 +70,9 @@ export function buildRiskItems(payload) {
 export function buildPrimaryKpis(payload) {
   const kpis = payload?.kpis || {};
   const registry = payload?.metric_registry || {};
+  const attentionByMetric = new Map(
+    (payload?.attention_items || []).map((item) => [item.metric, item]),
+  );
   const completed = Number(kpis.completed_work || 0);
   const scoped = Number(kpis.total_work || 0);
   return [
@@ -80,6 +83,7 @@ export function buildPrimaryKpis(payload) {
       suffix: "%",
       tone: "blue",
       comparison: `${completed.toLocaleString()} of ${scoped.toLocaleString()} scoped tickets completed`,
+      attention: attentionByMetric.get("completion_pct") || null,
       definition: {
         ...registry.completion_pct,
         title: "Sprint Completion",
@@ -93,6 +97,7 @@ export function buildPrimaryKpis(payload) {
       value: kpis.active_work,
       tone: Number(kpis.active_work || 0) > 0 ? "blue" : "green",
       comparison: "Unresolved and not in Jira's Done category",
+      attention: attentionByMetric.get("active_work") || null,
       definition: {
         ...registry.active_work,
         title: "Open Work",
@@ -104,6 +109,7 @@ export function buildPrimaryKpis(payload) {
       value: kpis.impeded_work ?? 0,
       tone: Number(kpis.impeded_work || 0) > 0 ? "orange" : "green",
       comparison: "Based on current Impeded status",
+      attention: attentionByMetric.get("impeded_work") || null,
       definition: {
         title: "Active Blockers",
         description: "Tickets whose current Jira status is Impeded.",
@@ -121,6 +127,7 @@ export function buildPrimaryKpis(payload) {
       value: kpis.status || "Monitor",
       tone: String(kpis.status).toLowerCase() === "needs attention" ? "red" : "amber",
       comparison: `${(kpis.reasons || []).length} transparent attention signal${(kpis.reasons || []).length === 1 ? "" : "s"}`,
+      attention: attentionByMetric.get("delivery_risk") || null,
       definition: {
         title: "Delivery Risk",
         description: "A deterministic status derived from visible defect, ageing, progress, impediment, and ownership signals.",

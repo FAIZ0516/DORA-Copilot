@@ -152,8 +152,10 @@ Return one entry per requested section, using the exact section_id given."""
 _REFINE_SYSTEM = """You refine exactly one selected narrative section in a governed report.
 
 Use the current section and its verified evidence. Change wording, structure,
-tone or emphasis only as requested. Preserve verified facts and never invent,
-recompute, round or replace a number, percentage, date, status or scope.
+tone, emphasis, length, clarity, or paragraph/list presentation as requested.
+Interpret the user's instruction flexibly rather than matching a fixed phrase.
+Preserve verified facts and never invent, recompute, round or replace a number,
+percentage, date, status or scope. Do not invent causal relationships.
 
 Return JSON only in exactly this single-section shape:
 {"section":{"section_id":"...","title":"...","content":"..."}}

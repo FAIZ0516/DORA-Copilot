@@ -68,6 +68,14 @@ def normalize_report_scope(scope: dict[str, Any] | None) -> dict[str, Any]:
 def _date_filter(value: Any) -> date | None:
     if not value:
         return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        return None
 
 
 def _json_safe(value: Any) -> Any:
@@ -82,14 +90,6 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
     return value
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    try:
-        return date.fromisoformat(str(value))
-    except ValueError:
-        return None
 
 
 def _display_number(value: Any, *, percentage: bool = False) -> str:
@@ -98,6 +98,30 @@ def _display_number(value: Any, *, percentage: bool = False) -> str:
     number = float(value)
     rendered = f"{number:,.2f}".rstrip("0").rstrip(".")
     return f"{rendered}%" if percentage else rendered
+
+
+def _is_positive(value: Any) -> bool:
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _count_phrase(value: Any, singular: str, plural: str | None = None) -> str:
+    """Render a verified count with management-friendly singular/plural wording."""
+
+    try:
+        noun = singular if float(value) == 1 else (plural or f"{singular}s")
+    except (TypeError, ValueError):
+        noun = plural or f"{singular}s"
+    return f"{_display_number(value)} {noun}"
+
+
+def _count_verb(value: Any, singular: str, plural: str) -> str:
+    try:
+        return singular if float(value) == 1 else plural
+    except (TypeError, ValueError):
+        return plural
 
 
 def _dashboard_metric_items(payload: dict[str, Any], scope: dict[str, Any]) -> list[dict[str, Any]]:
@@ -147,24 +171,43 @@ def _dashboard_metric_items(payload: dict[str, Any], scope: dict[str, Any]) -> l
 def _summary_text(payload: dict[str, Any], scope: dict[str, Any]) -> str:
     kpis = payload.get("kpis") or {}
     subject = scope.get("squad") or f"project {scope.get('project', 'DCPM')}"
-    return (
-        f"{subject} has {_display_number(kpis.get('total_work'))} scoped tickets. "
-        f"{_display_number(kpis.get('completed_work'))} are in Jira's Done category "
-        f"({_display_number(kpis.get('completion_pct'), percentage=True)}), while "
-        f"{_display_number(kpis.get('active_work'))} remain open. The current scope "
-        f"contains {_display_number(kpis.get('impeded_work'))} tickets in Impeded status "
-        f"and {_display_number(kpis.get('open_bugs'))} open bugs. The deterministic "
-        f"dashboard delivery status is {kpis.get('status') or 'Unavailable'}."
-    )
+    sentences = [
+        f"{subject} is at {_display_number(kpis.get('completion_pct'), percentage=True)} "
+        f"completion, with {_count_phrase(kpis.get('active_work'), 'work item')} still open.",
+        f"The verified delivery status is {kpis.get('status') or 'Unavailable'}.",
+    ]
+    attention: list[str] = []
+    if _is_positive(kpis.get("impeded_work")):
+        attention.append(_count_phrase(kpis.get("impeded_work"), "blocked work item"))
+    if _is_positive(kpis.get("open_bugs")):
+        attention.append(_count_phrase(kpis.get("open_bugs"), "open bug"))
+    if attention:
+        sentences.append(f"Management attention should focus on {' and '.join(attention)}.")
+    else:
+        sentences.append("No blocked work or open bugs were identified in the current scope.")
+    return " ".join(sentences)
 
 
 def _finding_text(payload: dict[str, Any]) -> str:
     kpis = payload.get("kpis") or {}
     lines = [
-        f"Done / end-state work accounts for {_display_number(kpis.get('completion_pct'), percentage=True)} of the current filtered scope.",
-        f"Open work is {_display_number(kpis.get('active_work'))}; this is the existing backend active_work calculation, not a frontend subtraction.",
-        f"Active blockers are {_display_number(kpis.get('impeded_work'))}, based strictly on the current Impeded status definition.",
-        f"Open bugs are {_display_number(kpis.get('open_bugs'))}, limited to unresolved Bug tickets outside Jira's Done category.",
+        f"{_display_number(kpis.get('completed_work'))} of {_display_number(kpis.get('total_work'))} "
+        f"work items have reached an end state ({_display_number(kpis.get('completion_pct'), percentage=True)}).",
+        f"{_count_phrase(kpis.get('active_work'), 'work item')} "
+        f"{_count_verb(kpis.get('active_work'), 'remains', 'remain')} open in the current scope.",
+        (
+            f"{_count_phrase(kpis.get('impeded_work'), 'work item')} "
+            f"{_count_verb(kpis.get('impeded_work'), 'is', 'are')} currently blocked and "
+            f"{_count_verb(kpis.get('impeded_work'), 'requires', 'require')} attention."
+            if _is_positive(kpis.get("impeded_work"))
+            else "No currently blocked work was identified."
+        ),
+        (
+            f"{_count_phrase(kpis.get('open_bugs'), 'open bug')} "
+            f"{_count_verb(kpis.get('open_bugs'), 'remains', 'remain')} unresolved."
+            if _is_positive(kpis.get("open_bugs"))
+            else "No open bugs were identified."
+        ),
     ]
     status_rows = payload.get("work_status") or []
     if status_rows:
@@ -172,23 +215,46 @@ def _finding_text(payload: dict[str, Any]) -> str:
             f"{row.get('status_category') or 'Unknown'} {_display_number(row.get('issue_count'))}"
             for row in status_rows
         )
-        lines.append(f"Stored Jira status-category breakdown: {breakdown}.")
+        lines.append(f"Work by status category: {breakdown}.")
     return "\n".join(lines)
 
 
 def _risk_text(payload: dict[str, Any]) -> str:
     reasons = payload.get("attention_items") or []
     if not reasons:
-        return "No configured dashboard attention threshold is currently triggered in this scope."
-    lines = []
+        return "No verified delivery risk currently requires attention in this scope."
+    kpis = payload.get("kpis") or {}
+    lines: list[str] = []
     for reason in reasons:
-        threshold = reason.get("threshold")
-        suffix = f"; configured threshold {threshold}" if threshold is not None else ""
-        reason_text = str(reason.get("reason") or reason.get("metric") or "Attention signal")
-        lines.append(
-            f"{reason_text[:1].upper() + reason_text[1:]}: "
-            f"{_display_number(reason.get('value'))}{suffix}."
-        )
+        metric = str(reason.get("metric") or "")
+        value = reason.get("value")
+        if metric == "impeded_work":
+            lines.append(
+                f"{_count_phrase(value, 'work item')} "
+                f"{_count_verb(value, 'is', 'are')} currently blocked and may require an owner or next step."
+            )
+        elif metric == "high_priority_open_bugs":
+            lines.append(
+                f"{_count_phrase(value, 'high-priority bug')} "
+                f"{_count_verb(value, 'remains', 'remain')} open and may affect delivery planning."
+            )
+        elif metric == "oldest_unresolved_days":
+            lines.append(f"The oldest unresolved work has been open for {_count_phrase(value, 'day')} and may require review.")
+        elif metric == "unassigned_open_work":
+            lines.append(
+                f"{_count_phrase(value, 'open work item')} "
+                f"{_count_verb(value, 'does', 'do')} not have an assigned owner."
+            )
+        elif metric == "completion_pct":
+            lines.append(
+                f"Completion is {_display_number(value, percentage=True)}, with "
+                f"{_count_phrase(kpis.get('active_work'), 'work item')} still open for prioritisation."
+            )
+        elif metric == "status_category":
+            lines.append("Some work is missing a status category, which limits completion reporting.")
+        else:
+            reason_text = str(reason.get("reason") or "a delivery condition needs review").strip().rstrip(".")
+            lines.append(f"The verified data indicates that {reason_text} ({_display_number(value)}).")
     return "\n".join(lines)
 
 
@@ -199,28 +265,28 @@ def _recommendation_text(payload: dict[str, Any]) -> str:
     for metric in dict.fromkeys(str(reason.get("metric")) for reason in reasons):
         if metric == "impeded_work":
             actions.append(
-                f"Review the {_display_number(kpis.get('impeded_work'))} tickets currently in Impeded status and record an owner and next action."
+                f"Review the {_count_phrase(kpis.get('impeded_work'), 'blocked work item')} and confirm an owner and next action."
             )
         elif metric == "high_priority_open_bugs":
             actions.append(
-                f"Review the {_display_number(kpis.get('high_priority_open_bugs'))} open High-priority bugs and agree their delivery order."
+                f"Review the {_count_phrase(kpis.get('high_priority_open_bugs'), 'open high-priority bug')} and agree their delivery order."
             )
         elif metric == "oldest_unresolved_days":
             actions.append(
-                f"Review ageing unresolved work, beginning with items up to {_display_number(kpis.get('oldest_unresolved_days'))} days old."
+                f"Review ageing unresolved work, beginning with items up to {_count_phrase(kpis.get('oldest_unresolved_days'), 'day')} old."
             )
         elif metric == "unassigned_open_work":
             actions.append(
-                f"Confirm ownership for the {_display_number(kpis.get('unassigned_open_work'))} unassigned open tickets."
+                f"Confirm ownership for the {_count_phrase(kpis.get('unassigned_open_work'), 'unassigned open ticket')}."
             )
         elif metric == "completion_pct":
             actions.append(
-                f"Review the {_display_number(kpis.get('active_work'))} tickets outside Done and confirm near-term priorities."
+                f"Review the {_count_phrase(kpis.get('active_work'), 'remaining work item')} and confirm near-term priorities."
             )
         elif metric == "status_category":
             actions.append("Resolve missing Jira status-category data before relying on completion comparisons.")
     if not actions:
-        actions.append("Continue monitoring the verified dashboard measures and reassess when the scope changes.")
+        actions.append("No new action is required by the verified risk indicators; continue monitoring the current scope.")
     return "\n".join(actions)
 
 
@@ -291,7 +357,10 @@ def current_view_dashboard_evidence(doradb, scope: dict[str, Any] | None) -> dic
         f"Verified source: {calculation}, executed server-side against read-only DoraDB. "
         f"Applied scope: {filters}. Metrics use the dashboard's parameterized aggregate "
         "and deterministic attention rules. Browser-rendered metric values were not accepted "
-        "as evidence. Done is an end-state category and may include rejected or cancelled work."
+        "as evidence. Open Work is the verified count of unresolved work outside the Done "
+        "category. Blocked work refers only to items whose current Jira status is Impeded. "
+        "Open Bugs includes unresolved Bug tickets outside Done. Done is an end-state category "
+        "and may include rejected or cancelled work."
     )
     evidence = {
         "generated_by": "report_template",
@@ -323,9 +392,11 @@ def current_view_dashboard_evidence(doradb, scope: dict[str, Any] | None) -> dic
                     "columns": [
                         {"key": "label", "label": "Measure"},
                         {"key": "value", "label": "Value"},
-                        {"key": "formula", "label": "Calculation"},
                     ],
-                    "rows": items,
+                    "rows": [
+                        {"label": item["label"], "value": item["value"]}
+                        for item in items
+                    ],
                 }
             },
             "key_finding": {"content": findings},

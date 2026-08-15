@@ -52,23 +52,45 @@ test("a question never opens with a bare pronoun", () => {
   }
 });
 
-test("completion questions follow the value instead of presuming it is low", () => {
-  const low = buildMetricQuestions(card("completion_pct", 43.2, { suffix: "%" }), SCOPE);
-  const mid = buildMetricQuestions(card("completion_pct", 62, { suffix: "%" }), SCOPE);
-  const high = buildMetricQuestions(card("completion_pct", 91.4, { suffix: "%" }), SCOPE);
+test("completion wording uses verified attention state, never frontend thresholds", () => {
+  const attention = buildMetricQuestions(card("completion_pct", 43.2, {
+    suffix: "%",
+    attention: { metric: "completion_pct", reason: "configured threshold crossed" },
+  }), SCOPE);
+  const sameValueNeutral = buildMetricQuestions(card("completion_pct", 43.2, { suffix: "%" }), SCOPE);
+  const highNeutral = buildMetricQuestions(card("completion_pct", 91.4, { suffix: "%" }), SCOPE);
 
-  assert.ok(low.some((option) => /this low/i.test(option.question)));
-  assert.ok(mid.some((option) => /holding completion back/i.test(option.question)));
-  // The original bug: a strong percentage must never be asked why it is low.
-  assert.ok(high.some((option) => /driving this level/i.test(option.question)));
-  for (const option of high) {
-    assert.doesNotMatch(option.question, /why is it (this )?low/i);
+  assert.ok(attention.some((option) => /flagged by the dashboard attention rules/i.test(option.question)));
+  assert.ok(sameValueNeutral.some((option) => /driving the current completion rate/i.test(option.question)));
+  for (const option of [...sameValueNeutral, ...highNeutral]) {
+    assert.doesNotMatch(option.question, /low|below|flagged/i);
   }
+});
+
+test("each requested KPI has metric-specific questions", () => {
+  const completion = buildMetricQuestions(card("completion_pct", 91.4, { title: "Sprint Completion", suffix: "%" }), SCOPE);
+  const openWork = buildMetricQuestions(card("active_work", 17, { title: "Open Work" }), SCOPE);
+  const blockers = buildMetricQuestions(card("impeded_work", 4, { title: "Active Blockers" }), SCOPE);
+  const bugs = buildMetricQuestions(card("open_bugs", 9, { title: "Open Bugs" }), SCOPE);
+
+  assert.ok(completion.every((option) => /completion|Done|delivery risk|squads compare/i.test(option.question)));
+  assert.ok(openWork.every((option) => /Open Work|open items/i.test(option.question)));
+  assert.ok(blockers.every((option) => /impeded|unblocked/i.test(option.question)));
+  assert.ok(bugs.every((option) => /Open Bugs|open bugs/i.test(option.question)));
 });
 
 test("the current value is stated in the question so the answer can use it", () => {
   const [first] = buildMetricQuestions(card("completion_pct", 43.2, { suffix: "%" }), SCOPE);
   assert.match(first.question, /43\.2%/);
+});
+
+test("current sprint, release, squad and project stay in KPI questions", () => {
+  const scoped = { squad: "KAIJU", sprint: "Sprint 12", release: "R5", project: "DCPM" };
+  const [question] = buildMetricQuestions(card("active_work", 17), scoped);
+  assert.match(question.question, /KAIJU/);
+  assert.match(question.question, /Sprint 12/);
+  assert.match(question.question, /R5/);
+  assert.match(question.question, /DCPM/);
 });
 
 test("a metric at zero never offers questions about items that do not exist", () => {
@@ -80,7 +102,7 @@ test("a metric at zero never offers questions about items that do not exist", ()
 
   const some = buildMetricQuestions(card("impeded_work", 4), SCOPE);
   assert.ok(some.some((option) => /unblocked first/i.test(option.question)));
-  assert.ok(some.some((option) => /4 tickets are currently impeded/i.test(option.question)));
+  assert.ok(some.some((option) => /currently 4 tickets/i.test(option.question)));
 });
 
 test("delivery-risk options match the actual status", () => {

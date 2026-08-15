@@ -61,6 +61,7 @@ from ..services.report_templates import (
     CLASSIFICATIONS,
     CONTENT_MODES,
     DETAIL_LEVELS,
+    HIDDEN_REPORT_SECTION_TYPES,
     NARRATIVE_TYPES,
     SECTION_TYPES,
     SELECTIONS,
@@ -188,6 +189,7 @@ def _serialize(report: Report) -> dict[str, Any]:
                 "source_ids": [str(sid) for sid in (section.source_ids or [])],
             }
             for section in sorted(report.sections, key=lambda s: s.position)
+            if section.type not in HIDDEN_REPORT_SECTION_TYPES
         ],
         "sources": [
             _serialize_source(source, index) for index, source in enumerate(report.sources, start=1)
@@ -206,7 +208,9 @@ def _summary(report: Report) -> dict[str, Any]:
         "updated_at": report.updated_at,
         "data_as_of": report.data_as_of,
         "last_exported_at": report.last_exported_at,
-        "section_count": len(report.sections),
+        "section_count": sum(
+            section.type not in HIDDEN_REPORT_SECTION_TYPES for section in report.sections
+        ),
         "source_count": len(report.sources),
         "freshness": _freshness(report),
     }
@@ -869,7 +873,8 @@ def generate_report(
                 "target_section_type": "feature_status",
                 "question": "Feature status overview from each Feature issue's stored current status.",
                 "answer": "\n".join(
-                    f"{row['feature']}: {row['status']}" for row in feature_result["rows"]
+                    f"{row['feature']} | {row['feature_name']} | {row['status']}"
+                    for row in feature_result["rows"]
                 ),
                 "table": {
                     "title": "Feature Status Overview",

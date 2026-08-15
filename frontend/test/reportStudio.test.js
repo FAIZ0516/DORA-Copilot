@@ -231,7 +231,7 @@ test("a template carries standard questions and can generate from live data", ()
   assert.match(clientSource, /export const generateReport/);
   assert.match(clientSource, /\/generate`/);
   assert.match(newReportSource, /useState\("weekly_scrum"\)/);
-  assert.match(newReportSource, /Feature Status Overview/);
+  assert.match(newReportSource, /Feature Delivery Status/);
   // The generate step is offered at creation and again from the editor.
   assert.match(studioSource, /generateReport\(created\.id\)/);
   assert.match(studioSource, /Refresh Data/);
@@ -384,6 +384,13 @@ test("Zara refines only the selected narrative section", () => {
   assert.match(studioSource, /<ReportAssistantPanel/);
   assert.match(assistantSource, /selectedSection/);
   assert.match(assistantSource, /Verified facts are protected/);
+});
+
+test("methodology and evidence navigation stay out of the authored report surface", () => {
+  assert.match(studioSource, /section\.type !== "methodology"/);
+  assert.doesNotMatch(studioSource, /<h3>Evidence<\/h3>/);
+  assert.match(newReportSource, /Data Quality and Limitations/);
+  assert.doesNotMatch(newReportSource, /Evidence \(appendix\)/);
 });
 
 test("Save Draft and clipboard Copy are distinct from Duplicate", () => {

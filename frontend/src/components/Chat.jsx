@@ -81,7 +81,11 @@ export default function Chat({
         setConversations(recent);
         setConversationStatus("ready");
         const savedId = window.localStorage.getItem(ACTIVE_CONVERSATION_KEY);
-        if (savedId && recent.some((item) => item.id === savedId)) await openConversation(savedId);
+        if (savedId && recent.some((item) => item.id === savedId)) {
+          // Reopen the conversation transcript without letting its historical
+          // dashboard scope override the product's All DCP Squads landing view.
+          await openConversation(savedId, { restoreDashboardScope: false });
+        }
       } catch (error) {
         if (!active) return;
         setConversationError(error.message);
@@ -112,7 +116,7 @@ export default function Chat({
     }
   }
 
-  async function openConversation(id) {
+  async function openConversation(id, { restoreDashboardScope = true } = {}) {
     setConversationStatus("loading");
     try {
       const conversation = await getConversation(id);
@@ -121,14 +125,16 @@ export default function Chat({
       dashboard.setConversationId(conversation.id);
       window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversation.id);
       setMessages(messagesFromConversation(conversation));
-      setProject(conversation.project_scope?.project_key || "DCPM");
-      dashboard.setSelectedProject(conversation.project_scope?.project_key || "DCPM");
-      dashboard.setSelectedSquad(restored.squad || "");
-      dashboard.setSelectedRelease(restored.release || "");
-      dashboard.setSelectedSprint(restored.sprint || "");
-      dashboard.setDateRange({ from: restored.date_from || "", to: restored.date_to || "" });
-      if (restored.active_view) dashboard.setActiveView(restored.active_view);
-      if (restored.selected_metric) dashboard.setSelectedMetric(restored.selected_metric);
+      if (restoreDashboardScope) {
+        setProject(conversation.project_scope?.project_key || "DCPM");
+        dashboard.setSelectedProject(conversation.project_scope?.project_key || "DCPM");
+        dashboard.setSelectedSquad(restored.squad || "");
+        dashboard.setSelectedRelease(restored.release || "");
+        dashboard.setSelectedSprint(restored.sprint || "");
+        dashboard.setDateRange({ from: restored.date_from || "", to: restored.date_to || "" });
+        if (restored.active_view) dashboard.setActiveView(restored.active_view);
+        if (restored.selected_metric) dashboard.setSelectedMetric(restored.selected_metric);
+      }
       setConversationStatus("ready");
       setConversationError("");
     } catch (error) {
@@ -232,11 +238,9 @@ export default function Chat({
     window.requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  // Dashboard "Ask Zara" buttons name an action, so they perform it. They used
-  // to share fillQuestion, which meant clicking Ask Zara typed the question
-  // into the box and then waited for the user to press Enter -- the button did
-  // not ask anything. The question already carries the dashboard scope it was
-  // built from, so there is nothing for the user to fill in.
+  // Dashboard action buttons ask immediately. KPI question suggestions use
+  // fillQuestion instead so the user can edit them while the structured
+  // dashboard scope waits alongside the draft.
   function askZara(question, dashboardOverride = null) {
     layout.showPanel("chat");
     sendMessage(question, dashboardOverride);
@@ -338,7 +342,7 @@ export default function Chat({
   const historyPanel = <ConversationPanel conversations={conversations} status={conversationStatus} error={conversationError} activeConversationId={activeConversationId} onNew={startNewConversation} onOpen={openConversation} onArchive={archiveHistoryConversation} onRetry={loadRecent} onNavigate={navigateWorkspace} />;
   const dashboardPanel = (
     <div className="dashboard-panel-shell">
-      <RoleDashboard projectKey={project} projects={projects} databaseConnected={databaseConnected} onProjectChange={setProject} onAsk={askZara} disabled={isSending} />
+      <RoleDashboard projectKey={project} projects={projects} databaseConnected={databaseConnected} onProjectChange={setProject} onAsk={askZara} onSuggest={fillQuestion} disabled={isSending} />
     </div>
   );
   const chatPanel = (

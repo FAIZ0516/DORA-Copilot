@@ -136,7 +136,10 @@ def test_each_question_gets_its_own_session_so_answers_do_not_bleed() -> None:
 
 def test_weekly_scrum_template_has_the_fixed_mvp_sections() -> None:
     types = [item["type"] for item in TEMPLATES["weekly_scrum"]["sections"]]
-    assert types == ["cover", "feature_status", "executive_summary", "key_finding", "action_list"]
+    assert types == [
+        "cover", "kpi_group", "feature_status", "executive_summary", "key_finding", "risk",
+        "action_list", "data_quality", "methodology",
+    ]
 
 
 def test_feature_status_requires_verified_squad_and_sprint() -> None:
@@ -269,3 +272,72 @@ def test_verified_dashboard_data_populates_supported_sections_only(monkeypatch) 
         "completion_pct", "active_work", "open_bugs", "impeded_work", "completed_work",
     }
     assert "Feature Status" not in sections
+
+
+def test_main_report_content_is_management_facing_and_grounded(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.services.report_generation.get_squad_dashboard",
+        lambda *_args, **_kwargs: _dashboard_payload(),
+    )
+    result = current_view_dashboard_evidence(
+        object(), {"project": "DCPM", "squad": "JAEGER"}
+    )
+    sections = result["sections"]
+    primary = "\n".join(
+        sections[section_type]["content"]
+        for section_type in ("executive_summary", "key_finding", "risk", "action_list")
+    )
+    lowered = primary.casefold()
+    for internal_phrase in (
+        "active_work", "frontend subtraction", "existing backend",
+        "configured threshold", "deterministic dashboard",
+    ):
+        assert internal_phrase not in lowered
+
+    assert "92.47%" in sections["executive_summary"]["content"]
+    assert "202 work items still open" in sections["executive_summary"]["content"]
+    assert "16 blocked work items" in sections["executive_summary"]["content"]
+    assert "16 work items are currently blocked" in sections["risk"]["content"]
+    assert "Review the 16 blocked work items" in sections["action_list"]["content"]
+
+
+def test_main_report_uses_singular_wording_for_one_open_item(monkeypatch) -> None:
+    payload = _dashboard_payload()
+    payload["kpis"] = {
+        **payload["kpis"], "active_work": 1, "impeded_work": 0, "open_bugs": 0,
+        "oldest_unresolved_days": 1,
+    }
+    payload["attention_items"] = [{
+        "metric": "oldest_unresolved_days", "value": 1, "reason": "ageing work",
+    }]
+    monkeypatch.setattr(
+        "backend.services.report_generation.get_squad_dashboard",
+        lambda *_args, **_kwargs: payload,
+    )
+    sections = current_view_dashboard_evidence(
+        object(), {"project": "DCPM", "squad": "JAEGER"}
+    )["sections"]
+    assert "1 work item still open" in sections["executive_summary"]["content"]
+    assert "1 work item remains open" in sections["key_finding"]["content"]
+    assert "open for 1 day" in sections["risk"]["content"]
+    assert "up to 1 day old" in sections["action_list"]["content"]
+
+
+def test_methodology_retains_provenance_and_metric_definitions(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.services.report_generation.get_squad_dashboard",
+        lambda *_args, **_kwargs: _dashboard_payload(),
+    )
+    result = current_view_dashboard_evidence(
+        object(), {"project": "DCPM", "squad": "JAEGER"}
+    )
+    methodology = result["sections"]["methodology"]["content"]
+    assert "dashboard_service.get_squad_dashboard" in methodology
+    assert "server-side against read-only DoraDB" in methodology
+    assert "current Jira status is Impeded" in methodology
+    assert "Browser-rendered metric values were not accepted" in methodology
+
+    measures = result["sections"]["kpi_group"]["payload"]
+    assert [column["key"] for column in measures["columns"]] == ["label", "value"]
+    assert all("formula" not in row for row in measures["rows"])
+    assert all("formula" in item for item in measures["items"])

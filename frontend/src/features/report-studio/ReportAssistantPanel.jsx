@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import { Loader2, Send, Sparkles } from "lucide-react";
+import zaraWordmark from "../../assets/zara-wordmark.png";
 
 const SUGGESTIONS = [
   "Make this shorter.",
-  "Make this management-friendly.",
-  "Focus on risks.",
+  "Explain this for management.",
+  "Rewrite this as three concise bullet points.",
   "Focus more on blockers.",
-  "Explain this section.",
   "Explain this in simpler language.",
+  "Remove repetitive wording.",
 ];
 
 export default function ReportAssistantPanel({ report, selectedSection, busy, onSelectSection, onRefine }) {
@@ -23,8 +24,8 @@ export default function ReportAssistantPanel({ report, selectedSection, busy, on
 
   return (
     <aside className="report-assistant-panel" aria-label="Zara Report Assistant">
-      <header><span><Sparkles /></span><div><p>Zara Assistant</p><h3>Refine the report</h3></div></header>
-      <p>Choose one narrative section. Zara will update only that section using its verified sources.</p>
+      <header><span><Sparkles /></span><div><p><img src={zaraWordmark} alt="ZARA" /><strong>AI</strong></p><h3>Refine the report</h3><small>Report intelligence assistant</small></div></header>
+      <p>Choose one narrative section, then describe the rewrite you want. Zara will update only that section using its verified sources.</p>
       <label><span>Selected section</span><select value={selectedSection?.id || ""} onChange={(event) => onSelectSection(narrative.find((section) => section.id === event.target.value) || null)}><option value="">Choose a narrative section</option>{narrative.map((section) => <option key={section.id} value={section.id}>{section.title}</option>)}</select></label>
       <div className="report-assistant-suggestions">{SUGGESTIONS.map((text) => <button key={text} type="button" disabled={!selectedSection || busy} onClick={() => setInstruction(text)}>{text}</button>)}</div>
       <form onSubmit={submit}><textarea rows="4" value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Ask Zara to refine the selected section…" /><button type="submit" className="primary" disabled={!selectedSection || !instruction.trim() || busy}>{busy ? <Loader2 className="is-spinning" /> : <Send />}Refine section</button></form>

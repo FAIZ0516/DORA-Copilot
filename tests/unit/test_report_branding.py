@@ -69,6 +69,14 @@ def test_pages_are_numbered_individually_not_all_page_one() -> None:
         assert f"Page {index}" in (page.extract_text() or "")
 
 
+def test_pdf_uses_zara_report_studio_branding() -> None:
+    pdf = render_pdf(REPORT)
+    reader = pytest.importorskip("pypdf").PdfReader(io.BytesIO(pdf))
+    text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    assert "ZARA REPORT STUDIO" in text
+    assert "DORA COPILOT · ZARA" not in text
+
+
 def test_the_static_template_number_is_covered_by_the_real_one() -> None:
     """The template's "1" is a fixed Word field; it must not repeat."""
 
@@ -100,3 +108,50 @@ def test_the_page_size_is_unchanged_by_stamping() -> None:
 def test_a_broken_template_never_breaks_the_export() -> None:
     # An unbranded report is worth delivering; a failed export is not.
     assert apply_template(b"not a pdf at all") == b"not a pdf at all"
+
+
+def test_weekly_report_uses_the_fixed_two_page_dynamic_layout() -> None:
+    weekly = {
+        "template": "weekly_scrum",
+        "title": "Dynamic weekly report",
+        "version": 1,
+        "scope": {"project": "DCPM", "squad": "JAEGER", "sprint": "Sprint 42"},
+        "sections": [
+            {"type": "kpi_group", "position": 1, "visible": True, "payload": {"items": [
+                {"key": "total_work", "label": "Total", "value": "100"},
+                {"key": "completed_work", "label": "Completed", "value": "87"},
+                {"key": "completion_pct", "label": "Sprint Completion", "value": "87%"},
+                {"key": "active_work", "label": "Open Work", "value": "13"},
+                {"key": "impeded_work", "label": "Active Blockers", "value": "2"},
+                {"key": "open_bugs", "label": "Open Bugs", "value": "4"},
+            ]}},
+            {"type": "feature_status", "position": 2, "visible": True, "payload": {
+                "columns": [
+                    {"key": "feature", "label": "Feature ID"},
+                    {"key": "feature_name", "label": "Feature Name"},
+                    {"key": "status", "label": "Status"},
+                ],
+                "rows": [{"feature": "DCPM-1", "feature_name": "Dynamic Feature", "status": "In Progress"}],
+            }},
+            {"type": "executive_summary", "position": 3, "visible": True, "content": "Dynamic executive summary."},
+            {"type": "key_finding", "position": 4, "visible": True, "content": "Dynamic highlight."},
+            {"type": "risk", "position": 5, "visible": True, "content": "Two work items are blocked."},
+            {"type": "action_list", "position": 6, "visible": True, "content": "Confirm an owner for blocked work."},
+            {"type": "data_quality", "position": 7, "visible": True, "content": "Dynamic limitation."},
+            {"type": "methodology", "position": 8, "visible": True, "content": "Internal evidence details."},
+        ],
+    }
+
+    reader = pytest.importorskip("pypdf").PdfReader(io.BytesIO(render_pdf(weekly)))
+    assert len(reader.pages) == 2
+    first = reader.pages[0].extract_text() or ""
+    second = reader.pages[1].extract_text() or ""
+    assert first.index("DELIVERY AT A GLANCE") < first.index("FEATURE DELIVERY STATUS")
+    assert first.index("FEATURE DELIVERY STATUS") < first.index("EXECUTIVE SUMMARY")
+    assert "JAEGER - Sprint 42" in first
+    assert "87%" in first and "Dynamic Feature" in first
+    assert second.index("RISKS REQUIRING ATTENTION") < second.index("RECOMMENDED ACTIONS")
+    assert "DATA QUALITY & LIMITATIONS" in second
+    combined = first + second
+    assert "EVIDENCE" not in combined.upper()
+    assert "METHODOLOGY" not in combined.upper()

@@ -96,8 +96,8 @@ STRUCTURE_RULES: tuple[str, ...] = (
     "Keep paragraphs to three sentences or fewer, and put a blank line "
     "between them. A wall of text is a failed answer even if it is accurate.",
     "When an answer has genuinely distinct parts, label them with short bold "
-    "headers on their own line (for example **Evidence**, **Worth knowing**, "
-    "**Next step**). Use only the headers that carry real content -- never "
+    "headers on their own line (for example **Evidence** and **Next step**). "
+    "Do not use a generic 'Worth knowing' section. Use only headers that carry real content -- never "
     "emit an empty or padded section.",
     "Put supporting numbers next to what they describe, not in a separate "
     "recital of figures.",
