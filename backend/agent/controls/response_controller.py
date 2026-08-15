@@ -96,9 +96,12 @@ STRUCTURE_RULES: tuple[str, ...] = (
     "Keep paragraphs to three sentences or fewer, and put a blank line "
     "between them. A wall of text is a failed answer even if it is accurate.",
     "When an answer has genuinely distinct parts, label them with short bold "
-    "headers on their own line (for example **Evidence**, **Worth knowing**, "
-    "**Next step**). Use only the headers that carry real content -- never "
-    "emit an empty or padded section.",
+    "headers on their own line (for example **Evidence**, **Worth knowing**). "
+    "Use only the headers that carry real content -- never emit an empty or "
+    "padded section.",
+    "Whenever the answer includes a next step, improvement, or actionable "
+    "insight, label that section with the bold header **What to Improve** on "
+    "its own line, instead of a generic 'next step' phrase.",
     "Put supporting numbers next to what they describe, not in a separate "
     "recital of figures.",
     "Prefer the shortest layout that stays clear: a two-sentence answer needs "
@@ -452,7 +455,8 @@ def describe_policy(policy: ResponsePolicy) -> str:
         else "Respond in the same language the user used for this message."
     )
     lines.append(
-        "Offer at most one or two concise, specific next steps."
+        "Offer at most one or two concise, specific next steps under a bold "
+        "**What to Improve** header."
         if policy["suggest_next_action"]
         else "Do not append a suggested next action to this answer."
     )

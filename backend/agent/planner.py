@@ -619,6 +619,14 @@ Planning principles:
   the available cached evidence, use mode=conversation, intent exactly
   FOLLOW_UP_ON_EXISTING_RESULT, and no actions. Do not use this intent for a
   new topic, changed filter, refresh request, or question requiring new data.
+- If the user's message repeats (exactly or nearly) a question already
+  answered earlier in this conversation, that is a request to re-answer it,
+  never a reason to ask a clarifying or confirming question. The earlier
+  answer proves the question was already understood. Re-run the same data
+  action (mode=data) so the answer is regenerated from fresh evidence, or use
+  FOLLOW_UP_ON_EXISTING_RESULT if the cached evidence still applies. Do not
+  ask "are you asking whether..." or offer alternate readings of a question
+  you already answered.
 - For Jira documentation or definition questions that need no live data, use
   mode=conversation and intent exactly KNOWLEDGE_EXPLANATION. For live schema
   checks use DATABASE_METADATA; for safe Jira aggregates use DATA_RETRIEVAL or
