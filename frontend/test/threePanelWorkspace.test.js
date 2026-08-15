@@ -59,6 +59,15 @@ test("mobile navigation exposes Menu, Dashboard, and Zara", () => {
   assert.match(cssSource, /data-mobile-panel="dashboard"/);
 });
 
+test("expanded dashboard filters stay in flow above KPI cards", () => {
+  const filterPanelRule = cssSource.match(/\.more-filters\s*>\s*div\s*\{([^}]*)\}/)?.[1] || "";
+  assert.match(cssSource, /\.dashboard-filter-bar\s*>\s*\.more-filters\[open\]\s*\{\s*grid-column:\s*1\s*\/\s*-1/);
+  assert.doesNotMatch(filterPanelRule, /position:\s*(?:absolute|fixed)/);
+  assert.match(filterPanelRule, /grid-template-columns:\s*repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(cssSource, /\.more-filters\[open\]\s*>\s*div\s*\{\s*grid-template-columns:\s*repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(cssSource, /\.more-filters\[open\]\s*>\s*div\s*\{\s*grid-template-columns:\s*1fr/);
+});
+
 test("the app enters the workspace directly and recent chats stay collapsed", () => {
   // The role-selection screen was removed entirely: there is no screen
   // state and no chooser, so the workspace renders immediately.

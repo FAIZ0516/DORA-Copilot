@@ -67,10 +67,9 @@ export function buildRiskItems(payload) {
   });
 }
 
-export function buildPrimaryKpis(payload, squad) {
+export function buildPrimaryKpis(payload) {
   const kpis = payload?.kpis || {};
   const registry = payload?.metric_registry || {};
-  const riskQuestion = squad ? `Why is ${squad} squad at risk?` : "Why is this squad at risk?";
   return [
     {
       key: "completion_pct",
@@ -116,7 +115,7 @@ export function buildPrimaryKpis(payload, squad) {
         why_it_matters: "It focuses review without replacing team judgment.",
         formula: "Configured attention thresholds; no model-generated risk score.",
         source_tables: ["public.tbl_gdt_dte_jira_issues"],
-        suggested_questions: [riskQuestion],
+        suggested_questions: ["Why is this squad at risk?"],
       },
     },
   ];

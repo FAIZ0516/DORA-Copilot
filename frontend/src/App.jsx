@@ -4,6 +4,9 @@ import Chat from "./components/Chat";
 import { DashboardProvider } from "./dashboardContext";
 
 const ZaraDataWorkspace = lazy(() => import("./features/zara-workspace/ZaraDataWorkspace"));
+// Report Studio is a full workspace, not a drawer: reports are persistent
+// objects that outlive the conversation, so they get their own route.
+const ReportStudio = lazy(() => import("./features/report-studio/ReportStudio"));
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const fallbackProjects = [{ key: "DCPM", label: "DCPM", detail: "DoraDB" }];
@@ -85,6 +88,13 @@ function LegacyDoraCopilot() {
 
 export default function App() {
   const path = typeof window === "undefined" ? "/" : window.location.pathname.replace(/\/+$/, "") || "/";
+  if (path === "/reports" || path.startsWith("/reports/")) {
+    return (
+      <Suspense fallback={<main className="report-studio-loading">Loading Report Studio…</main>}>
+        <ReportStudio />
+      </Suspense>
+    );
+  }
   if (path === "/zara-workspace" || path.startsWith("/zara-workspace/")) {
     return (
       <Suspense fallback={<main className="zara-workspace-loading">Loading Zara Data Workspace…</main>}>

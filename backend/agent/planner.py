@@ -725,11 +725,23 @@ Planning principles:
                 "intent": "unknown_entity",
                 "actions": [],
                 "confidence": 1.0,
-                "reason": "A proposed filter was not present in the live entity catalogue.",
+                "reason": (
+                    "Filters not present in the live entity catalogue: "
+                    + ", ".join(sorted(set(rejected_entity_filters)))
+                ),
+                # Name the value that actually failed. This used to say only
+                # "one of the requested names", which left the responder to
+                # guess which one -- and it guessed the squad, telling users
+                # "I couldn't find a squad named MBK" about a squad that has
+                # 1,434 bugs. An unnamed rejection becomes a false statement.
                 "clarification": (
-                    "I couldn't match one of the requested names to a current "
-                    "DoraDB project, squad, release, year, issue type, or status. "
-                    "Could you check the name or ask me to list the available values?"
+                    "I couldn't match "
+                    + ", ".join(
+                        f"`{item}`" for item in sorted(set(rejected_entity_filters))
+                    )
+                    + " to a current DoraDB value. Everything else in the request "
+                    "was understood. Could you check that value, or ask me to list "
+                    "the available options for it?"
                 ),
             }
 
@@ -740,23 +752,37 @@ Planning principles:
         )
         if (
             "dcpsquad" in base_filters
-            and (
-                plan["mode"] != "data"
-                or not any(
-                    action["query_id"] == "dora_metrics_by_squad"
-                    for action in plan["actions"]
-                )
+            and plan["mode"] == "data"
+            and plan["actions"]
+            and not any(
+                "dcpsquad"
+                in (QUERY_CATALOGUE.get(action["query_id"], {}).get("allowed_filters") or ())
+                for action in plan["actions"]
             )
         ):
-            # A named squad is an explicit grounded constraint. Reject a plan
-            # that drops it, but do not choose a replacement query in code.
+            # A named squad is an explicit grounded constraint, so a plan whose
+            # queries cannot accept it would silently answer project-wide.
+            #
+            # This used to require the query to be `dora_metrics_by_squad`
+            # specifically, which made it fire on perfectly good plans: four
+            # other approved queries also accept a squad, and asking "for squad
+            # MBK, show work by status" produced an empty clarification that
+            # the responder turned into a vague "can you confirm the squad?".
+            # Test against what the query actually accepts instead. Still no
+            # replacement query is chosen here -- that stays the model's job.
             plan = {
                 **plan,
                 "mode": "clarification",
                 "intent": "model_plan_incomplete",
                 "actions": [],
-                "reason": "The model plan did not preserve the named squad.",
-                "clarification": "",
+                "reason": "The selected queries cannot be filtered by the named squad.",
+                "clarification": (
+                    f"I can't break that particular view down by squad "
+                    f"{base_filters['dcpsquad']} — the underlying query doesn't "
+                    "support a squad filter. I can show it across the whole "
+                    "project, or give you the squad-level metrics instead. "
+                    "Which would you prefer?"
+                ),
             }
 
         controlled = enforce_plan(plan)

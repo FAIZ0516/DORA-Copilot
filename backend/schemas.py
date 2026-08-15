@@ -160,3 +160,210 @@ class JiraDashboardResponse(BaseModel):
     open_ageing: list[dict[str, str | int]]
     data_quality: dict[str, int]
     notes: list[str]
+
+
+# --------------------------------------------------------------------------- #
+# Report Studio                                                               #
+#                                                                             #
+# Reports are persistent objects, not chat answers, so they own their own      #
+# request/response contracts here alongside the rest of the API layer's.       #
+# --------------------------------------------------------------------------- #
+
+
+class ReportScope(BaseModel):
+    """The slice of data a report describes."""
+
+    project: str | None = Field(default=None, max_length=20)
+    squad: str | None = Field(default=None, max_length=80)
+    sprint: str | None = Field(default=None, max_length=200)
+    release: str | None = Field(default=None, max_length=120)
+    date_from: date | None = None
+    date_to: date | None = None
+
+
+class ReportCreateRequest(BaseModel):
+    template: str = Field(default="blank", max_length=60)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    audience: str = Field(default="delivery_manager", max_length=40)
+    tone: str = Field(default="professional", max_length=40)
+    detail_level: str = Field(default="standard", max_length=20)
+    include_recommendations: bool = True
+    scope: ReportScope | None = None
+
+
+class ReportUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    audience: str | None = Field(default=None, max_length=40)
+    tone: str | None = Field(default=None, max_length=40)
+    detail_level: str | None = Field(default=None, max_length=20)
+    include_recommendations: bool | None = None
+    status: str | None = Field(default=None, max_length=20)
+    scope: ReportScope | None = None
+
+
+class ReportSectionCreateRequest(BaseModel):
+    type: str = Field(max_length=40)
+    title: str = Field(default="", max_length=200)
+    content: str = Field(default="", max_length=20_000)
+    payload: dict[str, Any] | None = None
+    position: int | None = Field(default=None, ge=1, le=200)
+
+
+class ReportSectionUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    content: str | None = Field(default=None, max_length=20_000)
+    payload: dict[str, Any] | None = None
+    visible: bool | None = None
+    content_mode: str | None = Field(default=None, max_length=20)
+    content_classification: str | None = Field(default=None, max_length=30)
+
+
+class ReportReorderRequest(BaseModel):
+    section_ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
+class ReportSourceRequest(BaseModel):
+    """Attach one assistant message from one of the caller's conversations."""
+
+    conversation_id: UUID
+    message_id: UUID
+    selection: str = Field(default="full", max_length=20)
+    content_mode: str = Field(default="rewrite", max_length=20)
+
+
+class ReportComposeRequest(BaseModel):
+    """Regenerate narrative sections. Optionally limit to specific sections."""
+
+    section_ids: list[UUID] = Field(default_factory=list, max_length=100)
+
+
+class ReportDuplicateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ReportExportRequest(BaseModel):
+    format: Literal["pdf", "docx", "csv"] = "pdf"
+    section_id: UUID | None = None
+
+
+class ReportSectionResponse(BaseModel):
+    id: UUID
+    type: str
+    title: str
+    content: str
+    payload: dict[str, Any] | None = None
+    position: int
+    visible: bool
+    content_mode: str
+    content_classification: str
+    manually_edited: bool
+    needs_review: bool
+    source_ids: list[str] = Field(default_factory=list)
+
+
+class ReportSourceResponse(BaseModel):
+    id: UUID
+    conversation_id: UUID | None = None
+    message_id: UUID | None = None
+    selection: str
+    label: str = ""
+    question: str = ""
+    scope: dict[str, Any] = Field(default_factory=dict)
+    query_ids: list[str] = Field(default_factory=list)
+    row_counts: list[Any] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    has_chart: bool = False
+    has_table: bool = False
+    data_as_of: datetime | None = None
+
+
+class ReportResponse(BaseModel):
+    id: UUID
+    title: str
+    template: str
+    status: str
+    audience: str
+    tone: str
+    detail_level: str
+    include_recommendations: bool
+    scope: dict[str, Any] = Field(default_factory=dict)
+    validation: dict[str, Any] = Field(default_factory=dict)
+    version: int
+    created_at: datetime
+    updated_at: datetime
+    data_as_of: datetime | None = None
+    last_validated_at: datetime | None = None
+    last_exported_at: datetime | None = None
+    freshness: dict[str, Any] = Field(default_factory=dict)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    sections: list[ReportSectionResponse] = Field(default_factory=list)
+    sources: list[ReportSourceResponse] = Field(default_factory=list)
+
+
+class ReportSummaryResponse(BaseModel):
+    id: UUID
+    title: str
+    template: str
+    status: str
+    scope: dict[str, Any] = Field(default_factory=dict)
+    version: int
+    updated_at: datetime
+    data_as_of: datetime | None = None
+    last_exported_at: datetime | None = None
+    section_count: int = 0
+    source_count: int = 0
+    freshness: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReportListResponse(BaseModel):
+    reports: list[ReportSummaryResponse] = Field(default_factory=list)
+
+
+class ReportTemplateResponse(BaseModel):
+    templates: list[dict[str, Any]] = Field(default_factory=list)
+    audiences: list[str] = Field(default_factory=list)
+    tones: list[str] = Field(default_factory=list)
+    detail_levels: list[str] = Field(default_factory=list)
+    section_types: list[str] = Field(default_factory=list)
+    content_modes: list[str] = Field(default_factory=list)
+    selections: list[str] = Field(default_factory=list)
+
+
+class ReportComposeResponse(BaseModel):
+    report: ReportResponse
+    updated_sections: list[UUID] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
+# Realtime voice                                                              #
+# --------------------------------------------------------------------------- #
+
+
+class VoiceSessionRequest(BaseModel):
+    """Open a voice session. Authenticated over HTTP, unlike the socket."""
+
+    conversation_id: UUID | None = None
+    workspace: Literal["business", "technical"] = "technical"
+    project_key: str | None = Field(default=None, min_length=2, max_length=16)
+    dashboard_context: DashboardContext | None = None
+
+
+class VoiceSessionResponse(BaseModel):
+    # Opaque and short-lived: it identifies the session, it is not a credential
+    # for anything else, and it expires on its own.
+    session_token: str
+    expires_in_seconds: int
+    sample_rate: int
+    frame_bytes: int
+    end_silence_ms: int
+    max_utterance_seconds: int
+
+
+class VoiceCapabilityResponse(BaseModel):
+    enabled: bool
+    stt_available: bool
+    vad_available: bool
+    tts_configured: bool
+    detail: str | None = None

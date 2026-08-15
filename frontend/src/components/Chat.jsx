@@ -5,6 +5,8 @@ import remarkGfm from "remark-gfm";
 import DataTable from "./DataTable";
 import MetricChart from "./MetricChart";
 import RoleDashboard from "./RoleDashboard";
+import AddToReportMenu from "./chat/AddToReportMenu";
+import VoiceConversation from "./voice/VoiceConversation";
 import SuggestedQuestionChips from "./chat/SuggestedQuestionChips";
 import ConversationPanel from "./history/ConversationPanel";
 import ThreePanelWorkspace from "./layout/ThreePanelWorkspace";
@@ -184,6 +186,37 @@ export default function Chat({
     }
   }
 
+  // A spoken question is already persisted by the voice session, so it is
+  // rendered here rather than sent again through sendMessage.
+  function addVoiceTranscript(text) {
+    if (!text?.trim()) return;
+    setMessages((current) => [...current, makeMessage("user", text.trim())]);
+  }
+
+  function addVoiceAnswer(event) {
+    const conversationId = event.conversation_id;
+    if (conversationId && conversationId !== activeConversationId) {
+      setActiveConversationId(conversationId);
+      dashboard.setConversationId(conversationId);
+      window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversationId);
+    }
+    setMessages((current) => [
+      ...current,
+      makeMessage("assistant", event.text || "", {
+        chart: event.chart,
+        table: event.table,
+        warnings: event.warnings || [],
+        metadata: {
+          conversation_id: conversationId,
+          message_id: event.message_id,
+          answer_source: "voice",
+        },
+        followUps: [],
+      }),
+    ]);
+    loadRecent();
+  }
+
   function stopAudio() {
     audioRequestControllerRef.current?.abort();
     audioRequestControllerRef.current = null;
@@ -355,6 +388,7 @@ export default function Chat({
             <div className="copilot-message-body">
               <div className="copilot-message-meta"><span>{message.role === "assistant" ? "Zara" : "You"}</span><div>
                 {message.role === "assistant" && <button type="button" onClick={() => copyMessage(message)} aria-label="Copy response" title="Copy response"><Copy aria-hidden="true" /><span>{copiedId === message.id ? "Copied" : "Copy"}</span></button>}
+                {message.role === "assistant" && !message.error && <AddToReportMenu conversationId={message.metadata?.conversation_id || activeConversationId} messageId={message.metadata?.message_id} question={message.metadata?.question || ""} hasChart={Boolean(message.chart)} hasTable={Boolean(message.table)} />}
                 {message.role === "assistant" && <button type="button" onClick={() => speak(message)} aria-label={speakingId === message.id ? "Stop speaking" : "Read response aloud"} title="Read response aloud">{speakingId === message.id ? <Square aria-hidden="true" /> : <Volume2 aria-hidden="true" />}</button>}
               </div></div>
               <div className="copilot-message-content"><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown></div>
@@ -371,6 +405,17 @@ export default function Chat({
         {isSending && <div className="thinking" role="status"><span /><span /><span /><p>Zara is analysing the current scope…</p></div>}
         <div ref={endRef} />
       </div>
+
+      <VoiceConversation
+        onTranscript={addVoiceTranscript}
+        onAnswer={addVoiceAnswer}
+        sessionPayload={{
+          conversation_id: activeConversationId,
+          workspace: "technical",
+          project_key: project || null,
+          dashboard_context: dashboard.dashboardContext(),
+        }}
+      />
 
       <div className="copilot-composer-wrap">
         {speechError && <p className="speech-error" role="alert">{speechError}</p>}

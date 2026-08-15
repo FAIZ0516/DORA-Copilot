@@ -13,6 +13,99 @@
   --muted: #66788a;
   --red: #ed4655;
   --shadow: 0 10px 28px rgba(20, 67, 105, 0.1);
+
+  /* ---------------------------------------------------------------- *
+   * Chart tokens -- the single source of truth for every plot colour.
+   *
+   * `charts/chartTheme.js` reads these at render time for the Chart.js
+   * canvases (chat answers + role dashboard). The Zara workspace renders
+   * with recharts inside an isolated TypeScript project that cannot import
+   * that module, so it reads the same variables instead. Change a colour
+   * here and both chart systems follow.
+   *
+   * Series hues are spaced around the wheel and alternate in lightness, so
+   * adjacent series stay distinguishable in greyscale and for red-green
+   * colour blindness. Marker shape and line dash carry the same distinction
+   * again in JS, so meaning never depends on colour alone.
+   * ---------------------------------------------------------------- */
+  --chart-series-1: #4f46e5;
+  --chart-series-2: #0ea5e9;
+  --chart-series-3: #14b8a6;
+  --chart-series-4: #f59e0b;
+  --chart-series-5: #f43f5e;
+  --chart-series-6: #8b5cf6;
+  --chart-series-7: #22c55e;
+  --chart-series-8: #64748b;
+
+  --chart-ink: #1f2d3d;
+  --chart-ink-muted: #5b6b80;      /* 4.9:1 on --chart-surface */
+  --chart-grid: #e8eef6;
+  --chart-axis-zero: #cbd5e1;
+  --chart-surface: #ffffff;
+  --chart-track: rgba(100, 116, 139, 0.07);
+  --chart-card-border: #e2e9f2;
+  --chart-card-shadow: 0 1px 2px rgba(20, 45, 82, 0.04), 0 8px 24px rgba(20, 45, 82, 0.05);
+  --chart-tooltip-surface: #0f172a;
+  --chart-tooltip-ink: #f8fafc;
+  --chart-tooltip-muted: #cbd5e1;
+}
+
+/* Dark theme.
+ *
+ * Opt-in via `data-theme` rather than bare `prefers-color-scheme`, because the
+ * surrounding application chrome is still light-only -- flipping charts alone
+ * would leave dark cards on a light page. Setting data-theme="dark" (or "auto"
+ * to follow the OS) restyles every chart with no rebuild, because both chart
+ * systems resolve these variables at render time.
+ *
+ * Series hues are lifted in lightness so they keep contrast against the dark
+ * plot surface instead of sinking into it. */
+:root[data-theme="dark"] {
+  --chart-series-1: #a5b4fc;
+  --chart-series-2: #7dd3fc;
+  --chart-series-3: #5eead4;
+  --chart-series-4: #fcd34d;
+  --chart-series-5: #fda4af;
+  --chart-series-6: #c4b5fd;
+  --chart-series-7: #86efac;
+  --chart-series-8: #cbd5e1;
+
+  --chart-ink: #e8eef7;
+  --chart-ink-muted: #9aabc0;      /* 6.4:1 on --chart-surface */
+  --chart-grid: #253345;
+  --chart-axis-zero: #3d4d63;
+  --chart-surface: #131c28;
+  --chart-track: rgba(148, 163, 184, 0.1);
+  --chart-card-border: #253345;
+  --chart-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.28);
+  --chart-tooltip-surface: #f1f5f9;
+  --chart-tooltip-ink: #0f172a;
+  --chart-tooltip-muted: #475569;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="auto"] {
+    --chart-series-1: #a5b4fc;
+    --chart-series-2: #7dd3fc;
+    --chart-series-3: #5eead4;
+    --chart-series-4: #fcd34d;
+    --chart-series-5: #fda4af;
+    --chart-series-6: #c4b5fd;
+    --chart-series-7: #86efac;
+    --chart-series-8: #cbd5e1;
+
+    --chart-ink: #e8eef7;
+    --chart-ink-muted: #9aabc0;
+    --chart-grid: #253345;
+    --chart-axis-zero: #3d4d63;
+    --chart-surface: #131c28;
+    --chart-track: rgba(148, 163, 184, 0.1);
+    --chart-card-border: #253345;
+    --chart-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.28);
+    --chart-tooltip-surface: #f1f5f9;
+    --chart-tooltip-ink: #0f172a;
+    --chart-tooltip-muted: #475569;
+  }
 }
 
 * {
@@ -1662,54 +1755,113 @@ a {
 
 .metric-chart,
 .data-table-card {
-  margin: 14px 0 0;
-  padding: 18px;
-  background: #fff;
-  border: 1px solid #d7e6ed;
-  border-radius: 6px;
-  box-shadow: 0 5px 16px rgba(24, 77, 111, 0.06);
+  margin: 16px 0 0;
+  padding: 18px 18px 14px;
+  background: var(--chart-surface);
+  border: 1px solid var(--chart-card-border);
+  border-radius: 14px;
+  box-shadow: var(--chart-card-shadow);
 }
 
 .metric-chart figcaption,
 .data-table-heading {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 17px;
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
 .metric-chart figcaption > span,
 .data-table-heading strong {
-  color: #086db3;
-  font-size: 0.84rem;
-  font-weight: 800;
+  color: var(--chart-ink);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
+/* The chart-type label is orientation, not a heading -- a quiet pill keeps it
+   available without competing with the title. */
 .metric-chart figcaption small,
 .data-table-heading span {
-  color: #718797;
-  font-size: 0.63rem;
-  text-transform: uppercase;
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--chart-track);
+  color: var(--chart-ink-muted);
+  font-size: 0.6rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .chart-canvas {
   position: relative;
   width: 100%;
-  height: clamp(280px, 42vw, 410px);
+  height: clamp(240px, 38vw, 380px);
 }
 
+/* Part-to-whole charts need squarer room for the arc plus a side legend. */
 .chart-canvas-pie,
 .chart-canvas-donut,
 .chart-canvas-polar_area,
 .chart-canvas-radar {
-  height: clamp(320px, 48vw, 450px);
+  height: clamp(280px, 44vw, 400px);
 }
 
 .chart-data-summary {
-  margin: 10px 0 0;
-  color: #718797;
-  font-size: 0.62rem;
+  margin: 12px 0 0;
+  color: var(--chart-ink-muted);
+  font-size: 0.64rem;
+}
+
+.chart-empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 16px 0 0;
+  padding: 26px 18px;
+  border: 1px dashed var(--chart-card-border);
+  border-radius: 14px;
+  background: var(--chart-track);
+  text-align: center;
+}
+
+.chart-empty-state strong {
+  color: var(--chart-ink);
+  font-size: 0.78rem;
+}
+
+.chart-empty-state span {
+  color: var(--chart-ink-muted);
+  font-size: 0.66rem;
+}
+
+/* Phones: shorter plots so the chart and the answer around it stay on screen,
+   and a full-width legend rather than a squeezed side column. */
+@media (max-width: 640px) {
+  .metric-chart,
+  .data-table-card {
+    padding: 14px 12px 12px;
+    border-radius: 12px;
+  }
+
+  .metric-chart figcaption {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chart-canvas {
+    height: clamp(210px, 56vw, 280px);
+  }
+
+  .chart-canvas-pie,
+  .chart-canvas-donut,
+  .chart-canvas-polar_area,
+  .chart-canvas-radar {
+    height: clamp(250px, 72vw, 330px);
+  }
 }
 
 .data-table-scroll {
@@ -3961,9 +4113,91 @@ a {
 }
 
 .role-metric-card:hover .metric-ask-action,
-.metric-ask-action:focus-visible {
+.metric-ask-action:focus-visible,
+.metric-ask-menu.is-open .metric-ask-action {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Question chooser on a KPI card. The trigger stays visible while the menu is
+   open (see the .is-open rule above), otherwise moving the pointer off the
+   card to reach the list would fade the control away underneath it. */
+.metric-ask-menu {
+  position: relative;
+}
+
+.metric-ask-menu .metric-ask-action svg:last-child {
+  width: 11px;
+  transition: transform 180ms ease;
+}
+
+.metric-ask-menu.is-open .metric-ask-action svg:last-child {
+  transform: rotate(180deg);
+}
+
+/* Full-viewport click target that closes the menu. It sits under the option
+   list but over everything else. */
+.metric-ask-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.metric-ask-options {
+  position: absolute;
+  z-index: 41;
+  top: calc(100% + 6px);
+  left: -6px;
+  width: max(214px, calc(100% + 12px));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px;
+  border: 1px solid rgba(126, 168, 214, 0.26);
+  border-radius: 11px;
+  background: #16283f;
+  box-shadow: 0 16px 34px rgba(4, 16, 32, 0.46);
+  text-align: left;
+}
+
+.metric-ask-options p {
+  margin: 2px 6px 5px;
+  color: rgba(195, 217, 241, 0.56);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.metric-ask-options button {
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #dbe9f8;
+  font-size: 0.66rem;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.metric-ask-options button:hover,
+.metric-ask-options button:focus-visible {
+  background: rgba(88, 191, 225, 0.15);
+  color: #fff;
+}
+
+/* On a phone the card is narrow, so the list spans it and sits above the
+   fold rather than hanging off the right edge. */
+@media (max-width: 640px) {
+  .metric-ask-options {
+    left: 0;
+    width: 100%;
+  }
 }
 
 .dashboard-attention-panel {
@@ -4663,3 +4897,62 @@ a {
   .release-information > article { grid-template-columns: minmax(0, 1fr); }
   .metric-info-drawer { padding: 17px; }
 }
+
+/* "Add to report" on an assistant answer, rendered inside the chat panel. */
+.add-to-report { position: relative; display: inline-flex; }
+.add-to-report > button { display: inline-flex; align-items: center; gap: 4px; }
+/* The menu lives in a portal on document.body, so no chat rule can repaint
+   the scrim on hover or clip the panel. */
+.add-to-report-layer { position: fixed; z-index: 120; inset: 0; }
+.add-to-report-layer .add-to-report-scrim,
+.add-to-report-layer .add-to-report-scrim:hover,
+.add-to-report-layer .add-to-report-scrim:focus { position: fixed; inset: 0; padding: 0; border: 0; background: transparent; box-shadow: none; cursor: default; }
+.add-to-report-menu { position: fixed; z-index: 121; max-height: min(70vh, 520px); overflow-y: auto; display: grid; gap: 8px; padding: 12px; border: 1px solid var(--chart-card-border); border-radius: 12px; background: var(--chart-surface); box-shadow: 0 16px 34px rgba(20,45,82,.16); text-align: left; }
+.add-to-report-menu label { display: grid; gap: 3px; }
+.add-to-report-menu label span { color: var(--chart-ink-muted); font-size: 0.56rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.add-to-report-heading { margin: 2px 0 0; color: var(--chart-ink-muted); font-size: 0.56rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.add-to-report-list { display: grid; gap: 4px; max-height: 168px; overflow-y: auto; }
+.add-to-report-list button,
+.add-to-report-new { display: grid; gap: 1px; padding: 7px 9px; border: 1px solid var(--chart-card-border); border-radius: 9px; background: var(--chart-surface); color: var(--chart-ink); font: inherit; text-align: left; cursor: pointer; }
+.add-to-report-list strong { font-size: 0.7rem; }
+.add-to-report-list small { color: var(--chart-ink-muted); font-size: 0.6rem; }
+.add-to-report-new { display: flex; align-items: center; gap: 6px; font-size: 0.68rem; font-weight: 600; }
+.add-to-report-note { margin: 0; color: var(--chart-ink-muted); font-size: 0.64rem; }
+.add-to-report-note.is-error { color: #b91c1c; }
+
+/* The menu's own controls and its phone layout live here too: the chat page
+   never loads report-studio.css. */
+.add-to-report-menu select {
+  min-height: 34px; padding: 6px 9px; border: 1px solid var(--chart-card-border); border-radius: 9px;
+  background: var(--chart-surface); color: var(--chart-ink); font: inherit; font-size: 0.76rem;
+}
+
+
+
+/* Realtime voice conversation. Sits above the composer, which stays usable as
+   the fallback whenever voice is unavailable or the user prefers typing. */
+.voice-panel { display: grid; gap: 9px; margin: 0 11px 8px; padding: 11px 13px; border: 1px solid var(--chart-card-border); border-radius: 12px; background: var(--chart-surface); }
+.voice-panel--assistant_speaking { border-color: var(--chart-series-1); }
+.voice-panel--user_speaking { border-color: var(--chart-series-3); }
+.voice-panel--unavailable { grid-auto-flow: column; grid-template-columns: auto 1fr; align-items: center; }
+.voice-panel--unavailable p { margin: 0; color: var(--chart-ink-muted); font-size: 0.68rem; line-height: 1.5; }
+.voice-panel-status { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; }
+.voice-indicator { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--chart-track); color: var(--chart-ink-muted); }
+.voice-indicator svg { width: 15px; height: 15px; }
+.voice-indicator--listening { background: rgba(20,184,166,.16); color: #0f766e; }
+.voice-indicator--user_speaking { background: rgba(34,197,94,.18); color: #15803d; }
+.voice-indicator--assistant_speaking { background: rgba(79,70,229,.16); color: #4338ca; }
+.voice-indicator--interrupted, .voice-indicator--error { background: rgba(245,158,11,.18); color: #b45309; }
+.voice-panel-status strong { font-size: 0.74rem; }
+.voice-transcript { margin: 2px 0 0; color: var(--chart-ink); font-size: 0.72rem; line-height: 1.45; }
+.voice-hint { margin: 2px 0 0; color: var(--chart-ink-muted); font-size: 0.66rem; }
+.voice-flag { display: flex; align-items: center; gap: 6px; margin: 0; color: #92400e; font-size: 0.66rem; }
+.voice-flag--error { color: #b91c1c; }
+.voice-flag svg { width: 13px; height: 13px; }
+.voice-panel-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.voice-panel-actions button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 1px solid var(--chart-card-border); border-radius: 9px; background: var(--chart-surface); color: var(--chart-ink); font: inherit; font-size: 0.68rem; font-weight: 600; cursor: pointer; }
+.voice-panel-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.voice-panel-actions button:focus-visible { outline: 2px solid var(--chart-series-2); outline-offset: 2px; }
+.voice-panel-actions .voice-start { border-color: var(--chart-series-1); background: var(--chart-series-1); color: #fff; }
+.voice-panel-actions .voice-stop { border-color: var(--chart-series-5); color: var(--chart-series-5); }
+.voice-panel-actions svg { width: 13px; height: 13px; }

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
 import ssl
 
 import httpx
@@ -15,6 +16,9 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .database.db import TTSUsage
+
+
+logger = logging.getLogger(__name__)
 
 
 class TTSNotConfiguredError(RuntimeError):
@@ -102,8 +106,62 @@ def adjust_characters(session: Session, delta: int) -> UsageSnapshot:
     )
 
 
+# Resolved once per process. A free ElevenLabs plan refuses "library" voices
+# over the API with HTTP 402, and the voice picker on their site shows library
+# voices most prominently -- so a perfectly reasonable choice silently breaks
+# speech. Rather than fail, fall back to a premade voice on the account.
+_resolved_voice_id: str | None = None
+
+
+async def _premade_voice_id(wanted: str | None = None) -> str | None:
+    """The closest usable premade voice to the one that was refused.
+
+    Falls back on similarity rather than "whatever is first": a Malay woman's
+    voice replaced by a male American one is a worse answer than a female one
+    that at least matches. Premade voices are English-accented, but the
+    configured multilingual model still pronounces other languages, so gender
+    is the attribute worth preserving.
+
+    Opens its own client: the shared error path closes the caller's before
+    this runs.
+    """
+
+    ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    try:
+        async with httpx.AsyncClient(
+            timeout=settings.elevenlabs_timeout_seconds, verify=ssl_context
+        ) as client:
+            response = await client.get(
+                "https://api.elevenlabs.io/v1/voices",
+                headers={"xi-api-key": settings.elevenlabs_api_key},
+            )
+            if response.status_code != 200:
+                return None
+            voices = response.json().get("voices", [])
+    except httpx.HTTPError:
+        return None
+
+    target = next((v for v in voices if v.get("voice_id") == wanted), None)
+    wanted_labels = (target or {}).get("labels") or {}
+    usable = [v for v in voices if v.get("category") == "premade" and v.get("voice_id")]
+    if not usable:
+        return None
+
+    def score(voice: dict) -> tuple[int, int]:
+        labels = voice.get("labels") or {}
+        return (
+            1 if labels.get("language") == wanted_labels.get("language") else 0,
+            1 if labels.get("gender") == wanted_labels.get("gender") else 0,
+        )
+
+    best = max(usable, key=score)
+    return str(best["voice_id"])
+
+
 async def create_audio_stream(text: str, session: Session) -> AudioStream:
     """Open ElevenLabs' response stream and return a browser-ready MP3 iterator."""
+
+    global _resolved_voice_id
 
     if not settings.elevenlabs_api_key:
         raise TTSNotConfiguredError("ELEVENLABS_API_KEY is not configured.")
@@ -117,10 +175,8 @@ async def create_audio_stream(text: str, session: Session) -> AudioStream:
         timeout=settings.elevenlabs_timeout_seconds,
         verify=ssl_context,
     )
-    url = (
-        "https://api.elevenlabs.io/v1/text-to-speech/"
-        f"{settings.elevenlabs_voice_id}"
-    )
+    voice_id = _resolved_voice_id or settings.elevenlabs_voice_id
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     request = client.build_request(
         "POST",
         url,
@@ -149,6 +205,28 @@ async def create_audio_stream(text: str, session: Session) -> AudioStream:
         await client.aclose()
         adjust_characters(session, -estimated_cost)
         detail = payload.decode("utf-8", errors="replace")[:300]
+        # A free ElevenLabs plan cannot use "library" voices over the API, only
+        # the premade ones on the account. The raw 402 body says nothing about
+        # which setting is wrong, so name it -- this cost a debugging session.
+        if response.status_code == 402 and "library voices" in detail.lower():
+            fallback = await _premade_voice_id(voice_id)
+            if fallback and fallback != voice_id:
+                logger.warning(
+                    "ElevenLabs voice %s is a library voice this plan cannot use; "
+                    "falling back to premade voice %s. Set ELEVENLABS_VOICE_ID to a "
+                    "premade voice to silence this.",
+                    voice_id,
+                    fallback,
+                )
+                _resolved_voice_id = fallback
+                # Retry once with a voice the plan allows.
+                return await create_audio_stream(text, session)
+            raise TTSProviderError(
+                f"The configured ElevenLabs voice ({voice_id}) is a library voice, "
+                "which a free plan cannot use over the API, and no premade voice "
+                "could be found on the account. Set ELEVENLABS_VOICE_ID to a premade "
+                "voice, or upgrade the plan."
+            )
         raise TTSProviderError(
             f"ElevenLabs returned HTTP {response.status_code}: {detail}"
         )
