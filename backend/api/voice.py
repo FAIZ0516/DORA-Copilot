@@ -401,6 +401,7 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
     )
     turn_task: asyncio.Task[None] | None = None
     deaf_until = 0.0
+    audio_bytes = 0
     # Whether the turn now finishing was cut short by the user rather than
     # ending on its own. It decides whether the echo guard applies.
     cut_in = False
@@ -439,6 +440,7 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
             chunk = message.get("bytes")
             if not chunk:
                 continue
+            audio_bytes += len(chunk)
 
             # A turn that has just finished leaves the room echoing and the
             # detectors mid-utterance. Start the next one from silence.
@@ -562,6 +564,15 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
     except Exception:  # noqa: BLE001 - a socket failure must not take the app down
         logger.exception("Voice session failed")
     finally:
+        if not audio_bytes:
+            # A session that opened, sat there and closed without a single
+            # frame. Silent on both sides, and indistinguishable from the
+            # assistant ignoring the user, so it gets said out loud.
+            logger.warning(
+                "Voice session %s received no audio at all -- microphone capture "
+                "never started in the browser.",
+                token[:8],
+            )
         # One place that always runs: the token dies with the socket.
         if turn_task is not None and not turn_task.done():
             turn_task.cancel()

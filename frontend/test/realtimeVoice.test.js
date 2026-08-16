@@ -168,3 +168,30 @@ test("audio is downsampled with a filter, not by dropping samples", () => {
   assert.match(worklet, /this\.filled === this\.frameSamples/);
   assert.match(transportSource, /export const FRAME_SAMPLES = 512/);
 });
+
+test("the audio context is resumed, since it starts suspended after the click is spent", () => {
+  // Starting a session awaits the session token and the microphone permission
+  // before the context is built, by which point the click that authorised it
+  // no longer counts as user activation. Chrome then creates the context
+  // suspended, and a suspended context never runs the worklet -- the socket
+  // opens, no audio is ever captured, and the session looks like the assistant
+  // simply ignoring you.
+  const source = readFileSync(
+    new URL("../src/services/realtimeVoice.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /if \(this\.context\.state === "suspended"\) await this\.context\.resume\(\)/);
+});
+
+test("capture that produces nothing is reported instead of failing silently", () => {
+  // The worklet emits frames whether or not anyone is speaking, so zero frames
+  // means capture is dead, never a quiet room.
+  const source = readFileSync(
+    new URL("../src/services/realtimeVoice.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /framesSent/);
+  assert.match(source, /No audio is reaching the server/);
+  // And the watchdog must not outlive the session.
+  assert.match(source, /clearTimeout\(this\.captureWatchdog\)/);
+});

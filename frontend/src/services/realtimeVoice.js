@@ -135,6 +135,9 @@ export class VoiceTransport {
     this.currentAudio = null;
     this.objectUrls = new Set();
     this.playingTurn = null;
+    // Capture is silent when it breaks, so it gets counted and watched.
+    this.framesSent = 0;
+    this.captureWatchdog = null;
   }
 
   async start(sessionPayload) {
@@ -143,7 +146,28 @@ export class VoiceTransport {
     this.token = session.session_token;
     await this.#openMicrophone();
     await this.#connect(session);
+    this.#watchCapture();
     return session;
+  }
+
+  /**
+   * Notice when the microphone produces nothing.
+   *
+   * The worklet emits frames continuously whether or not anyone is speaking,
+   * so silence here does not mean a quiet room -- it means capture is dead.
+   * Without this the failure looks exactly like the assistant ignoring you.
+   */
+  #watchCapture() {
+    clearTimeout(this.captureWatchdog);
+    this.captureWatchdog = setTimeout(() => {
+      if (this.stopped || this.framesSent > 0) return;
+      this.onError(
+        new Error(
+          "No audio is reaching the server. Check that the right microphone is "
+          + "selected and that this tab is not muted, then start voice again."
+        )
+      );
+    }, 3000);
   }
 
   async #openMicrophone() {
@@ -165,10 +189,20 @@ export class VoiceTransport {
       processorOptions: { targetRate: TARGET_SAMPLE_RATE, frameSamples: FRAME_SAMPLES },
     });
     this.node.port.onmessage = (event) => {
-      if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(event.data);
+      if (this.socket?.readyState === WebSocket.OPEN) {
+        this.framesSent += 1;
+        this.socket.send(event.data);
+      }
     };
     this.source.connect(this.node);
     // Not connected to the destination: capture must never be audible.
+
+    // Starting a session involves two awaits before this point — minting the
+    // token and the microphone permission — and the click that authorised it
+    // has been spent by then. A context created without live user activation
+    // starts suspended, and a suspended context never runs the worklet: the
+    // socket opens, no audio is ever captured, and nothing at all happens.
+    if (this.context.state === "suspended") await this.context.resume();
   }
 
   #connect(session) {
@@ -254,6 +288,8 @@ export class VoiceTransport {
 
   async stop() {
     this.stopped = true;
+    clearTimeout(this.captureWatchdog);
+    this.captureWatchdog = null;
     this.stopPlayback();
     this.send({ type: "session.stop" });
     try {
