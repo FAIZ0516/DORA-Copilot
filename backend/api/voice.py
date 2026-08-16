@@ -498,7 +498,18 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                         recent.append(frame)
                     else:
                         recent.clear()
-                    if barge_in.feed(probability) == "start":
+
+                    # Only speech over the assistant's actual voice is an
+                    # interruption. While it is transcribing or thinking there
+                    # is nothing to interrupt and the user is waiting for an
+                    # answer -- treating a cough or a passing remark as a
+                    # barge-in there cancels the turn and they never get one.
+                    # Thinking can run tens of seconds, so that window is wide.
+                    if session.state != VoiceState.ASSISTANT_SPEAKING:
+                        # Reset rather than accumulate, or noise from the wait
+                        # would cancel the answer the moment it started.
+                        barge_in.reset()
+                    elif barge_in.feed(probability) == "start":
                         barge_in.reset()
                         interrupted = session.active_turn
                         if interrupted:

@@ -381,3 +381,47 @@ def test_the_echo_guard_does_not_apply_when_the_user_cut_in():
     body = inspect.getsource(voice_module.voice_socket)
     assert "cut_in = True" in body, "barge-in must record that it cut the turn short"
     assert "if not cut_in:" in body, "the guard must be skipped after a barge-in"
+
+
+def test_noise_while_thinking_never_cancels_the_answer():
+    """Only speech over the assistant's voice counts as an interruption.
+
+    Transcribing and thinking are dead air the user is waiting through -- and
+    thinking can run tens of seconds. Treating a cough or a passing remark as a
+    barge-in there cancelled the turn, so the question was heard, understood,
+    and then silently thrown away: the UI sat on "Thinking" and "Zara was
+    interrupted" together, and no answer ever arrived.
+    """
+
+    import inspect
+
+    import backend.api.voice as voice_module
+
+    body = inspect.getsource(voice_module.voice_socket)
+    guard = "if session.state != VoiceState.ASSISTANT_SPEAKING:"
+    assert guard in body, "barge-in must be limited to the assistant speaking"
+    # The guard has to come before the detector is fed, not after.
+    assert body.index(guard) < body.index("elif barge_in.feed(probability)")
+
+
+def test_the_interrupt_bar_is_only_reachable_while_speaking():
+    """The detector resets outside speaking, so waiting noise cannot accumulate.
+
+    Without the reset, a long think would leave the barge-in detector already
+    primed and the first syllable of the answer would cancel it.
+    """
+
+    from backend.config import settings
+    from backend.services.voice_audio import UtteranceDetector
+
+    barge = UtteranceDetector(start_speech_ms=float(settings.voice_barge_in_ms))
+    frames_needed = int(settings.voice_barge_in_ms / barge.frame_ms()) + 1
+
+    # Noise during the wait, reset each frame the way the socket does.
+    for _ in range(frames_needed * 3):
+        barge.feed(0.99)
+        barge.reset()
+    assert barge.speaking is False
+
+    # Speech once the assistant is actually talking still interrupts.
+    assert any(barge.feed(0.99) == "start" for _ in range(frames_needed))
