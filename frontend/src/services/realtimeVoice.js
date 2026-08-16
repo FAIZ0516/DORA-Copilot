@@ -138,6 +138,12 @@ export class VoiceTransport {
     // Capture is silent when it breaks, so it gets counted and watched.
     this.framesSent = 0;
     this.captureWatchdog = null;
+    // The turn whose last segment has arrived, still waiting to be played out.
+    this.pendingFinish = null;
+    // Turns the user has cut off. Segments for these are dropped rather than
+    // played: the server delivers a whole answer in about a second, so several
+    // are usually already in hand when the interruption happens.
+    this.cancelledTurns = new Set();
   }
 
   async start(sessionPayload) {
@@ -222,8 +228,17 @@ export class VoiceTransport {
         } catch {
           return;
         }
-        if (payload.type === "assistant.audio_chunk") this.#enqueueAudio(payload);
-        else this.onEvent(payload);
+        if (payload.type === "assistant.audio_chunk") {
+          this.#enqueueAudio(payload);
+          return;
+        }
+        if (payload.type === "assistant.audio_finished") {
+          // Sent, not heard. Report back once the queue actually drains.
+          this.pendingFinish = payload.turn_id;
+          this.#reportPlaybackFinished();
+        }
+        if (payload.type === "assistant.interrupted") this.cancelledTurns.add(payload.turn_id);
+        this.onEvent(payload);
       };
     });
   }
@@ -242,8 +257,27 @@ export class VoiceTransport {
    * trip would leave the assistant talking over them.
    */
   interrupt(turnId) {
+    const turn = turnId || this.playingTurn;
+    if (turn) this.cancelledTurns.add(turn);
     this.stopPlayback();
-    this.send({ type: "response.cancel", turn_id: turnId || this.playingTurn });
+    this.send({ type: "response.cancel", turn_id: turn });
+  }
+
+  /**
+   * Tell the server the assistant has genuinely stopped talking.
+   *
+   * It cannot know: a half-minute answer is delivered to the browser in about
+   * a second, so the server's own idea of "speaking" ends long before the user
+   * stops hearing it. Without this the session went back to listening while
+   * the answer was still playing, and an interruption had nothing left to
+   * interrupt.
+   */
+  #reportPlaybackFinished() {
+    if (!this.pendingFinish) return;
+    if (this.currentAudio || this.audioQueue.length) return;
+    const turnId = this.pendingFinish;
+    this.pendingFinish = null;
+    this.send({ type: "playback.finished", turn_id: turnId });
   }
 
   stopPlayback() {
@@ -256,9 +290,14 @@ export class VoiceTransport {
     for (const url of this.objectUrls) URL.revokeObjectURL(url);
     this.objectUrls.clear();
     this.playingTurn = null;
+    // The server is told separately, by the cancel; nothing is owed here.
+    this.pendingFinish = null;
   }
 
   #enqueueAudio(payload) {
+    // Segments already in flight when the user cut in. Playing them is exactly
+    // the "it keeps talking after I interrupt" problem.
+    if (this.cancelledTurns.has(payload.turn_id)) return;
     const bytes = Uint8Array.from(atob(payload.data), (character) => character.charCodeAt(0));
     const url = URL.createObjectURL(new Blob([bytes], { type: payload.mime || "audio/mpeg" }));
     this.objectUrls.add(url);
@@ -270,6 +309,7 @@ export class VoiceTransport {
     const next = this.audioQueue.shift();
     if (!next) {
       this.currentAudio = null;
+      this.#reportPlaybackFinished();
       return;
     }
     const audio = new Audio(next.url);

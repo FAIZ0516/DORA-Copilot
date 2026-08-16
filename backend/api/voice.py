@@ -82,6 +82,9 @@ CLOSE_NOT_FOUND = 4404
 
 # Stop buffering a runaway utterance well before memory becomes a problem.
 MAX_UTTERANCE_BYTES = 16_000 * 2 * 120
+# Slack on top of the estimated speaking time before a session stops waiting
+# for a browser that never says it finished playing.
+PLAYBACK_GRACE_SECONDS = 20.0
 
 
 @router.get("/capabilities", response_model=VoiceCapabilityResponse)
@@ -212,6 +215,7 @@ async def _speak(sender: _Sender, session: VoiceSession, answer: str, turn_id: s
     )
     await _set_state(sender, session, VoiceState.ASSISTANT_SPEAKING)
 
+    spoken_bytes = 0
     for index, segment in enumerate(segments):
         if session.is_cancelled(turn_id):
             break
@@ -243,22 +247,38 @@ async def _speak(sender: _Sender, session: VoiceSession, answer: str, turn_id: s
 
         if session.is_cancelled(turn_id):
             break
+        audio = b"".join(chunks)
+        spoken_bytes += len(audio)
         await sender.json(
             {
                 "type": "assistant.audio_chunk",
                 "turn_id": turn_id,
                 "index": index,
                 "mime": "audio/mpeg",
-                "data": base64.b64encode(b"".join(chunks)).decode("ascii"),
+                "data": base64.b64encode(audio).decode("ascii"),
             }
         )
 
     if session.is_cancelled(turn_id):
         await _send(sender, ServerEvent(type="assistant.interrupted", turn_id=turn_id))
         await _set_state(sender, session, VoiceState.INTERRUPTED)
-    else:
-        await _send(sender, ServerEvent(type="assistant.audio_finished", turn_id=turn_id))
-    await _set_state(sender, session, VoiceState.LISTENING)
+        await _set_state(sender, session, VoiceState.LISTENING)
+        return
+
+    # Everything has been *sent*, which is not the same as heard. Synthesis
+    # runs far faster than speech: a half-minute answer is delivered in about a
+    # second. Going back to listening here left the session deaf for the entire
+    # time the user could actually hear the assistant -- so a barge-in had
+    # nothing to interrupt, and the answer played to the end no matter what.
+    # The browser reports when it truly stops, and until then this stays
+    # ASSISTANT_SPEAKING.
+    await _send(sender, ServerEvent(type="assistant.audio_finished", turn_id=turn_id))
+    session.awaiting_playback = turn_id
+    # A client that never reports back must not wedge the session. Audio is
+    # roughly 16 KB per second of speech; allow well over that, then move on.
+    session.playback_deadline = (
+        time.monotonic() + (spoken_bytes / 16_000) * 2 + PLAYBACK_GRACE_SECONDS
+    )
 
 
 async def _handle_utterance(sender: _Sender, session: VoiceSession, pcm: bytes) -> None:
@@ -407,7 +427,25 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
     cut_in = False
 
     def busy() -> bool:
-        return turn_task is not None and not turn_task.done()
+        """Is the assistant occupying the conversation right now?
+
+        Not just computing an answer -- also while the browser is still playing
+        one. Audio is delivered in about a second and heard over tens of them,
+        so the playback window is most of the time the user can hear anything.
+        """
+
+        if turn_task is not None and not turn_task.done():
+            return True
+        return session.awaiting_playback is not None
+
+    async def finish_playback() -> None:
+        """The assistant has genuinely stopped talking."""
+
+        nonlocal deaf_until
+        session.awaiting_playback = None
+        session.playback_deadline = 0.0
+        await _set_state(sender, session, VoiceState.LISTENING)
+        deaf_until = time.monotonic() + settings.voice_echo_guard_ms / 1000
 
     await _send(
         sender,
@@ -432,15 +470,39 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                     continue
                 if event.type == "session.stop":
                     break
+                if event.type == "playback.finished":
+                    # Only the turn we are actually waiting on: a late report
+                    # for an old answer must not cut the current one short.
+                    if session.awaiting_playback and event.turn_id in (
+                        None,
+                        session.awaiting_playback,
+                    ):
+                        await finish_playback()
+                    continue
                 if event.type == "response.cancel":
                     session.cancel(event.turn_id or session.active_turn)
+                    session.awaiting_playback = None
+                    session.playback_deadline = 0.0
                     await _set_state(sender, session, VoiceState.INTERRUPTED)
+                    await _set_state(sender, session, VoiceState.LISTENING)
                 continue
 
             chunk = message.get("bytes")
             if not chunk:
                 continue
             audio_bytes += len(chunk)
+
+            if (
+                session.awaiting_playback
+                and session.playback_deadline
+                and time.monotonic() > session.playback_deadline
+            ):
+                logger.warning(
+                    "Voice session %s never reported finishing playback; "
+                    "resuming anyway.",
+                    token[:8],
+                )
+                await finish_playback()
 
             # A turn that has just finished leaves the room echoing and the
             # detectors mid-utterance. Start the next one from silence.
@@ -511,7 +573,9 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                         barge_in.reset()
                     elif barge_in.feed(probability) == "start":
                         barge_in.reset()
-                        interrupted = session.active_turn
+                        interrupted = session.active_turn or session.awaiting_playback
+                        session.awaiting_playback = None
+                        session.playback_deadline = 0.0
                         if interrupted:
                             session.cancel(interrupted)
                             await _send(
@@ -527,6 +591,11 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                         detector.reset()
                         buffer.clear()
                         cut_in = True
+                        # The turn may already have finished sending and be
+                        # waiting on playback, in which case nothing else will
+                        # move the session on.
+                        await _set_state(sender, session, VoiceState.INTERRUPTED)
+                        await _set_state(sender, session, VoiceState.LISTENING)
                     continue
 
                 # The assistant has just stopped; let the room fall quiet.

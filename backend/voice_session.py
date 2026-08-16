@@ -110,6 +110,10 @@ class ClientEvent(BaseModel):
         "user.speech_started",
         "user.speech_ended",
         "response.cancel",
+        # The browser reporting that it has finished playing an answer. The
+        # server delivers audio far faster than it can be listened to, so this
+        # is the only account of when the assistant actually stops talking.
+        "playback.finished",
         "session.stop",
     ]
     # Which assistant response the client is cancelling, so a late cancel for an
@@ -172,6 +176,13 @@ class VoiceSession:
     # Set when the user interrupts; the in-flight turn checks it and discards
     # its own result rather than speaking a stale answer.
     cancelled_turns: set[str] = field(default_factory=set)
+    # The turn whose audio the browser is still playing. Synthesis finishes in
+    # about a second while the speech itself runs for tens of seconds, so a
+    # session that went back to listening when the last segment was *sent* was
+    # deaf for the entire time the user could actually hear anything.
+    awaiting_playback: str | None = None
+    # Backstop for a client that never reports finishing.
+    playback_deadline: float = 0.0
 
     def expired(self, *, now: float | None = None) -> bool:
         return (now or time.monotonic()) >= self.expires_at

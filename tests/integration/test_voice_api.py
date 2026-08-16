@@ -425,3 +425,41 @@ def test_the_interrupt_bar_is_only_reachable_while_speaking():
 
     # Speech once the assistant is actually talking still interrupts.
     assert any(barge.feed(0.99) == "start" for _ in range(frames_needed))
+
+
+def test_the_session_stays_speaking_until_the_browser_says_it_stopped():
+    """Delivery is not hearing, and the gap between them is the whole answer.
+
+    Synthesis runs far faster than speech: a half-minute answer reaches the
+    browser in about a second. Treating the last segment leaving as the end of
+    the turn put the session back to listening while the user could still hear
+    the assistant -- so a barge-in found nothing in flight, and the answer
+    played to the end no matter what they did.
+    """
+
+    import inspect
+
+    import backend.api.voice as voice_module
+
+    speak = inspect.getsource(voice_module._speak)
+    assert "session.awaiting_playback = turn_id" in speak
+    # And it must no longer declare the session free the moment sending ends.
+    tail = speak.split("assistant.audio_finished")[-1]
+    assert "VoiceState.LISTENING" not in tail
+
+    body = inspect.getsource(voice_module.voice_socket)
+    assert "session.awaiting_playback is not None" in body, "busy() must cover playback"
+    assert 'event.type == "playback.finished"' in body
+
+
+def test_a_browser_that_never_reports_playback_does_not_wedge_the_session():
+    """The deadline is the difference between a stuck session and a slow one."""
+
+    import inspect
+
+    import backend.api.voice as voice_module
+
+    body = inspect.getsource(voice_module.voice_socket)
+    assert "session.playback_deadline" in body
+    assert "never reported finishing playback" in body
+    assert voice_module.PLAYBACK_GRACE_SECONDS > 0

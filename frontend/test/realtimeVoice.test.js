@@ -195,3 +195,27 @@ test("capture that produces nothing is reported instead of failing silently", ()
   // And the watchdog must not outlive the session.
   assert.match(source, /clearTimeout\(this\.captureWatchdog\)/);
 });
+
+test("the browser reports when the answer has actually finished playing", () => {
+  // The server delivers a half-minute answer in about a second, so it cannot
+  // know when the user stops hearing it. Without this report the session went
+  // back to listening mid-answer and interrupting had nothing to interrupt.
+  const source = readFileSync(
+    new URL("../src/services/realtimeVoice.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /playback\.finished/);
+  // Reported when the queue drains, not when the last segment arrives.
+  assert.match(source, /if \(this\.currentAudio \|\| this\.audioQueue\.length\) return;/);
+});
+
+test("segments already in flight are dropped once the turn is cut off", () => {
+  // Several segments are usually already in the browser when the user cuts in.
+  // Playing them is exactly the "it keeps talking after I interrupt" problem.
+  const source = readFileSync(
+    new URL("../src/services/realtimeVoice.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /cancelledTurns/);
+  assert.match(source, /if \(this\.cancelledTurns\.has\(payload\.turn_id\)\) return;/);
+});
