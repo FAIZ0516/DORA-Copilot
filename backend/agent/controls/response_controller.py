@@ -103,6 +103,13 @@ STRUCTURE_RULES: tuple[str, ...] = (
     "headers on their own line, naming what the section actually contains. "
     "Use only headers that carry content the request called for -- never emit "
     "an empty, generic, or padded section.",
+    # A specific header rather than a generic one, which is exactly what the
+    # relevance rules ask for. It applies only when improvement content is
+    # admissible at all -- response_decision.py decides that -- so this names
+    # the header without inviting the section.
+    "When the answer does include improvements or actions the user asked for, "
+    "label that section with the bold header **What to Improve** on its own "
+    "line, rather than a generic 'next steps' or 'recommendations' heading.",
     "Put supporting numbers next to what they describe, not in a separate "
     "recital of figures.",
     "Prefer the shortest layout that stays clear: a two-sentence answer needs "
@@ -459,7 +466,8 @@ def describe_policy(policy: ResponsePolicy) -> str:
         else "Respond in the same language the user used for this message."
     )
     lines.append(
-        "Offer at most one or two concise, specific next steps."
+        "Offer at most one or two concise, specific next steps under a bold "
+        "**What to Improve** header."
         if policy["suggest_next_action"]
         else "Do not append a suggested next action, an offer of further help, "
         "or a suggested follow-up question. The interface has its own "

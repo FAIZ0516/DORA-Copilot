@@ -321,3 +321,38 @@ def test_a_clarification_offering_options_is_not_flagged_as_a_next_step():
     )
     assert "unrequested_next_steps" not in _codes(answer, decision)
     assert strip_unpermitted_sections(answer, decision) == answer
+
+
+def test_a_squad_risk_question_may_close_with_what_to_improve():
+    """Two features meeting: the risk-answer shape and the relevance gating.
+
+    The runtime instructions define a three-part shape for "why is this squad
+    at risk" -- driving metrics, stabilising metrics, then one or two actions
+    under **What to Improve**. The wording never says "recommend", so without
+    an explicit signal the gating would strip the section the answer is
+    supposed to end with.
+    """
+
+    decision = _decide("Why is TITAN squad at risk?")
+    assert decision["profile"] == "recommendation"
+    assert "recommendation" in decision["required_blocks"]
+
+    answer = (
+        "TITAN's lead time jumped 51% from 2025 to 2026, from 1.0 to 1.51 "
+        "months. Change failure rate held at 0% over the same period.\n\n"
+        "**What to Improve**\n"
+        "- Break releases into smaller batches\n"
+    )
+    codes = _codes(answer, decision)
+    assert "unexpected_section" not in codes
+    assert "unrequested_recommendation" not in codes
+    assert "What to Improve" in strip_unpermitted_sections(answer, decision)
+
+
+def test_what_to_improve_is_still_stripped_from_a_plain_count():
+    """The header is specific, not exempt. A count answer has no business with it."""
+
+    decision = _decide("How many open bugs does MBK have?")
+    answer = "MBK has 27 open bugs.\n\n**What to Improve**\n- Triage the backlog\n"
+    assert "unexpected_section" in _codes(answer, decision)
+    assert "What to Improve" not in strip_unpermitted_sections(answer, decision)

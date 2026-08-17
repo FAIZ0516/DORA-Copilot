@@ -43,7 +43,14 @@ _HEADING_BLOCKS: tuple[tuple[re.Pattern[str], str], ...] = (
         ),
         "limitation",
     ),
-    (re.compile(r"^(?:recommendations?|what to do|suggested actions?)$", re.I), "recommendation"),
+    (
+        re.compile(
+            r"^(?:recommendations?|what to do|what to improve|"
+            r"suggested actions?)$",
+            re.I,
+        ),
+        "recommendation",
+    ),
     (re.compile(r"^(?:next steps?|next action|suggested next steps?)$", re.I), "next_step"),
 )
 

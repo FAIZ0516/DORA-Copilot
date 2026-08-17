@@ -102,6 +102,18 @@ _REPORT_REQUEST = re.compile(
     r"full breakdown|deep dive)\b",
     re.I,
 )
+# Asking why a squad is flagged. The runtime instructions define a three-part
+# shape for these -- the metrics driving the flag, the stabilising ones for
+# balance, and one or two concrete actions under **What to Improve** -- so the
+# actions are requested by product design even though the wording never says
+# "recommend". Without this the relevance gating would strip exactly the
+# section that answer is supposed to end with.
+_RISK_EXPLANATION_REQUEST = re.compile(
+    r"\b(?:why|what)\b[^?]{0,60}\b(?:at risk|needs attention|flagged|"
+    r"risk(?:y|iest)?|struggling|behind|underperform\w*)\b"
+    r"|\b(?:at risk|needs attention)\b[^?]{0,40}\bwhy\b",
+    re.I,
+)
 _COMPARISON_REQUEST = re.compile(
     r"\b(compare|comparison|versus|vs\.?|against|difference between|"
     r"which (?:is|one is|squad is|team is) (?:better|worse|higher|lower|faster|slower))\b",
@@ -167,6 +179,9 @@ def choose_profile(
     if mode == "data" and results and not _has_rows(results):
         return "no_result"
     if policy.get("recommendation_mode") == "evidence_based":
+        return "recommendation"
+    if _RISK_EXPLANATION_REQUEST.search(message):
+        # Explains the flag and closes with actions -- both are the answer.
         return "recommendation"
     if _REPORT_REQUEST.search(message):
         return "report"
