@@ -50,15 +50,12 @@ export const createReport = (payload) =>
 export const updateReport = (id, payload) =>
   request(`/api/reports/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
 
-<<<<<<< HEAD
 export const applyReportTemplate = (id, template) =>
   request(`/api/reports/${id}/template`, {
     method: "POST",
     body: JSON.stringify({ template }),
   });
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 export const archiveReport = (id) => request(`/api/reports/${id}`, { method: "DELETE" });
 
 export const duplicateReport = (id, title) =>
@@ -94,15 +91,12 @@ export const composeReport = (id, sectionIds = []) =>
     body: JSON.stringify({ section_ids: sectionIds }),
   });
 
-<<<<<<< HEAD
 export const refineReportSection = (id, sectionId, instruction) =>
   request(`/api/reports/${id}/refine`, {
     method: "POST",
     body: JSON.stringify({ section_id: sectionId, instruction }),
   });
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 export const generateReport = (id) => request(`/api/reports/${id}/generate`, { method: "POST" });
 
 export const validateReport = (id) => request(`/api/reports/${id}/validate`, { method: "POST" });
@@ -112,19 +106,11 @@ export const validateReport = (id) => request(`/api/reports/${id}/validate`, { m
  * browser as a blob, so there is no public URL and nothing is left on a server
  * for someone else to fetch.
  */
-<<<<<<< HEAD
 async function fetchReportExport(id, format = "pdf", sectionId = null, preview = false) {
   const response = await fetch(`${API_BASE}/api/reports/${id}/export`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({ format, section_id: sectionId, preview }),
-=======
-export async function exportReport(id, format = "pdf", sectionId = null) {
-  const response = await fetch(`${API_BASE}/api/reports/${id}/export`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({ format, section_id: sectionId }),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   });
   if (!response.ok) {
     let detail = `Export failed (${response.status})`;
@@ -139,7 +125,6 @@ export async function exportReport(id, format = "pdf", sectionId = null) {
   const disposition = response.headers.get("content-disposition") || "";
   const match = disposition.match(/filename="?([^"]+)"?/);
   const blob = await response.blob();
-<<<<<<< HEAD
   return { blob, filename: match ? match[1] : `report.${format}` };
 }
 
@@ -149,12 +134,6 @@ export async function exportReport(id, format = "pdf", sectionId = null) {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
-=======
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = match ? match[1] : `report.${format}`;
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -162,15 +141,12 @@ export async function exportReport(id, format = "pdf", sectionId = null) {
   return link.download;
 }
 
-<<<<<<< HEAD
 /** Return an in-memory PDF URL rendered by the same endpoint as PDF export. */
 export async function previewReportPdf(id) {
   const { blob, filename } = await fetchReportExport(id, "pdf", null, true);
   return { url: URL.createObjectURL(blob), filename };
 }
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 /** Where an unsaved "add this answer to a report" hand-off is parked. */
 export const PENDING_SOURCE_KEY = "zara-pending-report-source";
 

@@ -86,7 +86,6 @@
  * pre-filled so most users can press Create immediately.
  */
 .report-new { max-width: 780px; margin: 0 auto; padding: 30px 24px 60px; }
-<<<<<<< HEAD
 .report-start-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
 .report-start-grid > button { display: grid; gap: 10px; min-height: 180px; padding: 24px; border: 1px solid var(--chart-card-border); border-radius: 16px; background: var(--chart-surface); color: var(--chart-ink); text-align: left; cursor: pointer; }
 .report-start-grid > button:hover { border-color: var(--chart-series-1); box-shadow: var(--chart-card-shadow); }
@@ -97,8 +96,6 @@
 .report-current-scope span { padding: 13px; border: 1px solid var(--chart-card-border); border-radius: 11px; background: var(--chart-surface); font-size: .78rem; }
 .report-current-scope b { display: block; margin-bottom: 4px; color: var(--chart-ink-muted); font-size: .58rem; text-transform: uppercase; }
 .report-option-error { color: #b91c1c; font-size: .7rem; }
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
 .report-new-intro { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 22px; }
 .report-new-intro > span { display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 13px; background: linear-gradient(140deg, var(--chart-series-1), var(--chart-series-2)); color: #fff; }
@@ -171,7 +168,6 @@
 .report-editor-title input { width: 100%; font-size: 0.95rem; font-weight: 700; }
 .report-editor-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 5px; color: var(--chart-ink-muted); font-size: 0.64rem; }
 .report-editor-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-<<<<<<< HEAD
 .report-template-select { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: var(--chart-ink-muted); font-size: .62rem; font-weight: 800; text-transform: uppercase; }
 .report-template-select select { min-height: 30px; padding: 0 28px 0 9px; border: 1px solid var(--chart-card-border); border-radius: 8px; background: var(--chart-surface); color: var(--chart-ink); font: inherit; font-size: .68rem; font-weight: 650; text-transform: none; }
 .report-action-menu { position: relative; }
@@ -180,8 +176,6 @@
 .report-action-menu summary.primary { border-color: var(--chart-series-1); background: var(--chart-series-1); color: #fff; }
 .report-action-menu > div { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; min-width: 180px; padding: 6px; border: 1px solid var(--chart-card-border); border-radius: 10px; background: var(--chart-surface); box-shadow: var(--chart-card-shadow); }
 .report-action-menu > div button { justify-content: flex-start; border: 0; white-space: nowrap; }
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
 .report-notice { margin: 12px 24px 0; padding: 9px 12px; border-radius: 10px; background: rgba(79,70,229,.1); color: #3730a3; font-size: 0.72rem; }
 .report-notice--warn { background: rgba(245,158,11,.14); color: #92400e; }
@@ -190,11 +184,7 @@
 .report-conflicts strong { display: block; margin-bottom: 3px; font-size: 0.74rem; }
 .report-conflicts p { margin: 3px 0 0; font-size: 0.7rem; line-height: 1.45; }
 
-<<<<<<< HEAD
 .report-editor-body { display: grid; grid-template-columns: 210px minmax(0, 1fr) 290px; gap: 18px; align-items: start; padding: 18px 24px; }
-=======
-.report-editor-body { display: grid; grid-template-columns: 258px minmax(0, 1fr); gap: 18px; align-items: start; padding: 18px 24px; }
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 .report-navigator { position: sticky; top: 78px; display: grid; gap: 8px; padding: 14px; border: 1px solid var(--chart-card-border); border-radius: 13px; background: var(--chart-surface); }
 .report-navigator h3 { margin: 6px 0 2px; color: var(--chart-ink-muted); font-size: 0.58rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .report-navigator ol { display: grid; gap: 3px; margin: 0; padding-left: 18px; }
@@ -209,7 +199,6 @@
 .report-add-blocks button { min-height: 28px; padding: 0 8px; font-size: 0.63rem; }
 
 .report-preview { display: grid; gap: 12px; }
-<<<<<<< HEAD
 .report-pdf-preview { display: grid; grid-template-rows: auto minmax(620px, calc(100vh - 180px)); gap: 12px; padding: 18px 24px; }
 .report-pdf-preview > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--chart-card-border); border-radius: 11px; background: var(--chart-surface); }
 .report-pdf-preview > header div { display: grid; gap: 2px; }
@@ -220,20 +209,12 @@
 .report-page-brand span { color: var(--chart-ink-muted); font-size: .56rem; letter-spacing: .14em; }
 .report-page h1 { margin: 7px 0 5px; font-size: 1.5rem; letter-spacing: -.02em; }
 .report-page h2 { margin: 0 0 5px; color: var(--chart-ink); font-size: 1rem; letter-spacing: -.01em; }
-=======
-.report-page { padding: 30px 32px; border: 1px solid var(--chart-card-border); border-radius: 13px; background: var(--chart-surface); box-shadow: var(--chart-card-shadow); }
-.report-page-brand { margin: 0; color: var(--chart-ink-muted); font-size: 0.56rem; font-weight: 800; letter-spacing: .13em; }
-.report-page h1 { margin: 7px 0 5px; font-size: 1.5rem; letter-spacing: -.02em; }
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 .report-page-scope,
 .report-page-meta { margin: 0; color: var(--chart-ink-muted); font-size: 0.7rem; }
 .report-page-meta { margin-top: 7px; font-size: 0.64rem; }
 
 .report-block { padding: 15px 17px; border: 1px solid var(--chart-card-border); border-radius: 12px; background: var(--chart-surface); }
-<<<<<<< HEAD
 .report-block.is-selected { border-color: var(--chart-series-1); box-shadow: 0 0 0 2px color-mix(in srgb, var(--chart-series-1) 14%, transparent); }
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 .report-block.is-hidden { border-style: dashed; opacity: .5; }
 .report-block header { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
 .report-block-type { color: var(--chart-ink-muted); font-size: 0.55rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
@@ -246,7 +227,6 @@
 .report-classification--recommendation { background: rgba(139,92,246,.15); color: #6d28d9; }
 .report-classification--interpretation { background: rgba(14,165,233,.14); color: #0369a1; }
 .report-flag--warn { background: rgba(245,158,11,.18); color: #92400e; }
-<<<<<<< HEAD
 .report-state { padding: 2px 7px; border-radius: 999px; font-size: .56rem; font-weight: 800; text-transform: uppercase; }
 .report-state--ready { background: rgba(34,197,94,.13); color: #15803d; }
 .report-state--needs_input, .report-state--needs_review { background: rgba(245,158,11,.16); color: #92400e; }
@@ -294,22 +274,16 @@
 .report-assistant-suggestions button:disabled { color: #62728d; background: rgba(235,241,250,.68); border-color: rgba(177,198,224,.38); box-shadow: none; cursor: not-allowed; opacity: .62; }
 .report-assistant-panel form button { justify-self: stretch; color: #fff; background: linear-gradient(145deg,#087cff,#064fc8); border-color: rgba(128,195,255,.62); box-shadow: 0 7px 18px rgba(0,42,137,.28); }
 .report-assistant-guard { display: grid; gap: 3px; padding: 10px; color: #fff; border: 1px solid rgba(151,201,255,.22); border-radius: 9px; background: rgba(2,24,75,.56); font-size: .66rem; backdrop-filter: blur(10px); }
-=======
 .report-block-body p { margin: 0 0 7px; font-size: 0.78rem; line-height: 1.55; }
 .report-placeholder { color: var(--chart-ink-muted); font-style: italic; }
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 .report-block-editor { display: grid; gap: 8px; }
 .report-block-editor textarea { width: 100%; line-height: 1.5; resize: vertical; }
 .report-block-editor > div { display: flex; justify-content: flex-end; gap: 7px; }
 
 @media (max-width: 900px) {
   .report-editor-body { grid-template-columns: minmax(0, 1fr); }
-<<<<<<< HEAD
   .report-navigator, .report-assistant-panel { position: static; }
   .report-start-grid { grid-template-columns: minmax(0,1fr); }
-=======
-  .report-navigator { position: static; }
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   .report-library { padding: 16px; }
   .report-studio-header,
   .report-editor-header { padding: 12px 16px; }

@@ -7,13 +7,9 @@ ownership rules are the point, and mocking them out would test nothing.
 
 from __future__ import annotations
 
-<<<<<<< HEAD
 import io
 import uuid
 from contextlib import contextmanager
-=======
-import uuid
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -23,10 +19,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.database.db import Base, Conversation, ConversationMessage, get_db
 from backend.main import app
-<<<<<<< HEAD
 from backend.report_repository import ReportRepository
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
 USER_A = {"X-Development-Session": "user-alpha-0001"}
 USER_B = {"X-Development-Session": "user-bravo-0002"}
@@ -120,11 +113,7 @@ def test_templates_are_offered(client):
     payload = client.get("/api/reports/templates").json()
     ids = {template["id"] for template in payload["templates"]}
     assert {"executive_summary", "sprint_performance", "risk_and_action",
-<<<<<<< HEAD
             "weekly_management_update", "weekly_scrum", "dora_performance", "blank"} <= ids
-=======
-            "weekly_management_update", "dora_performance", "blank"} <= ids
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     assert "senior_leadership" in payload["audiences"]
     assert "rewrite" in payload["content_modes"]
 
@@ -134,19 +123,13 @@ def test_create_report_from_template_builds_its_sections(client):
     assert report["status"] == "draft"
     assert report["version"] == 1
     types = [section["type"] for section in report["sections"]]
-<<<<<<< HEAD
     assert "cover" not in types
     assert "executive_summary" in types and "data_quality" in types
     assert "methodology" not in types
-=======
-    assert types[0] == "cover"
-    assert "executive_summary" in types and "methodology" in types
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     # Positions are contiguous and ordered.
     assert [s["position"] for s in report["sections"]] == list(range(1, len(types) + 1))
 
 
-<<<<<<< HEAD
 def test_weekly_scrum_starts_with_deterministic_needs_input_states(client):
     report = _create(
         client, template="weekly_scrum",
@@ -157,14 +140,11 @@ def test_weekly_scrum_starts_with_deterministic_needs_input_states(client):
     assert feature["state_reason"]
 
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def test_unknown_template_is_rejected(client):
     response = client.post("/api/reports", json={"template": "not_a_template"}, headers=USER_A)
     assert response.status_code == 422
 
 
-<<<<<<< HEAD
 def test_weekly_scrum_template_can_be_applied_inside_the_same_report(client):
     report = _create(client, template="executive_summary", title="KAIJU Delivery Report")
     response = client.post(
@@ -182,8 +162,6 @@ def test_weekly_scrum_template_can_be_applied_inside_the_same_report(client):
     ]
 
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def test_a_report_is_not_reachable_by_another_user(client):
     report = _create(client)
     assert client.get(f"/api/reports/{report['id']}", headers=USER_A).status_code == 200
@@ -387,7 +365,6 @@ def test_unknown_section_type_is_rejected(client):
     assert response.status_code == 422
 
 
-<<<<<<< HEAD
 def test_delivery_templates_reject_sections_outside_the_visible_template(client):
     report = _create(client, template="weekly_scrum")
     for type_ in ("methodology", "rich_text"):
@@ -399,8 +376,6 @@ def test_delivery_templates_reject_sections_outside_the_visible_template(client)
         assert response.status_code == 422
 
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def test_editing_a_validated_fact_marks_it_for_review(client):
     conversation_id, message_id = _seed_conversation(
         client, user_id="user-alpha-0001", squad="TITAN",
@@ -427,7 +402,6 @@ def test_editing_a_validated_fact_marks_it_for_review(client):
     assert edited["status"] == "needs_review"
 
 
-<<<<<<< HEAD
 def test_refinement_updates_only_the_selected_section(client, monkeypatch):
     report = _create(client, template="executive_summary")
     session = client.session_factory()
@@ -478,8 +452,6 @@ def test_refinement_updates_only_the_selected_section(client, monkeypatch):
     assert by_id[other_id]["content"] == "This other section must remain unchanged."
 
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 # --------------------------------------------------------------------------- #
 # Validation, duplication, export                                             #
 # --------------------------------------------------------------------------- #
@@ -535,7 +507,6 @@ def test_pdf_export_returns_a_real_pdf(client):
     assert client.get(f"/api/reports/{report['id']}", headers=USER_A).json()["status"] == "exported"
 
 
-<<<<<<< HEAD
 def test_pdf_preview_uses_the_export_renderer_without_marking_exported(client, monkeypatch):
     from backend.api import reports as reports_api
 
@@ -556,8 +527,6 @@ def test_pdf_preview_uses_the_export_renderer_without_marking_exported(client, m
     assert [str(value) for value in calls] == [report["id"]]
 
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def test_docx_export_returns_a_word_document(client):
     report = _create(client, title="Sprint Performance Report")
     response = client.post(
@@ -621,7 +590,6 @@ def test_a_report_survives_reload(client):
     assert len(reopened["sections"]) == len(report["sections"])
 
 
-<<<<<<< HEAD
 def test_regeneration_replaces_prior_generated_evidence(client):
     report = _create(client)
     session = client.session_factory()
@@ -1013,19 +981,12 @@ def test_weekly_scrum_feature_evidence_keeps_id_name_and_status(client, monkeypa
         session.close()
 
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def test_visuals_land_with_the_analysis_not_in_a_heap_at_the_end(client):
     """A chart belongs beside the section it illustrates.
 
     Appending every visual produced a report of prose followed by a block of
-<<<<<<< HEAD
     unexplained diagrams, with the data-quality closing block stranded above
     them.
-=======
-    unexplained diagrams, with the data-quality and methodology blocks stranded
-    above them.
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     """
 
     conversation_id, message_id = _seed_conversation(
@@ -1050,13 +1011,7 @@ def test_visuals_land_with_the_analysis_not_in_a_heap_at_the_end(client):
     assert len([s for s in sections if s["type"] == "data_table"]) == 1
 
     # And they sit above the closing blocks, not after them.
-<<<<<<< HEAD
     closing = [s["position"] for s in sections if s["type"] == "data_quality"]
-=======
-    closing = [
-        s["position"] for s in sections if s["type"] in {"data_quality", "methodology"}
-    ]
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     assert closing
     assert charts[0]["position"] < min(closing)
     assert tables[0]["position"] < min(closing)
@@ -1084,15 +1039,8 @@ def test_extra_visuals_go_before_the_closing_blocks(client):
 
     sections = sorted(body["sections"], key=lambda s: s["position"])
     charts = [s for s in sections if s["type"] == "chart"]
-<<<<<<< HEAD
     # Both charts are kept -- "if there are a lot of diagrams, put them all".
     assert len(charts) == 2
     assert all(section["type"] != "methodology" for section in sections)
-=======
-    closing = [s["position"] for s in sections if s["type"] == "methodology"]
-    # Both charts are kept -- "if there are a lot of diagrams, put them all".
-    assert len(charts) == 2
-    assert all(chart["position"] < min(closing) for chart in charts)
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     # Positions stay contiguous after the inserts.
     assert [s["position"] for s in sections] == list(range(1, len(sections) + 1))

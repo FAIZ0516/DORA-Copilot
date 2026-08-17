@@ -467,10 +467,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .report-drawer-note.is-error { color: #b91c1c; }
 .report-drawer-note svg { width: 13px; }
 @media (prefers-reduced-motion: reduce) { .report-type-list button { transition: none; } .report-type-list button:hover { transform: none; } }
-<<<<<<< HEAD
 @media (prefers-reduced-motion: reduce) { .zara-grainient-background { background: linear-gradient(155deg,#031a4a 0%,#064fc8 54%,#03133b 100%); } }
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
 .role-dashboard-skeleton { display: grid; gap: 11px; }
 .role-dashboard-skeleton > div { display: grid; grid-template-columns: repeat(4,1fr); gap: 9px; }

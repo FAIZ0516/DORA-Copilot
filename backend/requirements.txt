@@ -12,13 +12,10 @@ python-dotenv>=1.0,<2.0
 reportlab>=4.2,<5.0
 pypdf>=5.0,<7.0
 python-docx>=1.1,<2.0
-<<<<<<< HEAD
-=======
 # Local speech recognition and voice-activity detection for voice mode.
 # Neither is a language model: DeepSeek remains the configured LLM.
 faster-whisper>=1.0,<2.0
 silero-vad>=5.1,<6.0
 numpy>=1.26,<3.0
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 pytest>=8.3,<9.0
 pytest-cov>=5.0,<7.0

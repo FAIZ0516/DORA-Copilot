@@ -22,10 +22,7 @@ SECTION_TYPES = (
     "key_finding",
     "chart",
     "data_table",
-<<<<<<< HEAD
     "feature_status",
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     "risk",
     "recommendation",
     "action_list",
@@ -35,7 +32,6 @@ SECTION_TYPES = (
     "page_break",
 )
 
-<<<<<<< HEAD
 # Provenance remains stored and available to validators, but legacy structural
 # sections are not part of the authored report surface or exported document.
 # The report header is renderer-owned; it is not a selectable report section.
@@ -52,8 +48,6 @@ DELIVERY_REPORT_SECTION_TYPES = frozenset({
     "data_quality",
 })
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 # Blocks whose wording may be model-generated. Everything else is either
 # structured data (chart/table/KPI) or deterministic text the code owns.
 NARRATIVE_TYPES = frozenset(
@@ -101,20 +95,13 @@ def _section(type_: str, title: str, **extra: Any) -> dict[str, Any]:
 # report run next week asks the same things and reports whatever the data says
 # then. They run through the existing governed agent, so a generated report is
 # backed by the same approved queries and validation as any chat answer.
-<<<<<<< HEAD
 # A template is an ordered list of user-selectable report blocks. Required
 # page furniture and the KPI overview are renderer-owned; provenance remains
 # internal and is deliberately absent from the visible section model.
-=======
-# A template is an ordered list of blocks. Narrative blocks start empty and are
-# filled by composition; structural blocks (cover, methodology) are rendered
-# deterministically from the report's own scope and provenance.
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 TEMPLATES: dict[str, dict[str, Any]] = {
     "blank": {
         "questions": [],
         "label": "Blank report",
-<<<<<<< HEAD
         "description": "Start with an empty report and build it yourself.",
         "default_title": "New report",
         "sections": [],
@@ -141,18 +128,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "executive_summary": {
         "questions": [
             "Recalculate the current dashboard KPI and status chart evidence using verified server-side data.",
-=======
-        "description": "Start with only a cover and build the report yourself.",
-        "default_title": "New report",
-        "sections": [_section("cover", "")],
-    },
-    "executive_summary": {
-        "questions": [
-            "Summarise the current delivery position, including completion, open work and blockers.",
-            "Show a bar chart of open bugs by priority.",
-            "What are the most significant delivery risks right now, with the evidence behind each?",
-            "Which work is oldest or most at risk of slipping?",
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         ],
         "label": "Executive Summary",
         "description": "A short leadership briefing: position, risks, and what to decide.",
@@ -160,23 +135,12 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "default_audience": "senior_leadership",
         "default_tone": "executive",
         "sections": [
-<<<<<<< HEAD
             _section("kpi_group", "Delivery at a Glance"),
             _section("executive_summary", "Executive Summary"),
             _section("key_finding", "Key Highlights"),
             _section("risk", "Risks Requiring Attention"),
             _section("recommendation", "Recommended Actions"),
             _section("data_quality", "Data Quality & Limitations"),
-=======
-            _section("cover", ""),
-            _section("executive_summary", "Executive Summary"),
-            _section("kpi_group", "Key Measures"),
-            _section("key_finding", "What The Data Shows"),
-            _section("risk", "Risks Requiring Attention"),
-            _section("recommendation", "Recommended Actions"),
-            _section("data_quality", "Data Quality and Limitations"),
-            _section("methodology", "Evidence and Methodology"),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         ],
     },
     "sprint_performance": {
@@ -193,10 +157,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "default_audience": "delivery_manager",
         "default_tone": "professional",
         "sections": [
-<<<<<<< HEAD
-=======
-            _section("cover", ""),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             _section("executive_summary", "Summary"),
             _section("kpi_group", "Delivery Position"),
             _section("chart", "Work Status Distribution"),
@@ -205,10 +165,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             _section("risk", "Delivery Risks"),
             _section("recommendation", "Recommended Actions"),
             _section("data_quality", "Data Quality and Limitations"),
-<<<<<<< HEAD
-=======
-            _section("methodology", "Evidence and Methodology"),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         ],
     },
     "risk_and_action": {
@@ -224,19 +180,11 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "default_audience": "delivery_manager",
         "default_tone": "professional",
         "sections": [
-<<<<<<< HEAD
-=======
-            _section("cover", ""),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             _section("executive_summary", "Summary"),
             _section("risk", "Risks Requiring Attention"),
             _section("chart", "Supporting Evidence"),
             _section("action_list", "Actions"),
             _section("data_quality", "Data Quality and Limitations"),
-<<<<<<< HEAD
-=======
-            _section("methodology", "Evidence and Methodology"),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         ],
     },
     "weekly_management_update": {
@@ -251,18 +199,10 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "default_audience": "senior_leadership",
         "default_tone": "concise",
         "sections": [
-<<<<<<< HEAD
-=======
-            _section("cover", ""),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             _section("executive_summary", "This Week"),
             _section("kpi_group", "Key Measures"),
             _section("key_finding", "What Changed"),
             _section("action_list", "Next Steps"),
-<<<<<<< HEAD
-=======
-            _section("methodology", "Evidence and Methodology"),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         ],
     },
     "dora_performance": {
@@ -278,10 +218,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         "default_audience": "technical_stakeholder",
         "default_tone": "technical",
         "sections": [
-<<<<<<< HEAD
-=======
-            _section("cover", ""),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             _section("executive_summary", "Summary"),
             _section("kpi_group", "DORA Measures"),
             _section("chart", "Delivery Trend"),
@@ -289,10 +225,6 @@ TEMPLATES: dict[str, dict[str, Any]] = {
             _section("data_table", "Measures by Period"),
             _section("scope_limitation", "What These Measures Do and Do Not Show"),
             _section("data_quality", "Data Quality and Limitations"),
-<<<<<<< HEAD
-=======
-            _section("methodology", "Evidence and Methodology"),
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         ],
     },
 }
@@ -367,13 +299,9 @@ __all__ = [
     "AUDIENCES",
     "CLASSIFICATIONS",
     "CONTENT_MODES",
-<<<<<<< HEAD
     "DELIVERY_REPORT_SECTION_TYPES",
     "DETAIL_LEVELS",
     "HIDDEN_REPORT_SECTION_TYPES",
-=======
-    "DETAIL_LEVELS",
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     "NARRATIVE_TYPES",
     "SECTION_TYPES",
     "SELECTIONS",

@@ -6,7 +6,6 @@ the same things and reports whatever the data says then.
 
 from __future__ import annotations
 
-<<<<<<< HEAD
 import json
 from decimal import Decimal
 
@@ -19,13 +18,6 @@ from backend.services.report_generation import (
     weekly_scrum_feature_evidence,
 )
 from backend.schemas import ReportScope
-=======
-from backend.services.report_generation import (
-    dashboard_context_for,
-    run_template_questions,
-    scope_to_question,
-)
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 from backend.services.report_templates import TEMPLATES, questions_for_template
 
 
@@ -140,7 +132,6 @@ def test_each_question_gets_its_own_session_so_answers_do_not_bleed() -> None:
     )
     assert len(agent.asked) == 2
     assert agent.asked[0] != agent.asked[1]
-<<<<<<< HEAD
 
 
 def test_weekly_scrum_template_has_the_fixed_mvp_sections() -> None:
@@ -352,5 +343,3 @@ def test_provenance_stays_internal_and_metric_definitions_remain_available(monke
     assert [column["key"] for column in measures["columns"]] == ["label", "value"]
     assert all("formula" not in row for row in measures["rows"])
     assert all("formula" in item for item in measures["items"])
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f

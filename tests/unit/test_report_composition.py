@@ -15,10 +15,7 @@ from backend.services.report_composition import (
     extract_numbers,
     fact_check,
     normalize_number,
-<<<<<<< HEAD
     parse_refinement_response,
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     parse_response,
 )
 from backend.services.report_evidence import detect_scope_conflicts, staleness
@@ -33,7 +30,6 @@ class _Llm:
     def __init__(self, payload: str) -> None:
         self._payload = payload
         self.calls = 0
-<<<<<<< HEAD
         self.last_system = ""
         self.last_user = ""
 
@@ -41,11 +37,6 @@ class _Llm:
         self.calls += 1
         self.last_system = system
         self.last_user = user
-=======
-
-    def complete(self, *_args: object, **_kwargs: object) -> str:
-        self.calls += 1
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         return self._payload
 
 
@@ -120,7 +111,6 @@ def test_model_json_is_validated_not_trusted() -> None:
     assert parse_response('Here you go: {"sections":[]} thanks') is not None
 
 
-<<<<<<< HEAD
 def test_selected_section_refinement_has_a_dedicated_strict_contract() -> None:
     canonical = parse_refinement_response(
         '{"section":{"section_id":"sec-1","title":"Summary","content":"Shorter."}}',
@@ -218,8 +208,6 @@ def test_refinement_cannot_change_a_verified_number() -> None:
     assert any("99%" in warning for warning in result["warnings"])
 
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def test_composition_accepts_a_faithful_rewrite() -> None:
     llm = _Llm(
         '{"sections":[{"section_id":"sec-1","title":"Summary",'
@@ -256,7 +244,6 @@ def test_composition_rejects_an_invented_figure_and_keeps_the_old_text() -> None
     assert any("15" in warning for warning in result["warnings"])
 
 
-<<<<<<< HEAD
 def test_numeric_fact_check_is_scoped_to_the_selected_sections_sources() -> None:
     llm = _Llm('{"sections":[{"section_id":"sec-1","content":"TITAN has 3 open bugs."}]}')
     scoped_sections = [{**SECTIONS[0], "source_ids": ["summary-source"]}]
@@ -269,8 +256,6 @@ def test_numeric_fact_check_is_scoped_to_the_selected_sections_sources() -> None
     assert any("3" in warning for warning in result["warnings"])
 
 
-=======
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def test_a_hand_edited_section_is_never_regenerated() -> None:
     llm = _Llm('{"sections":[{"section_id":"sec-1","content":"overwritten"}]}')
     edited = [{**SECTIONS[0], "manually_edited": True}]
@@ -315,11 +300,7 @@ def test_unparseable_model_output_changes_nothing() -> None:
         detail_level="standard",
     )
     assert result["sections"] == {}
-<<<<<<< HEAD
     assert any("verified content was kept" in warning.lower() for warning in result["warnings"])
-=======
-    assert any("schema" in warning.lower() for warning in result["warnings"])
->>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
 
 def test_composition_without_sources_asks_for_evidence_instead_of_inventing() -> None:
