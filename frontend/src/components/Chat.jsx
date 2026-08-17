@@ -7,6 +7,7 @@ import MetricChart from "./MetricChart";
 import RoleDashboard from "./RoleDashboard";
 import AddToReportMenu from "./chat/AddToReportMenu";
 import SuggestedQuestionChips from "./chat/SuggestedQuestionChips";
+import ZaraAvatar from "./chat/ZaraAvatar";
 import ConversationPanel from "./history/ConversationPanel";
 import ThreePanelWorkspace from "./layout/ThreePanelWorkspace";
 import { getRoleDashboardConfig } from "../config/roleDashboardConfig";
@@ -353,10 +354,10 @@ export default function Chat({
       </div>
 
       <div className="copilot-message-list" aria-live="polite">
-        {isEmpty && <section className="copilot-empty-state"><span><Sparkles aria-hidden="true" /></span><p>Zara Assistant</p><h2>Understand what needs attention</h2><div>Ask about the current dashboard, explain a risk, or generate a report grounded in the selected scope.</div><SuggestedQuestionChips questions={roleConfig.initialQuestions} onSuggestionClick={fillQuestion} /></section>}
+        {isEmpty && <section className="copilot-empty-state"><ZaraAvatar className="copilot-empty-avatar" decorative size={36} /><p>Zara Assistant</p><h2>Understand what needs attention</h2><div>Ask about the current dashboard, explain a risk, or generate a report grounded in the selected scope.</div><SuggestedQuestionChips questions={roleConfig.initialQuestions} onSuggestionClick={fillQuestion} /></section>}
         {!isEmpty && messages.map((message) => (
           <article className={`copilot-message ${message.role} ${message.error ? "message-error" : ""}`} key={message.id}>
-            <div className="copilot-message-avatar" aria-hidden="true">{message.role === "assistant" ? "AI" : "YOU"}</div>
+            {message.role === "assistant" ? <ZaraAvatar className="copilot-message-avatar" decorative size={34} /> : <div className="copilot-message-avatar" aria-hidden="true">YOU</div>}
             <div className="copilot-message-body">
               <div className="copilot-message-meta"><span>{message.role === "assistant" ? "Zara" : "You"}</span><div>
                 {message.role === "assistant" && <button type="button" onClick={() => copyMessage(message)} aria-label="Copy response" title="Copy response"><Copy aria-hidden="true" /><span>{copiedId === message.id ? "Copied" : "Copy"}</span></button>}

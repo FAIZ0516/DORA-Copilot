@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from ..dashboard_registry import METRIC_REGISTRY
+
 
 class MetricSelection(TypedDict):
     id: str
@@ -14,6 +16,22 @@ class MetricSelection(TypedDict):
 
 
 _METRICS: tuple[tuple[tuple[str, ...], MetricSelection], ...] = (
+    (
+        (
+            "sprint completion",
+            "completion percentage",
+            "completion rate",
+            "completion_pct",
+            "completion",
+        ),
+        {
+            "id": "completion_pct",
+            "field": "completion_pct",
+            "label": METRIC_REGISTRY["completion_pct"]["title"],
+            "unit": "%",
+            "direction": "higher_is_better",
+        },
+    ),
     (
         ("release frequency", "release cadence"),
         {"id": "release_frequency", "field": "release_frequency_months", "label": "Release frequency", "unit": "months", "direction": "lower_is_better"},

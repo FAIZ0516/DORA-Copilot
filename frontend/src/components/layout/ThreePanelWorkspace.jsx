@@ -9,6 +9,7 @@ import {
   PanelRightOpen,
   Sparkles,
 } from "lucide-react";
+import Grainient, { ZARA_GRAINIENT_THEME } from "../Grainient";
 import zaraWordmark from "../../assets/zara-wordmark.png";
 import { panelColumns } from "../../hooks/usePanelLayout";
 
@@ -17,6 +18,14 @@ const PANEL_META = {
   dashboard: { title: "Analytics Dashboard", actionName: "dashboard", shortTitle: "Dashboard", icon: LayoutDashboard, collapseIcon: Minimize2, expandIcon: Maximize2 },
   chat: { title: "Zara Assistant", actionName: "Zara", shortTitle: "Zara", icon: Sparkles, collapseIcon: PanelRightClose, expandIcon: PanelRightOpen },
 };
+
+function ZaraGrainientBackground() {
+  return (
+    <div className="zara-grainient-background" aria-hidden="true">
+      <Grainient {...ZARA_GRAINIENT_THEME} />
+    </div>
+  );
+}
 
 function WorkspacePanel({ panel, visible, onToggle, children }) {
   const meta = PANEL_META[panel];
@@ -27,6 +36,7 @@ function WorkspacePanel({ panel, visible, onToggle, children }) {
   const expandLabel = `Expand ${meta.actionName}`;
   return (
     <section className={`workspace-panel workspace-panel-${panel} ${visible ? "is-expanded" : "is-collapsed"}`} aria-label={meta.title} data-panel={panel}>
+      {panel === "chat" && <ZaraGrainientBackground />}
       {visible ? (
         <>
           <header className="workspace-panel-header">

@@ -257,9 +257,9 @@ QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
         ],
     },
     "jira_open_work_breakdown": {
-        "purpose": "Aggregate open Jira work by calendar age, type, priority, status category, and squad coverage.",
+        "purpose": "Aggregate open Jira work by calendar age, type, priority, status category, and squad coverage, optionally for one named squad.",
         "default_limit": 200,
-        "allowed_filters": ["project_key", "ageing_bucket"],
+        "allowed_filters": ["project_key", "dcpsquad", "ageing_bucket"],
         "expected_columns": [
             "ageing_bucket",
             "issuetype",
@@ -463,11 +463,11 @@ SQUAD_CAPABILITY_BOUNDARY = """Authoritative squad-reporting boundary:
 - Across all squads, the only currently approved cross-squad aggregate is bug
   volume, plus the distinct squad list and missing-squad coverage.
 - For one named squad, the approved tools can return yearly DORA release
-  metrics and feature/issue-to-release relationships when the query's required
-  narrowing filter is supplied.
-- Status, ageing, priority, assignee, impediment, and sprint reports are not
-  currently grouped or filterable by squad. Never present them as supported
-  per-squad reports."""
+  metrics, feature/issue-to-release relationships, and the current open-work
+  breakdown by status category, issue type, priority, and age when the query's
+  required narrowing filter is supplied.
+- Assignee, impediment, and general sprint reports are not currently grouped
+  or filterable by squad. Never present them as supported per-squad reports."""
 
 
 def planner_context() -> str:

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { buildDashboardContext, defaultDashboardView } from "../src/dashboardState.js";
-import { buildPrimaryKpis, buildRiskItems } from "../src/dashboardPresentation.js";
+import { buildPrimaryKpis, buildRiskItems, isSprintAvailable, rankRiskItems } from "../src/dashboardPresentation.js";
 
 const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const dashboardSource = readFileSync(new URL("../src/components/RoleDashboard.jsx", import.meta.url), "utf8");
@@ -32,10 +32,41 @@ test("the unified entry opens All Squads without a role or squad selection scree
 test("All Squads drills into a selected squad and can return to the portfolio", () => {
   assert.equal(defaultDashboardView("head_of_department"), "portfolio");
   assert.match(dashboardSource, /function viewSquad/);
-  assert.match(dashboardSource, /context\.setSelectedSquad\(row\.squad \|\| row\.name\)/);
+  assert.match(dashboardSource, /const squad = row\.squad \|\| row\.name/);
+  assert.match(dashboardSource, /context\.setSelectedSquad\(squad\)/);
   assert.match(dashboardSource, /All DCP Squads Overview/);
   assert.match(dashboardSource, /DCP-\$\{context\.selectedSquad\} Overview/);
   assert.match(dashboardSource, /> All Squads<\/button>/);
+});
+
+test("squad changes keep only valid sprint selections and ignore stale option requests", () => {
+  const jaegerOptions = { sprints: [{ value: "JAEGER SPRINT 1" }, { value: "JAEGER SPRINT 2" }] };
+  assert.equal(isSprintAvailable("", jaegerOptions), true);
+  assert.equal(isSprintAvailable("JAEGER SPRINT 2", jaegerOptions), true);
+  assert.equal(isSprintAvailable("MIDAS SPRINT 4", jaegerOptions), false);
+  assert.match(dashboardSource, /loadDashboardFilters\(\{ project: context\.selectedProject, squad \}\)/);
+  assert.match(dashboardSource, /if \(!isSprintAvailable\(context\.selectedSprint, squadOptions\)\) context\.setSelectedSprint\(""\)/);
+  assert.match(dashboardSource, /requestId !== squadChangeRequest\.current/);
+});
+
+test("dashboard prioritises compact risks, squad progress, and ticket previews", () => {
+  const ranked = rankRiskItems({
+    kpis: { status: "Needs Attention" },
+    attention_items: [
+      { metric: "completion_pct", value: 20 },
+      { metric: "impeded_work", value: 2 },
+      { metric: "high_priority_open_bugs", value: 6 },
+      { metric: "oldest_unresolved_days", value: 80 },
+      { metric: "unassigned_open_work", value: 4 },
+    ],
+  }, 4);
+  assert.equal(ranked.length, 4);
+  assert.deepEqual(ranked.slice(0, 2).map((risk) => risk.metric), ["high_priority_open_bugs", "impeded_work"]);
+  assert.match(dashboardSource, /compact\s+limit=\{4\}/);
+  assert.match(dashboardSource, /rows\.slice\(0, 8\)/);
+  assert.match(dashboardSource, /items\.slice\(0, 5\)/);
+  assert.match(dashboardSource, /View all tickets/);
+  assert.match(dashboardSource, /<WorkStatusCard payload=\{payload\}/);
 });
 
 test("squad drill-down preserves portfolio filters in structured context", () => {
@@ -260,4 +291,11 @@ test("dashboard popovers establish local unclipped stacking contexts", () => {
   assert.match(workspaceCss, /\.role-metric-card:focus-within/);
   assert.match(workspaceCss, /\.metric-ask-menu\.is-open/);
   assert.doesNotMatch(legacyCss, /\.role-metric-card \{[^}]*overflow: hidden;/s);
+});
+
+test("Ask Zara stays visibly labelled and compact risk explanations use readable contrast", () => {
+  assert.match(dashboardSource, /<Sparkles aria-hidden="true" \/> Ask Zara/);
+  assert.match(workspaceCss, /\.role-metric-card > \.metric-ask-menu > \.metric-ask-action \{[^}]*width: max-content;[^}]*overflow: visible;[^}]*opacity: 1;/s);
+  assert.match(workspaceCss, /\.metric-ask-action svg:first-child \{[^}]*width: 14px;[^}]*color: #4167d2;/s);
+  assert.match(workspaceCss, /\.dashboard-attention-panel \.attention-list article \.risk-content > p \{[^}]*color: #43536b;[^}]*font-size: \.62rem;/s);
 });

@@ -150,21 +150,18 @@ test("one section can be saved without regenerating the whole report", () => {
   assert.match(studioSource, /Save section/);
 });
 
-test("provenance and trust state are visible on each block", () => {
-  assert.match(studioSource, /CLASSIFICATION_LABEL/);
-  for (const key of ["observed_fact", "interpretation", "recommendation", "user_authored"]) {
-    assert.match(studioSource, new RegExp(key), key);
-  }
-  assert.match(studioSource, /section\.manually_edited && <span[^>]*>Edited by hand/);
-  assert.match(studioSource, /Needs review/);
-  assert.match(studioSource, /source_ids\?\.length/);
+test("internal provenance and validation state stay out of report blocks", () => {
+  assert.doesNotMatch(studioSource, /CLASSIFICATION_LABEL/);
+  assert.doesNotMatch(studioSource, /Edited by hand/);
+  assert.doesNotMatch(studioSource, /Needs review — not re-verified/);
+  assert.doesNotMatch(studioSource, /source_ids\?\.length/);
 });
 
-test("data freshness and validation state are surfaced", () => {
+test("data freshness is surfaced without rendering internal validation metadata", () => {
   assert.match(studioSource, /freshness\?\.stale/);
   assert.match(studioSource, /Data may be outdated/);
   assert.doesNotMatch(studioSource, /> Validate</);
-  assert.match(studioSource, /report\.validation\?\.issues/);
+  assert.doesNotMatch(studioSource, /report\.validation\?\.issues/);
 });
 
 test("export offers PDF, DOCX and per-table CSV", () => {
@@ -319,7 +316,8 @@ test("the primary toolbar is concise and secondary actions live under More", () 
 
 test("the visible workspace branding is ZARA Report Studio", () => {
   assert.match(studioSource, /<h1>ZARA Report Studio<\/h1>/);
-  assert.match(studioSource, /report-page-brand">ZARA</);
+  assert.match(studioSource, /report-page-brand">RHB <span>REPORT/);
+  assert.match(studioSource, /ZARA WEEKLY DELIVERY REPORT/);
   assert.doesNotMatch(studioSource, /DORA COPILOT · ZARA/);
 });
 
@@ -381,13 +379,32 @@ test("the workspace renders deterministic states and structured report content",
 
 test("Zara refines only the selected narrative section", () => {
   assert.match(studioSource, /refineReportSection\(report\.id, section\.id, instruction\)/);
+  assert.match(studioSource, /updated_sections\?\.includes\(section\.id\)/);
+  assert.match(studioSource, /item\.id === section\.id \? updated : item/);
   assert.match(studioSource, /<ReportAssistantPanel/);
   assert.match(assistantSource, /selectedSection/);
+  assert.match(assistantSource, /async function submit/);
+  assert.match(assistantSource, /await onRefine\(selectedSection, instruction\.trim\(\)\)/);
+  assert.match(assistantSource, /if \(updated\) setInstruction\(""\)/);
   assert.match(assistantSource, /Verified facts are protected/);
 });
 
+test("the report refinement panel reuses Zara's calmer animated visual system", () => {
+  assert.match(assistantSource, /Grainient, \{ ZARA_GRAINIENT_THEME \}/);
+  assert.match(assistantSource, /<Grainient \{\.\.\.ZARA_GRAINIENT_THEME\} \/>/);
+  assert.doesNotMatch(assistantSource, /timeSpeed=/);
+  assert.match(cssSource, /\.report-assistant-grainient \{ position: absolute;/);
+  assert.match(cssSource, /\.report-assistant-panel \{[^}]*background: #031a4a;/s);
+  assert.match(cssSource, /\.report-assistant-panel header h3 \{ color: #fff;/);
+  assert.match(cssSource, /\.report-assistant-suggestions button \{[^}]*background: rgba\(255,255,255,\.93\);/s);
+  assert.match(cssSource, /\.report-assistant-panel select, \.report-assistant-panel textarea \{[^}]*background: rgba\(255,255,255,\.96\);/s);
+  assert.match(assistantSource, /components\/chat\/ZaraAvatar/);
+  assert.match(assistantSource, /<ZaraAvatar decorative size=\{34\}/);
+  assert.doesNotMatch(assistantSource, /<Sparkles/);
+});
+
 test("methodology and evidence navigation stay out of the authored report surface", () => {
-  assert.match(studioSource, /section\.type !== "methodology"/);
+  assert.match(studioSource, /\["cover", "methodology"\]\.includes\(section\.type\)/);
   assert.doesNotMatch(studioSource, /<h3>Evidence<\/h3>/);
   assert.match(newReportSource, /Data Quality and Limitations/);
   assert.doesNotMatch(newReportSource, /Evidence \(appendix\)/);

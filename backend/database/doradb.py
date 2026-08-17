@@ -333,6 +333,10 @@ _BASE_QUERIES = {
         WHERE j.project_key = :project_key
           AND j.resolved IS NULL
           AND j.status_category <> 'Done'
+          AND (
+              CAST(:open_work_dcpsquad AS text) IS NULL
+              OR UPPER(BTRIM(j.dcpsquad)) = UPPER(CAST(:open_work_dcpsquad AS text))
+          )
         GROUP BY ageing_bucket, issuetype, priority, status_category, squad_coverage
     """,
     "jira_impeded_breakdown": """
@@ -1086,6 +1090,10 @@ def _build_statement(
         params["dashboard_dcpsquad"] = filters.get("dcpsquad")
         params["dashboard_fixversion"] = filters.get("fixversion")
         params["dashboard_sprint"] = filters.get("sprint")
+    if query_id == "jira_open_work_breakdown":
+        # Keep squad scoping inside the approved static SQL. None preserves
+        # the existing All Squads/project-wide behavior.
+        params["open_work_dcpsquad"] = filters.get("dcpsquad")
     if query_id == "jira_weekly_scrum_feature_status":
         params["report_dcpsquad"] = filters["dcpsquad"]
         params["report_sprint"] = filters["sprint"]

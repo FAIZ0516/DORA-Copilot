@@ -135,6 +135,33 @@ void main() {
 
 const ctxMap = new WeakMap();
 
+export const ZARA_GRAINIENT_SPEED = 0.32;
+
+export const ZARA_GRAINIENT_THEME = Object.freeze({
+  timeSpeed: ZARA_GRAINIENT_SPEED,
+  colorBalance: -0.08,
+  warpStrength: 1.1,
+  warpFrequency: 4.4,
+  warpSpeed: 1.5,
+  warpAmplitude: 56,
+  blendAngle: 18,
+  blendSoftness: 0.08,
+  rotationAmount: 240,
+  noiseScale: 2,
+  grainAmount: 0.04,
+  grainScale: 1.8,
+  grainAnimated: false,
+  contrast: 1.48,
+  gamma: 0.86,
+  saturation: 1.18,
+  centerX: 0,
+  centerY: 0,
+  zoom: 0.88,
+  color1: "#18C4FF",
+  color2: "#064FC8",
+  color3: "#031A4A",
+});
+
 export default function Grainient({
   timeSpeed = 0.25,
   colorBalance = 0,
@@ -165,6 +192,10 @@ export default function Grainient({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
+    // The panel already has a CSS gradient fallback. Keep it visible on
+    // browsers, test environments, or managed devices without WebGL2 instead
+    // of letting OGL throw while it tries to initialise a missing context.
+    if (typeof window.WebGL2RenderingContext === "undefined") return undefined;
 
     const renderer = new Renderer({
       webgl: 2,
@@ -320,6 +351,9 @@ export default function Grainient({
     uniforms.uColor1.value = new Float32Array(hexToRgb(color1));
     uniforms.uColor2.value = new Float32Array(hexToRgb(color2));
     uniforms.uColor3.value = new Float32Array(hexToRgb(color3));
+    // Paint updated uniforms immediately. This is essential when reduced
+    // motion is enabled because the animation loop intentionally never starts.
+    context.renderer.render({ scene: context.mesh });
   }, [
     timeSpeed,
     colorBalance,

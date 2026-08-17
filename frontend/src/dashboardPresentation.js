@@ -62,9 +62,25 @@ export function buildRiskItems(payload) {
       severity: severityFor(squad ? reason.status || status : status, reason.metric),
       evidence: squad ? `${squad}: ${detail}` : detail,
       ...copy,
+      baseTitle: copy.title,
       title: squad ? `${squad} — ${copy.title}` : copy.title,
     };
   });
+}
+
+export function rankRiskItems(payload, limit) {
+  const severityOrder = { High: 0, Medium: 1, Low: 2 };
+  const ranked = buildRiskItems(payload).sort((a, b) => (
+    (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3)
+    || Number(b.value || 0) - Number(a.value || 0)
+    || a.title.localeCompare(b.title)
+  ));
+  return Number.isFinite(limit) ? ranked.slice(0, limit) : ranked;
+}
+
+export function isSprintAvailable(selectedSprint, options) {
+  if (!selectedSprint) return true;
+  return (options?.sprints || []).some((item) => item.value === selectedSprint);
 }
 
 export function buildPrimaryKpis(payload) {

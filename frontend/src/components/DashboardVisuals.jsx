@@ -13,6 +13,26 @@ function ChartCard({ eyebrow, title, note, chart, emptyMessage }) {
   );
 }
 
+export function WorkStatusCard({ payload }) {
+  const statusChart = {
+    type: "horizontal_bar",
+    title: "Work Status Distribution",
+    x_key: "status_category",
+    x_label: "Jira status category",
+    series: [{ key: "issue_count", label: "Tickets", unit: "tickets" }],
+    data: payload?.work_status || [],
+  };
+  return (
+    <ChartCard
+      eyebrow="Workflow distribution"
+      title="Work Status"
+      chart={statusChart}
+      note="Done is a Jira end-state and may include rejected or cancelled work."
+      emptyMessage="No status distribution is available for this scope."
+    />
+  );
+}
+
 export function DeliveryAnalytics({ payload }) {
   const kpis = payload?.kpis || {};
   const deliveryChart = {
@@ -32,14 +52,6 @@ export function DeliveryAnalytics({ payload }) {
       to_do: Number(kpis.todo_work || 0),
     }],
   };
-  const statusChart = {
-    type: "horizontal_bar",
-    title: "Work Status Distribution",
-    x_key: "status_category",
-    x_label: "Jira status category",
-    series: [{ key: "issue_count", label: "Tickets", unit: "tickets" }],
-    data: payload?.work_status || [],
-  };
   return (
     <div className="delivery-analytics-grid" data-section="analytics">
       <ChartCard
@@ -49,13 +61,7 @@ export function DeliveryAnalytics({ payload }) {
         note="A current-scope snapshot. The backend does not expose commitment history or a historical sprint trajectory."
         emptyMessage="No delivery-position data is available for this scope."
       />
-      <ChartCard
-        eyebrow="Workflow distribution"
-        title="Work Status"
-        chart={statusChart}
-        note="Done is a Jira end-state and may include rejected or cancelled work."
-        emptyMessage="No status distribution is available for this scope."
-      />
+      <WorkStatusCard payload={payload} />
     </div>
   );
 }

@@ -60,6 +60,7 @@ from ..services.report_templates import (
     AUDIENCES,
     CLASSIFICATIONS,
     CONTENT_MODES,
+    DELIVERY_REPORT_SECTION_TYPES,
     DETAIL_LEVELS,
     HIDDEN_REPORT_SECTION_TYPES,
     NARRATIVE_TYPES,
@@ -295,6 +296,7 @@ def update_report(
     session: Session = Depends(get_db),
 ) -> ReportResponse:
     report = _resolve(session, report_id, user_id)
+    logger.info("save_report_called report_id=%s version=%s", report_id, report.version)
     if request.status is not None and request.status not in STATUSES:
         raise HTTPException(status_code=422, detail=f"Unknown report status: {request.status}")
     if request.audience is not None and request.audience not in AUDIENCES:
@@ -361,6 +363,16 @@ def add_section(
     report = _resolve(session, report_id, user_id)
     if request.type not in SECTION_TYPES:
         raise HTTPException(status_code=422, detail=f"Unknown section type: {request.type}")
+    if request.type in HIDDEN_REPORT_SECTION_TYPES:
+        raise HTTPException(status_code=422, detail="This internal section type is not available.")
+    if (
+        report.template in {"weekly_scrum", "executive_summary"}
+        and request.type not in DELIVERY_REPORT_SECTION_TYPES
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="This section is not part of the selected delivery-report template.",
+        )
     _repository(session).add_section(
         report,
         type=request.type,
@@ -391,6 +403,10 @@ def update_section(
     if request.content_mode is not None and request.content_mode not in CONTENT_MODES:
         raise HTTPException(status_code=422, detail=f"Unknown content mode: {request.content_mode}")
     existing = _repository(session).get_section(report, section_id)
+    logger.info(
+        "section_state_update_requested report_id=%s section_id=%s section_type=%s",
+        report_id, section_id, existing.type,
+    )
     if request.payload is not None and existing.content_classification == "observed_fact" and existing.source_ids:
         raise HTTPException(
             status_code=422,
@@ -413,6 +429,7 @@ def delete_section(
     session: Session = Depends(get_db),
 ) -> ReportResponse:
     report = _resolve(session, report_id, user_id)
+    logger.info("section_delete_requested report_id=%s section_id=%s", report_id, section_id)
     try:
         _repository(session).remove_section(report, section_id)
     except ReportNotFound:
@@ -428,6 +445,10 @@ def reorder_sections(
     session: Session = Depends(get_db),
 ) -> ReportResponse:
     report = _resolve(session, report_id, user_id)
+    logger.info(
+        "section_reorder_requested report_id=%s section_count=%s",
+        report_id, len(request.section_ids),
+    )
     try:
         _repository(session).reorder_sections(report, request.section_ids)
     except ReportNotFound:
@@ -664,6 +685,10 @@ def refine_report_section(
             status_code=422,
             detail="Structured verified facts cannot be rewritten. Select a narrative section.",
         )
+    logger.info(
+        "refinement_request_received report_id=%s section_id=%s section_type=%s",
+        report_id, section.id, section.type,
+    )
     if not section.source_ids:
         raise HTTPException(
             status_code=422,
@@ -700,12 +725,20 @@ def refine_report_section(
     updated: list[UUID] = []
     public_warnings = result["warnings"]
     if content is not None:
+        logger.info(
+            "refinement_response_received report_id=%s section_id=%s section_type=%s",
+            report_id, section.id, section.type,
+        )
         section.content = content
         section.manually_edited = False
         section.needs_review = True
         report.status = "needs_review"
         report.version += 1
         updated.append(section.id)
+        logger.info(
+            "section_state_updated report_id=%s section_id=%s version=%s",
+            report_id, section.id, report.version,
+        )
     else:
         logger.warning(
             "Report section refinement failed validation for report=%s section=%s: %s",
@@ -713,10 +746,13 @@ def refine_report_section(
             section.id,
             result["warnings"],
         )
-        public_warnings = [
-            "Zara could not refine this section right now. The section was not changed, "
-            "and its verified facts remain protected."
-        ]
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Zara could not refine this section right now. The section was not changed, "
+                "and its verified facts remain protected."
+            ),
+        )
     report.validation = {
         "state": "needs_review" if updated else "unchanged",
         "warnings": public_warnings,
@@ -1006,6 +1042,12 @@ def export_report(
     """
 
     report = _resolve(session, report_id, user_id)
+    logger.info(
+        "export_report_called report_id=%s format=%s preview=%s "
+        "export_document_version=%s section_count=%s",
+        report_id, request.format, request.preview, report.version,
+        len([section for section in report.sections if section.visible]),
+    )
     if request.preview and request.format != "pdf":
         raise HTTPException(status_code=422, detail="PDF preview is available only for PDF reports.")
     payload = _serialize(report)

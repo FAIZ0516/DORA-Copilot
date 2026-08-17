@@ -137,8 +137,8 @@ def test_each_question_gets_its_own_session_so_answers_do_not_bleed() -> None:
 def test_weekly_scrum_template_has_the_fixed_mvp_sections() -> None:
     types = [item["type"] for item in TEMPLATES["weekly_scrum"]["sections"]]
     assert types == [
-        "cover", "kpi_group", "feature_status", "executive_summary", "key_finding", "risk",
-        "action_list", "data_quality", "methodology",
+        "kpi_group", "feature_status", "executive_summary", "key_finding", "risk",
+        "action_list", "data_quality",
     ]
 
 
@@ -263,8 +263,9 @@ def test_verified_dashboard_data_populates_supported_sections_only(monkeypatch) 
     sections = result["sections"]
     assert {
         "executive_summary", "kpi_group", "key_finding", "risk",
-        "recommendation", "data_quality", "methodology",
+        "recommendation", "action_list", "data_quality",
     } <= sections.keys()
+    assert "methodology" not in sections
     assert "92.47%" in sections["executive_summary"]["content"]
     key_measures = sections["kpi_group"]["payload"]
     assert key_measures["state"] == "ready"
@@ -323,7 +324,7 @@ def test_main_report_uses_singular_wording_for_one_open_item(monkeypatch) -> Non
     assert "up to 1 day old" in sections["action_list"]["content"]
 
 
-def test_methodology_retains_provenance_and_metric_definitions(monkeypatch) -> None:
+def test_provenance_stays_internal_and_metric_definitions_remain_available(monkeypatch) -> None:
     monkeypatch.setattr(
         "backend.services.report_generation.get_squad_dashboard",
         lambda *_args, **_kwargs: _dashboard_payload(),
@@ -331,11 +332,12 @@ def test_methodology_retains_provenance_and_metric_definitions(monkeypatch) -> N
     result = current_view_dashboard_evidence(
         object(), {"project": "DCPM", "squad": "JAEGER"}
     )
-    methodology = result["sections"]["methodology"]["content"]
-    assert "dashboard_service.get_squad_dashboard" in methodology
-    assert "server-side against read-only DoraDB" in methodology
-    assert "current Jira status is Impeded" in methodology
-    assert "Browser-rendered metric values were not accepted" in methodology
+    assert "methodology" not in result["sections"]
+    internal_evidence = result["evidence"]["answer"]
+    assert "dashboard_service.get_squad_dashboard" in internal_evidence
+    assert "server-side against read-only DoraDB" in internal_evidence
+    assert "current Jira status is Impeded" in internal_evidence
+    assert "Browser-rendered metric values were not accepted" in internal_evidence
 
     measures = result["sections"]["kpi_group"]["payload"]
     assert [column["key"] for column in measures["columns"]] == ["label", "value"]

@@ -51,13 +51,6 @@ import "./report-studio.css";
  * new-report chooser, and the editor.
  */
 
-const CLASSIFICATION_LABEL = {
-  observed_fact: "Observed fact",
-  interpretation: "Interpretation",
-  recommendation: "Recommendation",
-  user_authored: "Author's note",
-};
-
 const ADDABLE_BLOCKS = [
   ["rich_text", "Text"],
   ["key_finding", "Key finding"],
@@ -140,8 +133,6 @@ function ReportLibrary({ reports, status, error, onOpen, onNew, onDuplicate, onR
           <dl>
             <div><dt>Template</dt><dd>{label(report.template)}</dd></div>
             <div><dt>Sections</dt><dd>{report.section_count}</dd></div>
-            <div><dt>Verified data</dt><dd>{report.source_count ? "Available" : "Pending"}</dd></div>
-            <div><dt>Version</dt><dd>v{report.version}</dd></div>
             <div><dt>Edited</dt><dd>{new Date(report.updated_at).toLocaleString()}</dd></div>
             <div>
               <dt>Data</dt>
@@ -169,6 +160,20 @@ function StructuredTable({ payload }) {
   const rows = payload?.rows || [];
   if (!rows.length) return null;
   return <div className="report-table-wrap"><table><thead><tr>{columns.map((column) => <th key={column.key}>{column.label || column.key}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={row.feature || row.jira_key || index}>{columns.map((column) => <td key={column.key}>{row[column.key] ?? "—"}</td>)}</tr>)}</tbody></table></div>;
+}
+
+function KpiCards({ payload }) {
+  const items = Object.fromEntries((payload?.items || []).filter(Boolean).map((item) => [item.key, item]));
+  const completed = items.completed_work?.value ?? "Unavailable";
+  const total = items.total_work?.value ?? "Unavailable";
+  const cards = [
+    { key: "completion_pct", label: "Sprint Completion", note: `${completed} of ${total} scoped tickets`, tone: "blue" },
+    { key: "active_work", label: "Open Work", note: "Unresolved items", tone: "blue" },
+    { key: "impeded_work", label: "Active Blockers", note: "Items currently impeded", tone: "amber" },
+    { key: "open_bugs", label: "Open Bugs", note: "Unresolved bug tickets", tone: "red" },
+  ];
+  if (!cards.some((card) => items[card.key])) return null;
+  return <div className="report-kpi-grid">{cards.map((card) => <div className={`report-kpi-card report-kpi-card--${card.tone}`} key={card.key}><span>{card.label}</span><strong>{items[card.key]?.value ?? "Unavailable"}</strong><small>{card.note}</small></div>)}</div>;
 }
 
 function SimpleChart({ payload }) {
@@ -208,17 +213,6 @@ function SectionBlock({ section, index, total, busy, selected, onSelect, onChang
         </div>
       </header>
 
-      <div className="report-block-flags">
-        <span className={`report-classification report-classification--${section.content_classification}`}>
-          {CLASSIFICATION_LABEL[section.content_classification] || label(section.content_classification)}
-        </span>
-        {section.source_ids?.length > 0 && <span className="report-flag">{section.source_ids.length} source{section.source_ids.length === 1 ? "" : "s"}</span>}
-        {section.manually_edited && <span className="report-flag">Edited by hand</span>}
-        {section.needs_review && <span className="report-flag report-flag--warn">Needs review — not re-verified</span>}
-        {section.content_mode !== "rewrite" && <span className="report-flag">{label(section.content_mode)}</span>}
-        <span className={`report-state report-state--${section.state}`}>{label(section.state)}</span>
-      </div>
-
       {section.type !== "page_break" && (
         editing ? (
           <div className="report-block-editor">
@@ -241,7 +235,7 @@ function SectionBlock({ section, index, total, busy, selected, onSelect, onChang
               ? section.content.split("\n").filter(Boolean).map((line, i) => <p key={i}>{line}</p>)
               : null}
             {section.state === "needs_input" && section.payload?.rows?.length > 0 && <div className="report-needs-input"><strong>Needs Input</strong><span>{section.state_reason}</span></div>}
-            <StructuredTable payload={section.payload} />
+            {section.type === "kpi_group" ? <KpiCards payload={section.payload} /> : <StructuredTable payload={section.payload} />}
             {section.type === "chart" && <SimpleChart payload={section.payload} />}
             {!tabular && <button type="button" onClick={(event) => { event.stopPropagation(); setEditing(true); }}>Edit section</button>}
           </div>
@@ -252,8 +246,8 @@ function SectionBlock({ section, index, total, busy, selected, onSelect, onChang
 }
 
 function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSection, onMove, onRemove, onAdd, onGenerate, onApplyTemplate, onPreview, onExport, onExportCsv, onDuplicate, onSaveDraft, onCopy, onRefine }) {
-  const sections = report.sections.filter((section) => section.type !== "methodology");
-  const visible = sections.filter((section) => section.visible);
+  const sections = report.sections.filter((section) => !["cover", "methodology"].includes(section.type));
+  const deliveryLayout = ["weekly_scrum", "executive_summary"].includes(report.template);
   const [selectedSection, setSelectedSection] = useState(null);
   const [mode, setMode] = useState("edit");
   const [preview, setPreview] = useState(null);
@@ -263,6 +257,13 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
   useEffect(() => () => {
     if (preview?.url) URL.revokeObjectURL(preview.url);
   }, [preview]);
+
+  useEffect(() => {
+    if (!selectedSection) return;
+    setSelectedSection(
+      report.sections.find((section) => section.id === selectedSection.id) || null,
+    );
+  }, [report.sections]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function showPreview() {
     setPreviewBusy(true);
@@ -296,7 +297,6 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
           />
           <div className="report-editor-meta">
             <StatusPill status={report.status} />
-            <span>v{report.version}</span>
             <span>{scopeLine(report.scope)}</span>
             <span>{report.freshness?.stale ? `Data may be outdated — ${report.freshness.reason}` : "Data current"}</span>
           </div>
@@ -327,16 +327,6 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
         </div>
       )}
 
-      {report.validation?.issues?.length > 0 && (
-        <div className="report-conflicts report-conflicts--info" role="status">
-          <ClipboardList aria-hidden="true" />
-          <div>
-            <strong>Validation</strong>
-            {report.validation.issues.map((issue) => <p key={issue}>{issue}</p>)}
-          </div>
-        </div>
-      )}
-
       {mode === "preview" ? (
         <section className="report-pdf-preview" aria-label="PDF preview">
           <header><div><strong>Final PDF preview</strong><span>{preview?.filename}</span></div><button type="button" onClick={() => setMode("edit")}><Pencil /> Back to Edit Report</button></header>
@@ -353,24 +343,26 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
               </li>
             ))}
           </ol>
-          <h3>Add a block</h3>
-          <div className="report-add-blocks">
-            {ADDABLE_BLOCKS.map(([type, text]) => (
-              <button key={type} type="button" disabled={busy} onClick={() => onAdd(type, text)}>
-                <Plus aria-hidden="true" /> {text}
-              </button>
-            ))}
-          </div>
+          {!deliveryLayout && <>
+            <h3>Add a block</h3>
+            <div className="report-add-blocks">
+              {ADDABLE_BLOCKS.map(([type, text]) => (
+                <button key={type} type="button" disabled={busy} onClick={() => onAdd(type, text)}>
+                  <Plus aria-hidden="true" /> {text}
+                </button>
+              ))}
+            </div>
+          </>}
         </nav>
 
         <main className="report-preview" aria-label="Report preview">
           <div className="report-page">
-            <p className="report-page-brand">ZARA</p>
-            <h1>{report.title}</h1>
-            <p className="report-page-scope">{scopeLine(report.scope)}</p>
+            <p className="report-page-brand">RHB <span>REPORT</span></p>
+            <h1>{deliveryLayout ? "ZARA WEEKLY DELIVERY REPORT" : report.title}</h1>
+            {deliveryLayout && <h2>{report.scope?.squad || "All DCP Squads"} - {report.scope?.sprint || "All Sprints"}</h2>}
+            <p className="report-page-scope">{deliveryLayout ? `Project ${report.scope?.project || "DCPM"}` : scopeLine(report.scope)}</p>
             <p className="report-page-meta">
-              Version v{report.version} · {visible.length} visible section{visible.length === 1 ? "" : "s"} ·{" "}
-              {report.data_as_of ? `Data as of ${new Date(report.data_as_of).toLocaleString()}` : "Awaiting verified data"}
+              {report.data_as_of ? `Data as of ${new Date(report.data_as_of).toLocaleDateString()}` : "Awaiting verified data"}
             </p>
           </div>
           {sections.map((section, index) => (
@@ -622,6 +614,33 @@ export default function ReportStudio() {
     }
   }
 
+  async function refineSection(section, instruction) {
+    if (!report) return null;
+    setBusy(true);
+    try {
+      const result = await refineReportSection(report.id, section.id, instruction);
+      if (!result.updated_sections?.includes(section.id)) {
+        throw new Error("Zara did not update the selected section. The report was left unchanged.");
+      }
+      const updated = result.report.sections.find((item) => item.id === section.id);
+      if (!updated) {
+        throw new Error("The updated section was missing from Zara's response.");
+      }
+      setReport((current) => ({
+        ...result.report,
+        sections: current.sections.map((item) => item.id === section.id ? updated : item),
+      }));
+      setNotice({ tone: "info", text: `${updated.title} refined and saved.` });
+      refreshLibrary();
+      return updated;
+    } catch (failure) {
+      setNotice({ tone: "warn", text: failure.message });
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function copyReportContent() {
     if (!report) return;
     const lines = [report.title, scopeLine(report.scope), ""];
@@ -689,11 +708,7 @@ export default function ReportStudio() {
           onAdd={(type, text) => run(() => addSection(report.id, { type, title: text }), `${text} block added.`)}
           onSaveDraft={() => run(() => updateReport(report.id, { status: "draft" }), "Draft saved.")}
           onCopy={() => run(async () => { await copyReportContent(); return null; }, "Report content copied.")}
-          onRefine={(section, instruction) => run(async () => {
-            const result = await refineReportSection(report.id, section.id, instruction);
-            setNotice(result.warnings?.length ? { tone: "warn", text: result.warnings.join(" ") } : { tone: "info", text: `${section.title} refined. Review the updated narrative.` });
-            return result;
-          })}
+          onRefine={refineSection}
           onApplyTemplate={(template) => run(async () => {
             const applied = await applyReportTemplate(report.id, template);
             const definition = catalogue?.templates?.find((item) => item.id === template);

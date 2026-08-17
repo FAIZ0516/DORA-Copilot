@@ -38,9 +38,9 @@ from .report_branding import (
 from .report_charts import describe, draw_chart, truncation_note
 from reportlab.platypus import (
     BaseDocTemplate,
+    Flowable,
     Frame,
     KeepTogether,
-    NextPageTemplate,
     PageBreak,
     PageTemplate,
     Paragraph,
@@ -60,15 +60,6 @@ RISK = colors.HexColor("#b4532a")
 
 PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN = 18 * mm
-
-# Labels shown against a block so a reader can tell measurement from advice.
-CLASSIFICATION_LABEL = {
-    "observed_fact": "Observed fact",
-    "interpretation": "Interpretation",
-    "recommendation": "Recommendation",
-    "user_authored": "Author's note",
-}
-
 
 def safe_filename(title: str, extension: str) -> str:
     """A predictable, filesystem-safe download name."""
@@ -162,6 +153,10 @@ def _styles() -> dict[str, ParagraphStyle]:
             "weekly_item_title", parent=base["Normal"], fontName="Helvetica-Bold",
             fontSize=9, leading=11, textColor=INK, spaceAfter=2,
         ),
+        "weekly_table_head": ParagraphStyle(
+            "weekly_table_head", parent=base["Normal"], fontName="Helvetica-Bold",
+            fontSize=7.2, leading=9, textColor=ACCENT,
+        ),
     }
 
 
@@ -190,16 +185,12 @@ def _scope_line(scope: dict[str, Any]) -> str:
     return " · ".join(part for part in parts if part)
 
 
-def _fmt_time(value: Any) -> str:
-    if not value:
-        return "Not recorded"
-    if isinstance(value, datetime):
-        return value.strftime("%d %b %Y %H:%M UTC")
-    return str(value)
+def _uses_delivery_layout(report: dict[str, Any]) -> bool:
+    return report.get("template") in {"weekly_scrum", "executive_summary"}
 
 
 class _ReportDoc(BaseDocTemplate):
-    """Adds the running footer: page numbers, version and scope."""
+    """Adds the corporate furniture and running page number."""
 
     def __init__(self, buffer: io.BytesIO, *, report: dict[str, Any]) -> None:
         branded = template_available()
@@ -228,21 +219,20 @@ class _ReportDoc(BaseDocTemplate):
     def _footer(self, canvas, doc) -> None:  # noqa: ANN001 - ReportLab signature
         canvas.saveState()
         if self._branded:
-            if self._report.get("template") == "weekly_scrum":
-                # The supplied weekly reference uses the corporate masthead and
-                # footer on a clean white body. Mask the blank template's large
-                # watermark inside the content frame before drawing the report.
-                mask_left = TEMPLATE_MARGIN_LEFT - 5 * mm
-                mask_bottom = TEMPLATE_MARGIN_BOTTOM - 3 * mm
-                canvas.setFillColor(colors.white)
-                canvas.rect(
-                    mask_left,
-                    mask_bottom,
-                    PAGE_WIDTH - (2 * mask_left),
-                    PAGE_HEIGHT - TEMPLATE_MARGIN_TOP - mask_bottom,
-                    stroke=0,
-                    fill=1,
-                )
+            # Keep the supplied corporate masthead and footer, but mask its
+            # decorative body watermark so all exported reports have the clean
+            # white management-report surface used by the weekly reference.
+            mask_left = TEMPLATE_MARGIN_LEFT - 5 * mm
+            mask_bottom = TEMPLATE_MARGIN_BOTTOM - 3 * mm
+            canvas.setFillColor(colors.white)
+            canvas.rect(
+                mask_left,
+                mask_bottom,
+                PAGE_WIDTH - (2 * mask_left),
+                PAGE_HEIGHT - TEMPLATE_MARGIN_TOP - mask_bottom,
+                stroke=0,
+                fill=1,
+            )
             # The template carries its own rule, and a static "1" that would
             # otherwise repeat on every page. Cover it, then write the real
             # number. Content is merged above the template, so this hides it.
@@ -259,8 +249,6 @@ class _ReportDoc(BaseDocTemplate):
             baseline = MARGIN + 2 * mm
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(MUTED)
-        left = f"{self._report.get('title') or 'Report'} · v{self._report.get('version', 1)}"
-        canvas.drawString(self._left, baseline, left[:110])
         canvas.drawRightString(
             PAGE_WIDTH - self._right, baseline, f"Page {canvas.getPageNumber()}"
         )
@@ -360,73 +348,20 @@ def _chart_block(payload: dict[str, Any], styles: dict[str, ParagraphStyle]) -> 
     return flow
 
 
-def _cover(report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:
+def _report_intro(report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:
+    """Compact first-page context for non-delivery templates; never a cover."""
+
     scope = report.get("scope") or {}
-    rows = [
-        ("Project", scope.get("project") or "All projects"),
-        ("Squad", scope.get("squad") or "All squads"),
-        ("Reporting period", _scope_line(scope).split("Period ")[-1] if "Period" in _scope_line(scope) else "All available dates"),
-        ("Generated", _fmt_time(datetime.now(timezone.utc))),
-        ("Data as of", _fmt_time(report.get("data_as_of"))),
-        ("Report version", f"v{report.get('version', 1)}"),
-    ]
-    meta = Table(
-        [[Paragraph(_escape(k), styles["label"]), Paragraph(_escape(v), styles["cover_meta"])] for k, v in rows],
-        colWidths=[38 * mm, PAGE_WIDTH - 2 * MARGIN - 38 * mm], hAlign="LEFT",
-    )
-    meta.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-        ("LINEBELOW", (0, 0), (-1, -2), 0.4, RULE),
-    ]))
     return [
-        Spacer(1, 34 * mm),
-        Paragraph("ZARA REPORT STUDIO", styles["label"]),
+        Paragraph("ZARA DELIVERY REPORT", styles["label"]),
         Paragraph(_escape(report.get("title") or "Report"), styles["cover_title"]),
         Paragraph(_escape(_scope_line(scope)), styles["cover_meta"]),
-        Spacer(1, 16 * mm),
-        meta,
-        NextPageTemplate("body"),
-        PageBreak(),
-    ]
-
-
-def _methodology(report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:
-    sources = report.get("sources") or []
-    query_ids: list[str] = []
-    for source in sources:
-        query_ids.extend((source.get("evidence") or {}).get("query_ids") or [])
-    rows = [
-        ("Scope", _scope_line(report.get("scope") or {})),
-        ("Evidence sources", str(len(sources))),
-        ("Approved queries used", ", ".join(sorted(set(query_ids))) or "None recorded"),
-        ("Data retrieved", _fmt_time(report.get("data_as_of"))),
-        ("Last validated", _fmt_time(report.get("last_validated_at"))),
-        ("Validation state", str((report.get("validation") or {}).get("state", "not run"))),
-        ("Report version", f"v{report.get('version', 1)}"),
-    ]
-    table = Table(
-        [[Paragraph(_escape(k), styles["label"]), Paragraph(_escape(v), styles["cell"])] for k, v in rows],
-        colWidths=[42 * mm, PAGE_WIDTH - 2 * MARGIN - 42 * mm], hAlign="LEFT",
-    )
-    table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ("LINEBELOW", (0, 0), (-1, -2), 0.4, RULE),
-    ]))
-    return [table]
-
-
-def _section_by_type(report: dict[str, Any], type_: str) -> dict[str, Any]:
-    return next(
-        (
-            section for section in sorted(
-                report.get("sections") or [], key=lambda item: item.get("position", 0)
-            )
-            if section.get("type") == type_ and section.get("visible", True)
+        Paragraph(
+            _escape(f"Data as of {_display_day(report.get('data_as_of'))}"),
+            styles["cover_meta"],
         ),
-        {},
-    )
+        Spacer(1, 5 * mm),
+    ]
 
 
 def _display_day(value: Any) -> str:
@@ -450,9 +385,49 @@ def _content_lines(section: dict[str, Any]) -> list[str]:
     ]
 
 
+class _WeeklyKpiGrid(Flowable):
+    """Two-by-two rounded KPI cards populated from verified payload values."""
+
+    def __init__(self, cards: list[dict[str, Any]], width: float) -> None:
+        super().__init__()
+        self.cards = cards
+        self.width = width
+        self.height = 126
+
+    def wrap(self, _available_width: float, _available_height: float) -> tuple[float, float]:
+        return self.width, self.height
+
+    def draw(self) -> None:
+        canvas = self.canv
+        gap = 9
+        card_width = (self.width - gap) / 2
+        card_height = (self.height - gap) / 2
+        for index, card in enumerate(self.cards):
+            column = index % 2
+            row = index // 2
+            x = column * (card_width + gap)
+            y = self.height - (row + 1) * card_height - row * gap
+            canvas.setFillColor(colors.white)
+            canvas.setStrokeColor(RULE)
+            canvas.setLineWidth(0.7)
+            canvas.roundRect(x, y, card_width, card_height, 6, stroke=1, fill=1)
+            canvas.setStrokeColor(card["accent"])
+            canvas.setLineWidth(3)
+            canvas.line(x + 7, y + card_height - 2, x + card_width - 7, y + card_height - 2)
+            canvas.setFillColor(MUTED)
+            canvas.setFont("Helvetica-Bold", 7)
+            canvas.drawString(x + 10, y + card_height - 17, card["label"])
+            canvas.setFillColor(INK)
+            canvas.setFont("Helvetica-Bold", 17)
+            canvas.drawString(x + 10, y + card_height - 38, str(card["value"]))
+            canvas.setFillColor(MUTED)
+            canvas.setFont("Helvetica", 6.7)
+            canvas.drawString(x + 10, y + 8, card["note"])
+
+
 def _weekly_kpi_grid(
-    payload: dict[str, Any], styles: dict[str, ParagraphStyle]
-) -> Table | None:
+    payload: dict[str, Any], _styles: dict[str, ParagraphStyle]
+) -> Flowable | None:
     items = {
         str(item.get("key")): item
         for item in (payload.get("items") or [])
@@ -476,58 +451,76 @@ def _weekly_kpi_grid(
         "impeded_work": colors.HexColor("#d17a16"),
         "open_bugs": colors.HexColor("#ef4654"),
     }
-    content_width = PAGE_WIDTH - TEMPLATE_MARGIN_LEFT - TEMPLATE_MARGIN_RIGHT
-    card_width = (content_width - 10) / 2
-
-    cards: list[Table] = []
+    labels = {
+        "completion_pct": "SPRINT COMPLETION",
+        "active_work": "OPEN WORK",
+        "impeded_work": "ACTIVE BLOCKERS",
+        "open_bugs": "OPEN BUGS",
+    }
+    cards: list[dict[str, Any]] = []
     for key in ordered:
         item = items.get(key, {})
-        card = Table(
-            [[Paragraph(_escape(item.get("label") or key.replace("_", " ").title()), styles["weekly_kpi_label"])],
-             [Paragraph(_escape(item.get("value", "Unavailable")), styles["weekly_kpi_value"])],
-             [Paragraph(_escape(notes[key]), styles["weekly_kpi_note"])]],
-            colWidths=[card_width], rowHeights=[16, 24, 14], hAlign="LEFT",
-        )
-        card.setStyle(TableStyle([
-            ("LINEABOVE", (0, 0), (-1, 0), 3, accents[key]),
-            ("BOX", (0, 0), (-1, -1), .7, RULE),
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fbfcfe")),
-            ("LEFTPADDING", (0, 0), (-1, -1), 10),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-            ("TOPPADDING", (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
-        cards.append(card)
-
-    grid = Table(
-        [[cards[0], cards[1]], [cards[2], cards[3]]],
-        colWidths=[card_width + 10, card_width], rowHeights=[60, 60], hAlign="LEFT",
+        cards.append({
+            "label": labels[key],
+            "value": item.get("value", "Unavailable"),
+            "note": notes[key],
+            "accent": accents[key],
+        })
+    return _WeeklyKpiGrid(
+        cards, PAGE_WIDTH - TEMPLATE_MARGIN_LEFT - TEMPLATE_MARGIN_RIGHT
     )
-    grid.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (0, -1), 10),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    return grid
 
 
 def _weekly_feature_table(
     payload: dict[str, Any], styles: dict[str, ParagraphStyle]
 ) -> list[Any]:
     rows = payload.get("rows") or []
-    limited = {**payload, "rows": rows[:5]}
-    flow = _data_table(
-        limited, styles,
-        content_width=PAGE_WIDTH - TEMPLATE_MARGIN_LEFT - TEMPLATE_MARGIN_RIGHT,
+    if not rows:
+        return [Paragraph("No Feature rows were available for this scope.", styles["note"])]
+
+    def status_colour(value: Any) -> str:
+        status = str(value or "").casefold()
+        if any(token in status for token in ("done", "closed", "released", "complete")):
+            return "#16835b"
+        if any(token in status for token in ("blocked", "impeded", "cancelled", "rejected")):
+            return "#c2414b"
+        if any(token in status for token in ("progress", "test", "review", "development")):
+            return "#b66a10"
+        return "#4c5d73"
+
+    content_width = PAGE_WIDTH - TEMPLATE_MARGIN_LEFT - TEMPLATE_MARGIN_RIGHT
+    table_rows: list[list[Any]] = [[
+        Paragraph("FEATURE ID", styles["weekly_table_head"]),
+        Paragraph("FEATURE NAME", styles["weekly_table_head"]),
+        Paragraph("STATUS", styles["weekly_table_head"]),
+    ]]
+    for row in rows:
+        status = row.get("status") or "Needs Input"
+        table_rows.append([
+            Paragraph(f"<b>{_escape(row.get('feature'))}</b>", styles["cell"]),
+            Paragraph(_escape(row.get("feature_name")), styles["cell"]),
+            Paragraph(
+                f'<font color="{status_colour(status)}"><b>{_escape(status)}</b></font>',
+                styles["cell"],
+            ),
+        ])
+    table = Table(
+        table_rows,
+        colWidths=[content_width * .21, content_width * .54, content_width * .25],
+        repeatRows=1,
+        hAlign="LEFT",
     )
-    if len(rows) > 5:
-        flow.append(Paragraph(
-            f"Showing 5 of {len(rows)} Features in the selected scope.", styles["note"]
-        ))
-    return flow
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef5fb")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fbfcfe")]),
+        ("GRID", (0, 0), (-1, -1), 0.4, RULE),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return [table]
 
 
 def _risk_title(text: str) -> str:
@@ -568,9 +561,11 @@ def _weekly_risk_blocks(
     section: dict[str, Any], styles: dict[str, ParagraphStyle]
 ) -> list[Any]:
     lines = _content_lines(section) or ["No verified delivery risk currently requires attention in this scope."]
+    if all(line.casefold().startswith("no verified delivery risk") for line in lines):
+        return [Paragraph(_escape(lines[0]), styles["weekly_body"])]
     flow: list[Any] = []
     content_width = PAGE_WIDTH - TEMPLATE_MARGIN_LEFT - TEMPLATE_MARGIN_RIGHT
-    for index, line in enumerate(lines[:3], start=1):
+    for index, line in enumerate(lines, start=1):
         card = Table(
             [[Paragraph(f"{index:02d}", styles["weekly_risk_number"]),
               [Paragraph(_escape(_risk_title(line)), styles["weekly_item_title"]),
@@ -594,9 +589,11 @@ def _weekly_action_blocks(
     section: dict[str, Any], styles: dict[str, ParagraphStyle]
 ) -> list[Any]:
     lines = _content_lines(section) or ["Continue monitoring the current delivery scope."]
+    if all(line.casefold().startswith("no new action is required") for line in lines):
+        return [Paragraph(_escape(lines[0]), styles["weekly_body"])]
     flow: list[Any] = []
     content_width = PAGE_WIDTH - TEMPLATE_MARGIN_LEFT - TEMPLATE_MARGIN_RIGHT
-    for index, line in enumerate(lines[:4], start=1):
+    for index, line in enumerate(lines, start=1):
         number = Drawing(24, 24)
         number.add(Circle(12, 12, 12, fillColor=ACCENT, strokeColor=ACCENT))
         number.add(String(
@@ -619,66 +616,105 @@ def _weekly_action_blocks(
     return flow
 
 
-def _render_weekly_scrum_pdf(report: dict[str, Any]) -> bytes:
-    """Render the fixed two-page weekly executive template from dynamic data."""
-
-    styles = _styles()
+def _delivery_context(
+    report: dict[str, Any], styles: dict[str, ParagraphStyle], *, insights: bool = False
+) -> list[Any]:
     scope = report.get("scope") or {}
     squad = scope.get("squad") or "All DCP Squads"
     sprint = scope.get("sprint") or "All Sprints"
     project = scope.get("project") or "DCPM"
-    summary = _section_by_type(report, "executive_summary")
-    highlights = _section_by_type(report, "key_finding")
-    risks = _section_by_type(report, "risk")
-    actions = _section_by_type(report, "action_list") or _section_by_type(report, "recommendation")
-    quality = _section_by_type(report, "data_quality")
-    kpis = _section_by_type(report, "kpi_group")
-    features = _section_by_type(report, "feature_status")
-
-    flow: list[Any] = [
+    title = f"{squad} - Delivery Insights" if insights else f"{squad} - {sprint}"
+    meta = (
+        f"Project {project}  |  Squad {squad}  |  {sprint}"
+        if insights
+        else f"Project {project}  |  Data as of {_display_day(report.get('data_as_of'))}"
+    )
+    return [
         Paragraph("ZARA WEEKLY DELIVERY REPORT", styles["weekly_eyebrow"]),
-        Paragraph(_escape(f"{squad} - {sprint}"), styles["weekly_title"]),
-        Paragraph(
-            _escape(f"Project {project}  |  Data as of {_display_day(report.get('data_as_of'))}"),
-            styles["weekly_meta"],
-        ),
+        Paragraph(_escape(title), styles["weekly_title"]),
+        Paragraph(_escape(meta), styles["weekly_meta"]),
         Spacer(1, 3 * mm),
-        Paragraph("DELIVERY AT A GLANCE", styles["weekly_section"]),
     ]
-    kpi_grid = _weekly_kpi_grid(kpis.get("payload") or {}, styles)
-    if kpi_grid is not None:
-        flow.append(kpi_grid)
-    else:
-        flow.append(Paragraph("Verified KPI values are not available for this scope.", styles["note"]))
 
-    flow.append(Paragraph("FEATURE DELIVERY STATUS", styles["weekly_section"]))
-    flow.extend(_weekly_feature_table(features.get("payload") or {}, styles))
-    flow.append(Paragraph("EXECUTIVE SUMMARY", styles["weekly_section"]))
-    flow.append(Paragraph(
-        _escape(summary.get("content") or "This section has not been written yet."),
-        styles["weekly_body"],
-    ))
-    flow.append(Paragraph("KEY HIGHLIGHTS", styles["weekly_section"]))
-    for line in _content_lines(highlights)[:4]:
-        flow.append(Paragraph(_escape(f"- {line}"), styles["weekly_body"]))
 
-    flow.extend([
-        PageBreak(),
-        Paragraph(_escape(f"{squad} - Delivery Insights"), styles["weekly_title"]),
-        Paragraph(
-            _escape(f"Project {project}  |  Squad {squad}  |  {sprint}"), styles["weekly_meta"]
-        ),
-        Paragraph("RISKS REQUIRING ATTENTION", styles["weekly_section"]),
-    ])
-    flow.extend(_weekly_risk_blocks(risks, styles))
-    flow.append(Paragraph("RECOMMENDED ACTIONS", styles["weekly_section"]))
-    flow.extend(_weekly_action_blocks(actions, styles))
-    if quality:
-        flow.append(Paragraph("DATA QUALITY &amp; LIMITATIONS", styles["weekly_section"]))
-        flow.append(Paragraph(
-            _escape(quality.get("content") or "No additional data-quality note was returned."),
-            styles["weekly_body"],
+def _delivery_section_block(
+    section: dict[str, Any], styles: dict[str, ParagraphStyle]
+) -> list[Any]:
+    type_ = section.get("type")
+    title = section.get("title") or type_.replace("_", " ").title()
+    payload = section.get("payload") or {}
+    content = str(section.get("content") or "").strip()
+    block: list[Any] = [
+        Paragraph(_escape(title.upper()), styles["weekly_section"]),
+    ]
+
+    if type_ == "kpi_group":
+        grid = _weekly_kpi_grid(payload, styles)
+        block.append(
+            grid
+            if grid is not None
+            else Paragraph("Verified KPI values are not available for this scope.", styles["note"])
+        )
+    elif type_ == "feature_status":
+        block.extend(_weekly_feature_table(payload, styles))
+    elif type_ == "key_finding":
+        lines = _content_lines(section)
+        block.extend(
+            Paragraph(_escape(f"- {line}"), styles["weekly_body"])
+            for line in lines
+        )
+    elif type_ == "risk":
+        block.extend(_weekly_risk_blocks(section, styles))
+    elif type_ in {"recommendation", "action_list"}:
+        block.extend(_weekly_action_blocks(section, styles))
+    elif type_ in {"data_table"}:
+        block.extend(_data_table(
+            payload, styles,
+            content_width=PAGE_WIDTH - TEMPLATE_MARGIN_LEFT - TEMPLATE_MARGIN_RIGHT,
         ))
+    elif type_ == "chart":
+        block.extend(_chart_block(payload, styles))
+    elif content:
+        block.extend(
+            Paragraph(_escape(paragraph), styles["weekly_body"])
+            for paragraph in content.split("\n")
+            if paragraph.strip()
+        )
+    else:
+        block.append(Paragraph("This section has not been written yet.", styles["note"]))
+    block.append(Spacer(1, 3 * mm))
+    return block
+
+
+def _render_delivery_pdf(report: dict[str, Any]) -> bytes:
+    """Render the saved delivery document in its current order and visibility."""
+
+    styles = _styles()
+    sections = [
+        section
+        for section in sorted(report.get("sections") or [], key=lambda item: item.get("position", 0))
+        if section.get("visible", True) and section.get("type") not in {"cover", "methodology"}
+    ]
+    flow: list[Any] = _delivery_context(report, styles)
+    rendered_count = 0
+    insights_started = False
+    for section in sections:
+        type_ = section.get("type")
+        if type_ == "page_break":
+            flow.append(PageBreak())
+            flow.extend(_delivery_context(report, styles, insights=True))
+            insights_started = True
+            continue
+        if (
+            not insights_started
+            and rendered_count >= 2
+            and type_ in {"risk", "recommendation", "action_list", "data_quality"}
+        ):
+            flow.append(PageBreak())
+            flow.extend(_delivery_context(report, styles, insights=True))
+            insights_started = True
+        flow.extend(_delivery_section_block(section, styles))
+        rendered_count += 1
 
     buffer = io.BytesIO()
     doc = _ReportDoc(buffer, report=report)
@@ -689,13 +725,13 @@ def _render_weekly_scrum_pdf(report: dict[str, Any]) -> bytes:
 def render_pdf(report: dict[str, Any]) -> bytes:
     """Render the whole report. Returns PDF bytes; never writes to disk."""
 
-    if report.get("template") == "weekly_scrum":
-        return _render_weekly_scrum_pdf(report)
+    if _uses_delivery_layout(report):
+        return _render_delivery_pdf(report)
 
     styles = _styles()
     buffer = io.BytesIO()
     doc = _ReportDoc(buffer, report=report)
-    flow: list[Any] = _cover(report, styles)
+    flow: list[Any] = _report_intro(report, styles)
 
     for section in sorted(report.get("sections") or [], key=lambda s: s.get("position", 0)):
         if not section.get("visible", True) or section.get("type") == "methodology":
@@ -711,11 +747,6 @@ def render_pdf(report: dict[str, Any]) -> bytes:
         if section.get("title"):
             block.append(Paragraph(_escape(section["title"]), styles["heading"]))
 
-        classification = section.get("content_classification", "observed_fact")
-        # Recommendations and interpretations are labelled so a reader never
-        # mistakes advice for measurement.
-        if classification in {"recommendation", "interpretation", "user_authored"}:
-            block.append(Paragraph(CLASSIFICATION_LABEL[classification].upper(), styles["label"]))
         if section.get("needs_review"):
             block.append(Paragraph(
                 "Manually edited after validation — figures in this section have not been "
@@ -731,9 +762,6 @@ def render_pdf(report: dict[str, Any]) -> bytes:
             block.extend(_data_table(payload, styles))
         elif type_ == "chart":
             block.extend(_chart_block(payload, styles))
-        elif type_ == "methodology":
-            block.extend(_methodology(report, styles))
-
         content = (section.get("content") or "").strip()
         if content:
             for paragraph in [p for p in content.split("\n") if p.strip()]:
@@ -754,17 +782,24 @@ def render_docx(report: dict[str, Any]) -> bytes:
     """Editable Word version, mirroring the PDF's structure."""
 
     from docx import Document
-    from docx.shared import Pt
+    from docx.shared import Pt, RGBColor
 
     document = Document()
     document.core_properties.title = report.get("title") or "Report"
-    document.add_heading(report.get("title") or "Report", level=0)
-    document.add_paragraph(_scope_line(report.get("scope") or {}))
+    scope = report.get("scope") or {}
+    if _uses_delivery_layout(report):
+        document.add_heading("ZARA WEEKLY DELIVERY REPORT", level=0)
+        document.add_heading(
+            f"{scope.get('squad') or 'All DCP Squads'} - {scope.get('sprint') or 'All Sprints'}",
+            level=1,
+        )
+        document.add_paragraph(f"Project {scope.get('project') or 'DCPM'}")
+    else:
+        document.add_heading(report.get("title") or "Report", level=0)
+        document.add_paragraph(_scope_line(scope))
     meta = document.add_paragraph()
     meta.add_run(
-        f"Generated {_fmt_time(datetime.now(timezone.utc))} · "
-        f"Data as of {_fmt_time(report.get('data_as_of'))} · "
-        f"Version v{report.get('version', 1)}"
+        f"Data as of {_display_day(report.get('data_as_of'))}"
     ).font.size = Pt(8)
 
     for section in sorted(report.get("sections") or [], key=lambda s: s.get("position", 0)):
@@ -775,24 +810,46 @@ def render_docx(report: dict[str, Any]) -> bytes:
             continue
         if section.get("title"):
             document.add_heading(section["title"], level=1)
-        classification = section.get("content_classification", "observed_fact")
-        if classification in {"recommendation", "interpretation", "user_authored"}:
-            run = document.add_paragraph().add_run(CLASSIFICATION_LABEL[classification].upper())
-            run.bold = True
-            run.font.size = Pt(7)
-
         payload = section.get("payload") or {}
         if section.get("type") == "kpi_group":
-            items = [i for i in (payload.get("items") or []) if isinstance(i, dict)]
-            if items:
-                table = document.add_table(rows=1, cols=2)
+            items = {
+                str(item.get("key")): item
+                for item in (payload.get("items") or [])
+                if isinstance(item, dict)
+            }
+            ordered = ["completion_pct", "active_work", "impeded_work", "open_bugs"]
+            if any(key in items for key in ordered):
+                completed = items.get("completed_work", {}).get("value", "Unavailable")
+                total = items.get("total_work", {}).get("value", "Unavailable")
+                notes = {
+                    "completion_pct": f"{completed} of {total} scoped tickets",
+                    "active_work": "Unresolved items",
+                    "impeded_work": "Items currently impeded",
+                    "open_bugs": "Unresolved bug tickets",
+                }
+                labels = {
+                    "completion_pct": "SPRINT COMPLETION",
+                    "active_work": "OPEN WORK",
+                    "impeded_work": "ACTIVE BLOCKERS",
+                    "open_bugs": "OPEN BUGS",
+                }
+                table = document.add_table(rows=2, cols=2)
                 table.style = "Light Grid Accent 1"
-                table.rows[0].cells[0].text = "Measure"
-                table.rows[0].cells[1].text = "Value"
-                for item in items:
-                    cells = table.add_row().cells
-                    cells[0].text = str(item.get("label", ""))
-                    cells[1].text = str(item.get("value", ""))
+                for index, key in enumerate(ordered):
+                    cell = table.cell(index // 2, index % 2)
+                    cell.text = ""
+                    label_run = cell.paragraphs[0].add_run(labels[key])
+                    label_run.bold = True
+                    label_run.font.size = Pt(8)
+                    label_run.font.color.rgb = RGBColor(91, 107, 128)
+                    value_run = cell.add_paragraph().add_run(
+                        str(items.get(key, {}).get("value", "Unavailable"))
+                    )
+                    value_run.bold = True
+                    value_run.font.size = Pt(18)
+                    note_run = cell.add_paragraph().add_run(notes[key])
+                    note_run.font.size = Pt(8)
+                    note_run.font.color.rgb = RGBColor(91, 107, 128)
         elif section.get("type") in {"data_table", "feature_status", "chart"}:
             columns, rows = _tabular(payload)
             if columns:
@@ -846,4 +903,4 @@ def render_csv(payload: dict[str, Any]) -> str:
     return buffer.getvalue()
 
 
-__all__ = ["CLASSIFICATION_LABEL", "render_csv", "render_docx", "render_pdf", "safe_filename"]
+__all__ = ["render_csv", "render_docx", "render_pdf", "safe_filename"]

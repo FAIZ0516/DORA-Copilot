@@ -404,7 +404,6 @@ def current_view_dashboard_evidence(doradb, scope: dict[str, Any] | None) -> dic
             "recommendation": {"content": recommendations},
             "action_list": {"content": recommendations},
             "data_quality": {"content": quality},
-            "methodology": {"content": methodology},
         }),
     }
 

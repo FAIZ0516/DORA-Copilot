@@ -253,6 +253,7 @@ class ReportRepository:
             source_ids=source_ids or [],
         )
         self.session.add(section)
+        report.version += 1
         self.session.commit()
         self.session.refresh(report)
         return section
@@ -340,6 +341,7 @@ class ReportRepository:
             if section.source_ids:
                 section.needs_review = True
                 report.status = "needs_review"
+        report.version += 1
         self.session.commit()
         self.session.refresh(section)
         return section
@@ -350,6 +352,7 @@ class ReportRepository:
         self.session.flush()
         self.session.refresh(report)
         self._renumber(report)
+        report.version += 1
         self.session.commit()
 
     def reorder_sections(self, report: Report, ordered_ids: list[UUID]) -> Report:
@@ -367,6 +370,7 @@ class ReportRepository:
             if section.id not in set(ordered_ids):
                 section.position = position
                 position += 1
+        report.version += 1
         self.session.commit()
         self.session.refresh(report)
         return report
