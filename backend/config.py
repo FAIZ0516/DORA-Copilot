@@ -77,9 +77,14 @@ class Settings(BaseSettings):
     ollama_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
 
     elevenlabs_api_key: str = ""
-    # A premade voice, which every plan can use over the API. The previous
-    # default was a library voice that a free plan is refused with HTTP 402.
-    elevenlabs_voice_id: str = "XrExE9yKIg1WjnnlVkGX"
+    # Alice: British, clear, professional, tagged by ElevenLabs for
+    # informative/educational use -- which is the job Zara actually does.
+    #
+    # It must stay a *premade* voice. Library voices (community and
+    # professional, including every Malay-accented one) are refused over the
+    # API on a free plan with HTTP 402 "Free users cannot use library voices",
+    # and the fallback then quietly substitutes a different voice.
+    elevenlabs_voice_id: str = "Xb7hH8MSUJpSbSDYk0k2"
     elevenlabs_model_id: str = "eleven_flash_v2_5"
     elevenlabs_output_format: str = "mp3_22050_32"
     elevenlabs_timeout_seconds: float = Field(default=45.0, ge=1.0, le=120.0)

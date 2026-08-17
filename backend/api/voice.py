@@ -54,7 +54,9 @@ from ..services.voice_audio import (
     transcribe_pcm,
     vad_available,
 )
+from ..llm import GenerativeAIClient
 from ..services.voice_speech import segment_for_speech
+from ..services.voice_summary import spoken_summary
 from ..tts import (
     TTSNotConfiguredError,
     TTSProviderError,
@@ -375,7 +377,25 @@ async def _handle_utterance(sender: _Sender, session: VoiceSession, pcm: bytes) 
             warnings=list(result.get("warnings") or []),
         ),
     )
-    await _speak(sender, session, result.get("answer") or "", turn_id)
+    # The full answer is already on its way to the screen. What gets spoken is
+    # a condensed version of it: read aloud, an eleven-row status breakdown is
+    # half a minute of numbers nobody can hold in their head. The summary is
+    # never added to the answer -- it exists only to be spoken.
+    answer = result.get("answer") or ""
+    if session.is_cancelled(turn_id):
+        await _set_state(sender, session, VoiceState.LISTENING)
+        return
+    try:
+        spoken = await asyncio.to_thread(
+            spoken_summary,
+            GenerativeAIClient(settings),
+            question=transcript,
+            answer=answer,
+        )
+    except Exception:  # noqa: BLE001 - speaking the full answer is a fine outcome
+        logger.exception("Spoken summary failed")
+        spoken = ""
+    await _speak(sender, session, spoken or answer, turn_id)
 
 
 @router.websocket("/session/{token}")
