@@ -77,12 +77,50 @@ class Settings(BaseSettings):
     ollama_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
 
     elevenlabs_api_key: str = ""
-    elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
+    # A premade voice, which every plan can use over the API. The previous
+    # default was a library voice that a free plan is refused with HTTP 402.
+    elevenlabs_voice_id: str = "XrExE9yKIg1WjnnlVkGX"
     elevenlabs_model_id: str = "eleven_flash_v2_5"
     elevenlabs_output_format: str = "mp3_22050_32"
     elevenlabs_timeout_seconds: float = Field(default=45.0, ge=1.0, le=120.0)
     elevenlabs_max_chars_per_request: int = Field(default=2000, ge=1, le=5000)
     elevenlabs_monthly_char_limit: int = Field(default=10_000, ge=1, le=1_000_000)
+
+    # Realtime voice conversation. Speech recognition and voice-activity
+    # detection run locally; DeepSeek remains the only LLM, and every question
+    # still goes through the governed agent.
+    voice_mode_enabled: bool = True
+    # "groq" sends the utterance to Groq's hosted Whisper and loads no model
+    # locally -- the local model is what exhausted memory on the small Render
+    # instance. "faster-whisper" keeps everything on the machine.
+    voice_stt_provider: Literal["faster-whisper", "groq"] = "faster-whisper"
+    voice_tts_provider: Literal["elevenlabs"] = "elevenlabs"
+    voice_vad_provider: Literal["silero"] = "silero"
+    # Silence that ends an utterance. Too short cuts people off mid-sentence;
+    # too long makes the assistant feel unresponsive.
+    voice_end_silence_ms: int = Field(default=700, ge=200, le=5_000)
+    voice_max_utterance_seconds: int = Field(default=30, ge=5, le=120)
+    # Guards against a stuck client streaming audio forever.
+    voice_session_ttl_seconds: int = Field(default=1_800, ge=60, le=14_400)
+    voice_sample_rate: int = Field(default=16_000, ge=8_000, le=48_000)
+    # Pinning the language stops Whisper auto-detecting the wrong one on a
+    # short clip and then "translating" it into invented text. Blank = detect.
+    voice_language: str = "en"
+    # Greedy decoding is fast and wrong; a small beam is far more accurate and
+    # costs little on utterance-length audio.
+    whisper_beam_size: int = Field(default=5, ge=1, le=10)
+    # Below these, a segment is noise Whisper narrated rather than speech.
+    whisper_no_speech_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    whisper_logprob_threshold: float = Field(default=-1.0, ge=-5.0, le=0.0)
+    # Hosted speech recognition. The key is read from the environment and is
+    # never logged, echoed in an error, or written to a tracked file.
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_stt_model: str = "whisper-large-v3-turbo"
+    groq_stt_timeout_seconds: float = Field(default=30.0, ge=1.0, le=120.0)
+    whisper_model: str = "small"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
 
     model_config = SettingsConfigDict(
         env_file=(ROOT_DIR / ".env", ROOT_DIR / "backend" / ".env"),
@@ -108,6 +146,10 @@ class Settings(BaseSettings):
     @property
     def ollama_configured(self) -> bool:
         return bool(self.ollama_base_url.strip() and self.ollama_model.strip())
+
+    @property
+    def groq_configured(self) -> bool:
+        return bool(self.groq_api_key and self.groq_base_url.strip() and self.groq_stt_model.strip())
 
     @property
     def deepseek_configured(self) -> bool:

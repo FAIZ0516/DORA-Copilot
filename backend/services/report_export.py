@@ -18,11 +18,18 @@ from datetime import datetime, timezone
 from typing import Any
 
 from reportlab.lib import colors
+<<<<<<< HEAD
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.graphics.shapes import Circle, Drawing, String
+=======
+from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 from .report_branding import (
     FOOTER_COVER_BOTTOM,
     FOOTER_COVER_HEIGHT,
@@ -38,9 +45,15 @@ from .report_branding import (
 from .report_charts import describe, draw_chart, truncation_note
 from reportlab.platypus import (
     BaseDocTemplate,
+<<<<<<< HEAD
     Flowable,
     Frame,
     KeepTogether,
+=======
+    Frame,
+    KeepTogether,
+    NextPageTemplate,
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     PageBreak,
     PageTemplate,
     Paragraph,
@@ -53,7 +66,11 @@ from reportlab.platypus import (
 # the on-screen dashboard read as one product.
 INK = colors.HexColor("#1f2d3d")
 MUTED = colors.HexColor("#5b6b80")
+<<<<<<< HEAD
 ACCENT = colors.HexColor("#0b68b5")
+=======
+ACCENT = colors.HexColor("#4f46e5")
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 RULE = colors.HexColor("#dbe3ee")
 SURFACE = colors.HexColor("#f6f8fc")
 RISK = colors.HexColor("#b4532a")
@@ -61,6 +78,18 @@ RISK = colors.HexColor("#b4532a")
 PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN = 18 * mm
 
+<<<<<<< HEAD
+=======
+# Labels shown against a block so a reader can tell measurement from advice.
+CLASSIFICATION_LABEL = {
+    "observed_fact": "Observed fact",
+    "interpretation": "Interpretation",
+    "recommendation": "Recommendation",
+    "user_authored": "Author's note",
+}
+
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def safe_filename(title: str, extension: str) -> str:
     """A predictable, filesystem-safe download name."""
 
@@ -109,6 +138,7 @@ def _styles() -> dict[str, ParagraphStyle]:
             "cell_head", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=7.6,
             leading=10, textColor=colors.white,
         ),
+<<<<<<< HEAD
         "weekly_eyebrow": ParagraphStyle(
             "weekly_eyebrow", parent=base["Normal"], fontName="Helvetica-Bold",
             fontSize=9, leading=11, textColor=ACCENT, spaceAfter=5,
@@ -157,6 +187,8 @@ def _styles() -> dict[str, ParagraphStyle]:
             "weekly_table_head", parent=base["Normal"], fontName="Helvetica-Bold",
             fontSize=7.2, leading=9, textColor=ACCENT,
         ),
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     }
 
 
@@ -185,12 +217,25 @@ def _scope_line(scope: dict[str, Any]) -> str:
     return " · ".join(part for part in parts if part)
 
 
+<<<<<<< HEAD
 def _uses_delivery_layout(report: dict[str, Any]) -> bool:
     return report.get("template") in {"weekly_scrum", "executive_summary"}
 
 
 class _ReportDoc(BaseDocTemplate):
     """Adds the corporate furniture and running page number."""
+=======
+def _fmt_time(value: Any) -> str:
+    if not value:
+        return "Not recorded"
+    if isinstance(value, datetime):
+        return value.strftime("%d %b %Y %H:%M UTC")
+    return str(value)
+
+
+class _ReportDoc(BaseDocTemplate):
+    """Adds the running footer: page numbers, version and scope."""
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
     def __init__(self, buffer: io.BytesIO, *, report: dict[str, Any]) -> None:
         branded = template_available()
@@ -203,7 +248,11 @@ class _ReportDoc(BaseDocTemplate):
         super().__init__(
             buffer, pagesize=A4,
             leftMargin=left, rightMargin=right, topMargin=top, bottomMargin=bottom,
+<<<<<<< HEAD
             title=report.get("title") or "Report", author="ZARA Report Studio",
+=======
+            title=report.get("title") or "Report", author="DORA Copilot",
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         )
         self._report = report
         self._branded = branded
@@ -219,6 +268,7 @@ class _ReportDoc(BaseDocTemplate):
     def _footer(self, canvas, doc) -> None:  # noqa: ANN001 - ReportLab signature
         canvas.saveState()
         if self._branded:
+<<<<<<< HEAD
             # Keep the supplied corporate masthead and footer, but mask its
             # decorative body watermark so all exported reports have the clean
             # white management-report surface used by the weekly reference.
@@ -233,6 +283,8 @@ class _ReportDoc(BaseDocTemplate):
                 stroke=0,
                 fill=1,
             )
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             # The template carries its own rule, and a static "1" that would
             # otherwise repeat on every page. Cover it, then write the real
             # number. Content is merged above the template, so this hides it.
@@ -249,6 +301,11 @@ class _ReportDoc(BaseDocTemplate):
             baseline = MARGIN + 2 * mm
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(MUTED)
+<<<<<<< HEAD
+=======
+        left = f"{self._report.get('title') or 'Report'} · v{self._report.get('version', 1)}"
+        canvas.drawString(self._left, baseline, left[:110])
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         canvas.drawRightString(
             PAGE_WIDTH - self._right, baseline, f"Page {canvas.getPageNumber()}"
         )
@@ -282,9 +339,13 @@ def _kpi_table(payload: dict[str, Any], styles: dict[str, ParagraphStyle]) -> Ta
     return table
 
 
+<<<<<<< HEAD
 def _data_table(
     payload: dict[str, Any], styles: dict[str, ParagraphStyle], *, content_width: float | None = None
 ) -> list[Any]:
+=======
+def _data_table(payload: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     columns = payload.get("columns") or []
     rows = payload.get("rows") or []
     if not columns or not rows:
@@ -301,7 +362,11 @@ def _data_table(
         [Paragraph(_escape(row.get(key)), styles["cell"]) for key in keys]
         for row in rows[:limit]
     ]
+<<<<<<< HEAD
     width = (content_width or (PAGE_WIDTH - 2 * MARGIN)) / max(len(keys), 1)
+=======
+    width = (PAGE_WIDTH - 2 * MARGIN) / max(len(keys), 1)
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     # repeatRows=1 reprints the header on every page the table spills onto.
     table = Table([headers, *body], colWidths=[width] * len(keys), repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([
@@ -348,6 +413,7 @@ def _chart_block(payload: dict[str, Any], styles: dict[str, ParagraphStyle]) -> 
     return flow
 
 
+<<<<<<< HEAD
 def _report_intro(report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:
     """Compact first-page context for non-delivery templates; never a cover."""
 
@@ -519,10 +585,66 @@ def _weekly_feature_table(
         ("RIGHTPADDING", (0, 0), (-1, -1), 7),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+=======
+def _cover(report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:
+    scope = report.get("scope") or {}
+    rows = [
+        ("Project", scope.get("project") or "All projects"),
+        ("Squad", scope.get("squad") or "All squads"),
+        ("Reporting period", _scope_line(scope).split("Period ")[-1] if "Period" in _scope_line(scope) else "All available dates"),
+        ("Generated", _fmt_time(datetime.now(timezone.utc))),
+        ("Data as of", _fmt_time(report.get("data_as_of"))),
+        ("Report version", f"v{report.get('version', 1)}"),
+    ]
+    meta = Table(
+        [[Paragraph(_escape(k), styles["label"]), Paragraph(_escape(v), styles["cover_meta"])] for k, v in rows],
+        colWidths=[38 * mm, PAGE_WIDTH - 2 * MARGIN - 38 * mm], hAlign="LEFT",
+    )
+    meta.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, RULE),
+    ]))
+    return [
+        Spacer(1, 34 * mm),
+        Paragraph("DORA COPILOT · ZARA", styles["label"]),
+        Paragraph(_escape(report.get("title") or "Report"), styles["cover_title"]),
+        Paragraph(_escape(_scope_line(scope)), styles["cover_meta"]),
+        Spacer(1, 16 * mm),
+        meta,
+        NextPageTemplate("body"),
+        PageBreak(),
+    ]
+
+
+def _methodology(report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> list[Any]:
+    sources = report.get("sources") or []
+    query_ids: list[str] = []
+    for source in sources:
+        query_ids.extend((source.get("evidence") or {}).get("query_ids") or [])
+    rows = [
+        ("Scope", _scope_line(report.get("scope") or {})),
+        ("Evidence sources", str(len(sources))),
+        ("Approved queries used", ", ".join(sorted(set(query_ids))) or "None recorded"),
+        ("Data retrieved", _fmt_time(report.get("data_as_of"))),
+        ("Last validated", _fmt_time(report.get("last_validated_at"))),
+        ("Validation state", str((report.get("validation") or {}).get("state", "not run"))),
+        ("Report version", f"v{report.get('version', 1)}"),
+    ]
+    table = Table(
+        [[Paragraph(_escape(k), styles["label"]), Paragraph(_escape(v), styles["cell"])] for k, v in rows],
+        colWidths=[42 * mm, PAGE_WIDTH - 2 * MARGIN - 42 * mm], hAlign="LEFT",
+    )
+    table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, RULE),
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     ]))
     return [table]
 
 
+<<<<<<< HEAD
 def _risk_title(text: str) -> str:
     lowered = text.casefold()
     if "block" in lowered or "impeded" in lowered:
@@ -735,6 +857,18 @@ def render_pdf(report: dict[str, Any]) -> bytes:
 
     for section in sorted(report.get("sections") or [], key=lambda s: s.get("position", 0)):
         if not section.get("visible", True) or section.get("type") == "methodology":
+=======
+def render_pdf(report: dict[str, Any]) -> bytes:
+    """Render the whole report. Returns PDF bytes; never writes to disk."""
+
+    styles = _styles()
+    buffer = io.BytesIO()
+    doc = _ReportDoc(buffer, report=report)
+    flow: list[Any] = _cover(report, styles)
+
+    for section in sorted(report.get("sections") or [], key=lambda s: s.get("position", 0)):
+        if not section.get("visible", True):
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             continue
         type_ = section.get("type")
         if type_ == "cover":
@@ -747,6 +881,14 @@ def render_pdf(report: dict[str, Any]) -> bytes:
         if section.get("title"):
             block.append(Paragraph(_escape(section["title"]), styles["heading"]))
 
+<<<<<<< HEAD
+=======
+        classification = section.get("content_classification", "observed_fact")
+        # Recommendations and interpretations are labelled so a reader never
+        # mistakes advice for measurement.
+        if classification in {"recommendation", "interpretation", "user_authored"}:
+            block.append(Paragraph(CLASSIFICATION_LABEL[classification].upper(), styles["label"]))
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         if section.get("needs_review"):
             block.append(Paragraph(
                 "Manually edited after validation — figures in this section have not been "
@@ -758,10 +900,20 @@ def render_pdf(report: dict[str, Any]) -> bytes:
             table = _kpi_table(payload, styles)
             if table is not None:
                 block.append(table)
+<<<<<<< HEAD
         elif type_ in {"data_table", "feature_status"}:
             block.extend(_data_table(payload, styles))
         elif type_ == "chart":
             block.extend(_chart_block(payload, styles))
+=======
+        elif type_ == "data_table":
+            block.extend(_data_table(payload, styles))
+        elif type_ == "chart":
+            block.extend(_chart_block(payload, styles))
+        elif type_ == "methodology":
+            block.extend(_methodology(report, styles))
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         content = (section.get("content") or "").strip()
         if content:
             for paragraph in [p for p in content.split("\n") if p.strip()]:
@@ -782,6 +934,7 @@ def render_docx(report: dict[str, Any]) -> bytes:
     """Editable Word version, mirroring the PDF's structure."""
 
     from docx import Document
+<<<<<<< HEAD
     from docx.shared import Pt, RGBColor
 
     document = Document()
@@ -804,12 +957,30 @@ def render_docx(report: dict[str, Any]) -> bytes:
 
     for section in sorted(report.get("sections") or [], key=lambda s: s.get("position", 0)):
         if not section.get("visible", True) or section.get("type") in {"cover", "methodology"}:
+=======
+    from docx.shared import Pt
+
+    document = Document()
+    document.core_properties.title = report.get("title") or "Report"
+    document.add_heading(report.get("title") or "Report", level=0)
+    document.add_paragraph(_scope_line(report.get("scope") or {}))
+    meta = document.add_paragraph()
+    meta.add_run(
+        f"Generated {_fmt_time(datetime.now(timezone.utc))} · "
+        f"Data as of {_fmt_time(report.get('data_as_of'))} · "
+        f"Version v{report.get('version', 1)}"
+    ).font.size = Pt(8)
+
+    for section in sorted(report.get("sections") or [], key=lambda s: s.get("position", 0)):
+        if not section.get("visible", True) or section.get("type") == "cover":
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             continue
         if section.get("type") == "page_break":
             document.add_page_break()
             continue
         if section.get("title"):
             document.add_heading(section["title"], level=1)
+<<<<<<< HEAD
         payload = section.get("payload") or {}
         if section.get("type") == "kpi_group":
             items = {
@@ -851,6 +1022,27 @@ def render_docx(report: dict[str, Any]) -> bytes:
                     note_run.font.size = Pt(8)
                     note_run.font.color.rgb = RGBColor(91, 107, 128)
         elif section.get("type") in {"data_table", "feature_status", "chart"}:
+=======
+        classification = section.get("content_classification", "observed_fact")
+        if classification in {"recommendation", "interpretation", "user_authored"}:
+            run = document.add_paragraph().add_run(CLASSIFICATION_LABEL[classification].upper())
+            run.bold = True
+            run.font.size = Pt(7)
+
+        payload = section.get("payload") or {}
+        if section.get("type") == "kpi_group":
+            items = [i for i in (payload.get("items") or []) if isinstance(i, dict)]
+            if items:
+                table = document.add_table(rows=1, cols=2)
+                table.style = "Light Grid Accent 1"
+                table.rows[0].cells[0].text = "Measure"
+                table.rows[0].cells[1].text = "Value"
+                for item in items:
+                    cells = table.add_row().cells
+                    cells[0].text = str(item.get("label", ""))
+                    cells[1].text = str(item.get("value", ""))
+        elif section.get("type") in {"data_table", "chart"}:
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             columns, rows = _tabular(payload)
             if columns:
                 table = document.add_table(rows=1, cols=len(columns))
@@ -903,4 +1095,8 @@ def render_csv(payload: dict[str, Any]) -> str:
     return buffer.getvalue()
 
 
+<<<<<<< HEAD
 __all__ = ["render_csv", "render_docx", "render_pdf", "safe_filename"]
+=======
+__all__ = ["CLASSIFICATION_LABEL", "render_csv", "render_docx", "render_pdf", "safe_filename"]
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f

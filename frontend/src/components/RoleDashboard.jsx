@@ -370,15 +370,21 @@ export default function RoleDashboard({ projectKey, databaseConnected, onAsk, on
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [context.selectedSquad, context.activeView, filterRequest, issueFilters, refreshToken]);
 
+<<<<<<< HEAD
   function ask(question, patch = {}) { if (patch.selected_metric) context.setSelectedMetric(patch.selected_metric); if (patch.current_metric_value !== undefined) context.setCurrentMetricValue(patch.current_metric_value); onAsk(question, context.dashboardContext(patch)); }
   function suggest(question, patch = {}) { if (patch.selected_metric) context.setSelectedMetric(patch.selected_metric); if (patch.current_metric_value !== undefined) context.setCurrentMetricValue(patch.current_metric_value); onSuggest(question, context.dashboardContext(patch)); }
   // The scope questions are written against. Dashboard context is also sent as
   // structured metadata, but the question itself has to stand alone -- the
+=======
+  // The scope questions are written against. Dashboard context is also sent
+  // as structured metadata, but the question itself has to stand alone -- the
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   // assistant answers the sentence it is given.
   const askScope = useMemo(
     () => ({ squad: context.selectedSquad, sprint: context.selectedSprint, release: context.selectedRelease, project: context.selectedProject }),
     [context.selectedSquad, context.selectedSprint, context.selectedRelease, context.selectedProject],
   );
+  function ask(question, patch = {}) { if (patch.selected_metric) context.setSelectedMetric(patch.selected_metric); if (patch.current_metric_value !== undefined) context.setCurrentMetricValue(patch.current_metric_value); onAsk(question, context.dashboardContext(patch)); }
   function openMetric(metric) { context.setSelectedMetric(metric.key); context.setCurrentMetricValue(metric.value); setDrawerMetric(metric); }
   async function viewSquad(row) {
     const squad = row.squad || row.name;
@@ -434,6 +440,10 @@ export default function RoleDashboard({ projectKey, databaseConnected, onAsk, on
 
       {!isPortfolio && <button className="back-to-portfolio" type="button" onClick={() => changeSquad("")}><ArrowLeft aria-hidden="true" /> All Squads</button>}
       <MetricInfoDrawer metric={drawerMetric} scope={context.dashboardContext()} updatedAt={payload?.generated_at} onClose={() => setDrawerMetric(null)} onAsk={(question, patch) => { setDrawerMetric(null); ask(question, patch); }} />
+<<<<<<< HEAD
+=======
+      <ReportGenerationDrawer open={reportOpen} scope={context.dashboardContext()} onClose={() => setReportOpen(false)} />
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     </section>
   );
 }

@@ -69,6 +69,7 @@ def test_pages_are_numbered_individually_not_all_page_one() -> None:
         assert f"Page {index}" in (page.extract_text() or "")
 
 
+<<<<<<< HEAD
 def test_pdf_uses_management_report_branding() -> None:
     pdf = render_pdf(REPORT)
     reader = pytest.importorskip("pypdf").PdfReader(io.BytesIO(pdf))
@@ -77,6 +78,8 @@ def test_pdf_uses_management_report_branding() -> None:
     assert "DORA COPILOT · ZARA" not in text
 
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def test_the_static_template_number_is_covered_by_the_real_one() -> None:
     """The template's "1" is a fixed Word field; it must not repeat."""
 
@@ -108,6 +111,7 @@ def test_the_page_size_is_unchanged_by_stamping() -> None:
 def test_a_broken_template_never_breaks_the_export() -> None:
     # An unbranded report is worth delivering; a failed export is not.
     assert apply_template(b"not a pdf at all") == b"not a pdf at all"
+<<<<<<< HEAD
 
 
 def test_weekly_report_uses_the_fixed_two_page_dynamic_layout() -> None:
@@ -199,3 +203,5 @@ def test_delivery_report_renders_only_selected_sections() -> None:
         "DATA QUALITY", "HIDDEN", "METHODOLOGY", "KEY MEASURES",
     ):
         assert forbidden not in text.upper()
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f

@@ -13,6 +13,7 @@ sequences existing pieces.
 from __future__ import annotations
 
 import logging
+<<<<<<< HEAD
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -464,6 +465,13 @@ def weekly_scrum_feature_evidence(doradb, scope: dict[str, Any]) -> dict[str, An
     }
 
 
+=======
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def scope_to_question(question: str, scope: dict[str, Any]) -> str:
     """Bind a template question to the report's scope.
 
@@ -571,8 +579,12 @@ def run_template_questions(
     return results
 
 
+<<<<<<< HEAD
 __all__ = [
     "current_view_dashboard_evidence", "dashboard_context_for",
     "normalize_report_scope", "run_template_questions", "scope_to_question",
     "weekly_scrum_feature_evidence",
 ]
+=======
+__all__ = ["dashboard_context_for", "run_template_questions", "scope_to_question"]
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f

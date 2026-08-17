@@ -13,6 +13,7 @@ const clientSource = read("../src/services/reports.js");
 const dashboardSource = read("../src/components/RoleDashboard.jsx");
 const cssSource = read("../src/features/report-studio/report-studio.css");
 
+<<<<<<< HEAD
 test("Generate Report opens Report Studio directly instead of a chooser or chat prompt", () => {
   // The whole point of the change: selecting a report type used to build a
   // sentence and post it to /api/chat, which produced an answer the user could
@@ -38,6 +39,39 @@ test("the launcher carries the active dashboard scope across", () => {
   assert.match(dashboardSource, /const reportScope = \{/);
   assert.match(dashboardSource, /feature: selectedFeature \|\| undefined/);
   assert.doesNotMatch(drawerSource, /current_metric_value|selected_squad_row/);
+=======
+test("Generate Report opens Report Studio instead of sending a chat prompt", () => {
+  // The whole point of the change: selecting a report type used to build a
+  // sentence and post it to /api/chat, which produced an answer the user could
+  // not preview, edit, save or export.
+  assert.doesNotMatch(drawerSource, /onGenerate|onAsk/);
+  assert.doesNotMatch(drawerSource, /using only the currently selected dashboard scope/);
+  assert.ok(drawerSource.includes("/reports?"));
+  // The dashboard no longer hands the drawer a way to ask the assistant.
+  assert.doesNotMatch(dashboardSource, /ReportGenerationDrawer[^/]*onGenerate/);
+});
+
+test("the launcher lists the ready-to-run report types directly", () => {
+  // One click creates, generates and opens the report -- no chooser page and
+  // no form. Only templates with standard questions belong in that list.
+  assert.match(drawerSource, /listTemplates\(\)/);
+  assert.match(drawerSource, /item\.questions\?\.length/);
+  assert.match(drawerSource, /go\(\{ create: template\.id \}\)/);
+  assert.match(drawerSource, /Generate now/);
+  // The author-it-yourself paths stay available, but secondary.
+  assert.match(drawerSource, /go\(\{ start: "chat" \}\)/);
+  assert.match(drawerSource, /go\(\{ start: "blank" \}\)/);
+  // The options must be real buttons: they were anchors, which no stylesheet
+  // targeted, so every option rendered as unstyled inline text.
+  assert.doesNotMatch(drawerSource, /<a key=\{id\}/);
+});
+
+test("the launcher carries the active dashboard scope across", () => {
+  assert.match(drawerSource, /scopeQuery/);
+  for (const key of ["project", "squad", "sprint", "release", "date_from", "date_to"]) {
+    assert.match(drawerSource, new RegExp(`"${key}"`));
+  }
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 });
 
 test("Report Studio has its own route and is loaded lazily", () => {
@@ -150,6 +184,7 @@ test("one section can be saved without regenerating the whole report", () => {
   assert.match(studioSource, /Save section/);
 });
 
+<<<<<<< HEAD
 test("internal provenance and validation state stay out of report blocks", () => {
   assert.doesNotMatch(studioSource, /CLASSIFICATION_LABEL/);
   assert.doesNotMatch(studioSource, /Edited by hand/);
@@ -162,6 +197,23 @@ test("data freshness is surfaced without rendering internal validation metadata"
   assert.match(studioSource, /Data may be outdated/);
   assert.doesNotMatch(studioSource, /> Validate</);
   assert.doesNotMatch(studioSource, /report\.validation\?\.issues/);
+=======
+test("provenance and trust state are visible on each block", () => {
+  assert.match(studioSource, /CLASSIFICATION_LABEL/);
+  for (const key of ["observed_fact", "interpretation", "recommendation", "user_authored"]) {
+    assert.match(studioSource, new RegExp(key), key);
+  }
+  assert.match(studioSource, /section\.manually_edited && <span[^>]*>Edited by hand/);
+  assert.match(studioSource, /Needs review/);
+  assert.match(studioSource, /source_ids\?\.length/);
+});
+
+test("data freshness and validation state are surfaced", () => {
+  assert.match(studioSource, /freshness\?\.stale/);
+  assert.match(studioSource, /Data may be outdated/);
+  assert.match(studioSource, /validateReport\(report\.id\)/);
+  assert.match(studioSource, /report\.validation\?\.issues/);
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 });
 
 test("export offers PDF, DOCX and per-table CSV", () => {
@@ -206,6 +258,7 @@ test("the studio reuses the shared chart tokens rather than a new palette", () =
 
 const newReportSource = read("../src/features/report-studio/NewReport.jsx");
 
+<<<<<<< HEAD
 test("dashboard entry auto-prepares while Reports New Report stays lightweight", () => {
   assert.match(studioSource, /params\?\.get\("start"\)/);
   assert.match(studioSource, /const autoCurrent = startMode === "current"/);
@@ -213,6 +266,21 @@ test("dashboard entry auto-prepares while Reports New Report stays lightweight",
   assert.doesNotMatch(newReportSource, /Choose how to start|mode ===/);
   for (const field of ["Project", "Squad", "Sprint", "Template"]) assert.match(newReportSource, new RegExp(`>${field}<`));
   assert.match(newReportSource, /Weekly Scrum Report/);
+=======
+test("the launcher options land on different states, not all the same page", () => {
+  // They previously all opened the same library screen, so the choice did
+  // nothing at all.
+  assert.match(studioSource, /params\?\.get\("start"\)/);
+  assert.match(studioSource, /params\?\.get\("create"\)/);
+  assert.match(studioSource, /startMode \|\| autoTemplate \|\| deepLinkId \? "new" : "library"/);
+  assert.match(studioSource, /start=\{startMode\}/);
+  assert.match(newReportSource, /const START_MODES = \{/);
+  for (const mode of ["template", "chat", "blank"]) {
+    assert.match(newReportSource, new RegExp(`${mode}: \{`), mode);
+  }
+  // Blank skips the type picker; the others start on it.
+  assert.match(newReportSource, /mode === "blank" \? 2 : 1/);
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 });
 
 test("Add to report styles ship with the chat page, not the lazy studio route", () => {
@@ -227,32 +295,63 @@ test("Add to report styles ship with the chat page, not the lazy studio route", 
 test("a template carries standard questions and can generate from live data", () => {
   assert.match(clientSource, /export const generateReport/);
   assert.match(clientSource, /\/generate`/);
+<<<<<<< HEAD
   assert.match(newReportSource, /useState\("weekly_scrum"\)/);
   assert.match(newReportSource, /Feature Delivery Status/);
   // The generate step is offered at creation and again from the editor.
   assert.match(studioSource, /generateReport\(created\.id\)/);
   assert.match(studioSource, /Refresh Data/);
+=======
+  assert.match(newReportSource, /chosen\.questions\.map/);
+  assert.match(newReportSource, /What this report answers/);
+  // The generate step is offered at creation and again from the editor.
+  assert.match(studioSource, /generateReport\(created\.id\)/);
+  assert.match(studioSource, /Refresh from data/);
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   // ?create=<template> runs the whole journey with no form in between.
   assert.match(studioSource, /autoTemplate/);
   assert.match(studioSource, /Building your report/);
 });
 
+<<<<<<< HEAD
 test("Weekly Scrum uses verified squad and sprint option sources", () => {
   assert.match(newReportSource, /loadDashboardSquads/);
   assert.match(newReportSource, /loadDashboardFilters/);
   assert.match(newReportSource, /<select required value=\{scope\.squad\}/);
   assert.match(newReportSource, /<select required value=\{scope\.sprint\}/);
+=======
+test("creating a report is two steps, not one long form", () => {
+  assert.match(newReportSource, /report-steps/);
+  assert.match(newReportSource, /Choose a type/);
+  assert.match(newReportSource, /Set the details/);
+  assert.match(newReportSource, /setStep\(2\)/);
+  assert.match(newReportSource, /setStep\(1\)/);
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 });
 
 test("a handed-over chat answer is acknowledged in the create flow", () => {
   assert.match(newReportSource, /pending &&/);
+<<<<<<< HEAD
   assert.match(newReportSource, /selected verified Zara source will remain attached/);
+=======
+  assert.match(newReportSource, /will be attached once the report is created/);
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   assert.match(studioSource, /setPending\(true\)/);
 });
 
 test("the launcher options are actually styled", () => {
+<<<<<<< HEAD
   assert.match(cssSource, /\.report-config-grid/);
   assert.match(cssSource, /\.report-new-actions/);
+=======
+  // The previous version used anchors while the stylesheet targeted buttons,
+  // so every option rendered as unstyled inline text.
+  const workspaceCss = read("../src/workspace.css");
+  assert.match(workspaceCss, /\.report-type-list button \{/);
+  assert.match(workspaceCss, /\.report-type-icon \{/);
+  assert.match(workspaceCss, /\.report-type-text \{/);
+  assert.match(workspaceCss, /\.report-drawer-lead \{/);
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 });
 
 test("the add-to-report menu renders in a portal, not inside the chat message", () => {
@@ -281,6 +380,7 @@ test("reports in the list are distinguishable from one another", () => {
 });
 
 const newReportSrc = read("../src/features/report-studio/NewReport.jsx");
+<<<<<<< HEAD
 const assistantSource = read("../src/features/report-studio/ReportAssistantPanel.jsx");
 
 test("choosing Weekly Scrum always generates it", () => {
@@ -334,6 +434,17 @@ test("returning from an auto-created report shows the library instead of the loa
 
 test("an auto-created dashboard report replaces its launch URL with the saved draft URL", () => {
   assert.match(studioSource, /window\.history\.replaceState\(\{\}, "", `\/reports\/\$\{created\.id\}`\)/);
+=======
+
+test("choosing a template always fills the report -- it is not a choice", () => {
+  // Offering generation as a checkbox was the mistake: picking a template IS
+  // the request to have the report written. A report begun from the chat or
+  // library path used to be created empty, every section "Not written yet."
+  assert.match(newReportSrc, /generate: \(chosen\?\.questions\?\.length \|\| 0\) > 0/);
+  assert.doesNotMatch(newReportSrc, /setGenerate/);
+  assert.doesNotMatch(newReportSrc, /useState\(mode === "template"\)/);
+  assert.match(newReportSrc, /Create and fill it/);
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 });
 
 test("the dashboard scope in the URL is applied, not discarded", () => {
@@ -343,6 +454,7 @@ test("the dashboard scope in the URL is applied, not discarded", () => {
   assert.match(studioSource, /scopeFromQuery/);
 });
 
+<<<<<<< HEAD
 test("Current View normalizes display-wide labels and uses a contextual title", () => {
   assert.match(newReportSrc, /ALL_SCOPE_LABELS/);
   for (const label of ["all sprints", "all releases", "all available dates", "all tickets"]) {
@@ -351,6 +463,8 @@ test("Current View normalizes display-wide labels and uses a contextual title", 
   assert.match(studioSource, /`\$\{scopeFromQuery\.squad\} Delivery Report`/);
 });
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 test("an empty template report fills itself with no button to press", () => {
   // However it was created or reopened, a template report with no evidence
   // answers its own questions rather than showing a wall of empty sections.
@@ -362,6 +476,7 @@ test("an empty template report fills itself with no button to press", () => {
   assert.match(studioSource, /filledRef\.current\.add\(report\.id\)/);
 });
 
+<<<<<<< HEAD
 test("the existing dev proxy continues to route report APIs to the documented backend", () => {
   const viteConfig = read("../vite.config.js");
   assert.match(viteConfig, /"\/api": \{/);
@@ -415,4 +530,10 @@ test("Save Draft and clipboard Copy are distinct from Duplicate", () => {
   assert.match(studioSource, /copyReportContent/);
   assert.match(studioSource, /navigator\.clipboard\.writeText/);
   assert.match(studioSource, /Duplicate report/);
+=======
+test("the dev proxy target is configurable and defaults to the documented port", () => {
+  const viteConfig = read("../vite.config.js");
+  assert.match(viteConfig, /loadEnv\(mode, "\.\.", ""\)/);
+  assert.match(viteConfig, /env\.VITE_API_PROXY_TARGET \|\| "http:\/\/127\.0\.0\.1:8000"/);
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 });

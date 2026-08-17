@@ -336,8 +336,10 @@ class ReportRepository:
                 setattr(section, key, value)
         if edits_content and not fields.get("manually_edited") is False:
             section.manually_edited = True
-            # Hand-edited evidence-backed narrative requires review: wording
-            # changes can alter the meaning even when no number was touched.
+            # Hand-edited evidence-backed narrative requires review: a
+            # hand-edited block can no longer claim to be evidence-verified,
+            # and wording changes can alter the meaning even when no number
+            # was touched.
             if section.source_ids:
                 section.needs_review = True
                 report.status = "needs_review"

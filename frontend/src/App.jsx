@@ -5,6 +5,11 @@ import { DashboardProvider } from "./dashboardContext";
 import zaraWordmark from "./assets/zara-wordmark.png";
 
 const ZaraDataWorkspace = lazy(() => import("./features/zara-workspace/ZaraDataWorkspace"));
+<<<<<<< HEAD
+=======
+// Report Studio is a full workspace, not a drawer: reports are persistent
+// objects that outlive the conversation, so they get their own route.
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 const ReportStudio = lazy(() => import("./features/report-studio/ReportStudio"));
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");

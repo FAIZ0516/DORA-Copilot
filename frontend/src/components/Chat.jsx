@@ -6,6 +6,10 @@ import DataTable from "./DataTable";
 import MetricChart from "./MetricChart";
 import RoleDashboard from "./RoleDashboard";
 import AddToReportMenu from "./chat/AddToReportMenu";
+<<<<<<< HEAD
+=======
+import VoiceConversation from "./voice/VoiceConversation";
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 import SuggestedQuestionChips from "./chat/SuggestedQuestionChips";
 import ZaraAvatar from "./chat/ZaraAvatar";
 import ConversationPanel from "./history/ConversationPanel";
@@ -190,6 +194,37 @@ export default function Chat({
     } finally {
       setIsSending(false);
     }
+  }
+
+  // A spoken question is already persisted by the voice session, so it is
+  // rendered here rather than sent again through sendMessage.
+  function addVoiceTranscript(text) {
+    if (!text?.trim()) return;
+    setMessages((current) => [...current, makeMessage("user", text.trim())]);
+  }
+
+  function addVoiceAnswer(event) {
+    const conversationId = event.conversation_id;
+    if (conversationId && conversationId !== activeConversationId) {
+      setActiveConversationId(conversationId);
+      dashboard.setConversationId(conversationId);
+      window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, conversationId);
+    }
+    setMessages((current) => [
+      ...current,
+      makeMessage("assistant", event.text || "", {
+        chart: event.chart,
+        table: event.table,
+        warnings: event.warnings || [],
+        metadata: {
+          conversation_id: conversationId,
+          message_id: event.message_id,
+          answer_source: "voice",
+        },
+        followUps: [],
+      }),
+    ]);
+    loadRecent();
   }
 
   function stopAudio() {
@@ -378,6 +413,17 @@ export default function Chat({
         {isSending && <div className="thinking" role="status"><span /><span /><span /><p>Zara is analysing the current scope…</p></div>}
         <div ref={endRef} />
       </div>
+
+      <VoiceConversation
+        onTranscript={addVoiceTranscript}
+        onAnswer={addVoiceAnswer}
+        sessionPayload={{
+          conversation_id: activeConversationId,
+          workspace: "technical",
+          project_key: project || null,
+          dashboard_context: dashboard.dashboardContext(),
+        }}
+      />
 
       <div className="copilot-composer-wrap">
         {speechError && <p className="speech-error" role="alert">{speechError}</p>}

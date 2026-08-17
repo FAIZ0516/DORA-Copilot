@@ -5,7 +5,17 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Integer, String, Text, Uuid, create_engine
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Uuid,
+    create_engine,
+)
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -122,12 +132,23 @@ class ZaraWorkflow(Base):
 
 
 class Report(Base):
-    """A persisted, editable report in the writable runtime store."""
+    """A persisted, editable report.
+
+    Reports are first-class objects rather than chat answers: they outlive the
+    conversation they were built from, combine evidence from several messages
+    and several conversations, and stay reproducible because each source keeps
+    an immutable snapshot (see ``ReportSource.evidence``).
+
+    Lives in the writable runtime store beside conversations. DoraDB stays
+    read-only; nothing here is ever written there.
+    """
 
     __tablename__ = "reports"
     __table_args__ = TABLE_ARGS
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    # Every query filters on user_id. A report is never reachable by guessing
+    # its id alone -- see report_repository.ReportRepository.get.
     user_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     template: Mapped[str] = mapped_column(String(60), nullable=False, default="blank")
@@ -136,7 +157,9 @@ class Report(Base):
     tone: Mapped[str] = mapped_column(String(40), nullable=False, default="professional")
     detail_level: Mapped[str] = mapped_column(String(20), nullable=False, default="standard")
     include_recommendations: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # project / squad / sprint / release / date_from / date_to
     scope: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    # Non-blocking findings from the last validate/compose run.
     validation: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -148,6 +171,7 @@ class Report(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+    # Oldest evidence retrieval time across sources -- drives staleness.
     data_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -184,14 +208,19 @@ class ReportSection(Base):
     type: Mapped[str] = mapped_column(String(40), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Chart / table / KPI payloads stay structured rather than flattened into
+    # text, so exports can lay them out properly and CSV stays possible.
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
     visible: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     content_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="rewrite")
+    # observed_fact | interpretation | recommendation | user_authored
     content_classification: Mapped[str] = mapped_column(
         String(30), nullable=False, default="observed_fact"
     )
     manually_edited: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Set when a user edits a section that carried validated numbers: the
+    # section can no longer claim to be evidence-verified without revalidation.
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     source_ids: Mapped[list[Any]] = mapped_column(JSON, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -208,7 +237,12 @@ class ReportSection(Base):
 
 
 class ReportSource(Base):
-    """An immutable snapshot of evidence used by a report."""
+    """An immutable snapshot of one piece of evidence used by a report.
+
+    The snapshot is deliberately a copy, not a live reference: archiving the
+    conversation, or changing how an answer is presented later, must not alter
+    or invalidate a report that was already built from it.
+    """
 
     __tablename__ = "report_sources"
     __table_args__ = TABLE_ARGS
@@ -226,6 +260,7 @@ class ReportSource(Base):
     conversation_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), index=True)
     message_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), index=True)
     selection: Mapped[str] = mapped_column(String(20), nullable=False, default="full")
+    # Approved provenance fields only -- never prompts, credentials or SQL.
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     scope: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     data_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

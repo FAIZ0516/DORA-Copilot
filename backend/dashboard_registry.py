@@ -275,6 +275,7 @@ def public_metric_registry() -> dict[str, dict[str, Any]]:
 
 __all__ = [
     "ATTENTION_THRESHOLDS",
+    "attention_rules_text",
     "INVALID_SQUAD_VALUES",
     "JIRA_FIELDS",
     "JIRA_TABLE",

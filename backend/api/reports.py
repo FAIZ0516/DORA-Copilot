@@ -769,7 +769,6 @@ def refine_report_section(
     )
 
 
-
 @router.post("/{report_id}/generate", response_model=ReportComposeResponse)
 def generate_report(
     report_id: UUID,

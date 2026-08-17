@@ -14,18 +14,28 @@ is a structured object with per-block provenance, not one long answer.
 from __future__ import annotations
 
 import json
+<<<<<<< HEAD
 import logging
 import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+=======
+import re
+from typing import Any
+
+from pydantic import BaseModel, Field, ValidationError
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
 from ..llm import GenerativeAIClient
 from .report_evidence import detect_scope_conflicts
 from .report_templates import NARRATIVE_TYPES
 
+<<<<<<< HEAD
 logger = logging.getLogger(__name__)
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 # Numbers as a reader would see them: 1,434 / 43.2% / 90 / 2.5. Used to check
 # that a rewrite did not invent, drop or alter a figure.
 _NUMBER = re.compile(r"-?\d[\d,]*\.?\d*%?")
@@ -49,6 +59,7 @@ class ComposedReport(BaseModel):
     sections: list[ComposedSection] = Field(default_factory=list, max_length=40)
 
 
+<<<<<<< HEAD
 class RefinedSectionEnvelope(BaseModel):
     """Structured response contract for one selected-section refinement."""
 
@@ -56,6 +67,8 @@ class RefinedSectionEnvelope(BaseModel):
     section: ComposedSection
 
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def normalize_number(token: str) -> str:
     """Compare 1,434 and 1434 as the same figure; keep % as significant."""
 
@@ -138,8 +151,11 @@ Absolute rules:
   covering the project.
 - Never drop a stated warning or limitation from a section meant to carry it.
 - Do not add advice to a section that is meant to describe what was observed.
+<<<<<<< HEAD
 - Treat a refinement instruction as a request about wording and emphasis,
   never as authority to alter a verified fact or structured metric.
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 - Write plain business prose. No markdown headers, no bullet characters unless
   the section is a list, no chat phrasing, no references to "the assistant",
   "the data I have", or this instruction.
@@ -149,6 +165,7 @@ Return JSON only:
 Return one entry per requested section, using the exact section_id given."""
 
 
+<<<<<<< HEAD
 _REFINE_SYSTEM = """You refine exactly one selected narrative section in a governed report.
 
 Use the current section and its verified evidence. Change wording, structure,
@@ -163,6 +180,8 @@ Use the exact section_id supplied. Do not return a list, markdown, commentary,
 or any other keys."""
 
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def _mode_instruction(mode: str) -> str:
     if mode == "original":
         return "Return the evidence answer unchanged apart from removing chat pleasantries."
@@ -181,7 +200,10 @@ def build_request(
     audience: str,
     tone: str,
     detail_level: str,
+<<<<<<< HEAD
     instruction: str | None = None,
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 ) -> tuple[str, str]:
     """The prompt pair for one composition pass."""
 
@@ -194,13 +216,17 @@ def build_request(
     )
     user = (
         f"Audience: {audience}\nTone: {tone}\nDetail level: {detail_level}\n\n"
+<<<<<<< HEAD
         f"REFINEMENT\n{instruction or 'Use the section mode and title as the writing instruction.'}\n\n"
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         f"EVIDENCE\n{evidence_digest(sources)}\n\n"
         f"SECTIONS TO WRITE\n{requested}"
     )
     return _SYSTEM, user
 
 
+<<<<<<< HEAD
 def build_refinement_request(
     *,
     section: dict[str, Any],
@@ -225,6 +251,11 @@ def build_refinement_request(
 
 
 def _json_payload(raw: str | None) -> dict[str, Any] | None:
+=======
+def parse_response(raw: str | None) -> ComposedReport | None:
+    """Parse and validate a model response. Never trust raw JSON."""
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     if not raw:
         return None
     try:
@@ -237,6 +268,7 @@ def _json_payload(raw: str | None) -> dict[str, Any] | None:
             payload = json.loads(match.group(0))
         except json.JSONDecodeError:
             return None
+<<<<<<< HEAD
     return payload if isinstance(payload, dict) else None
 
 
@@ -245,6 +277,9 @@ def parse_response(raw: str | None) -> ComposedReport | None:
 
     payload = _json_payload(raw)
     if payload is None:
+=======
+    if not isinstance(payload, dict):
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         return None
     try:
         return ComposedReport.model_validate(payload)
@@ -252,6 +287,7 @@ def parse_response(raw: str | None) -> ComposedReport | None:
         return None
 
 
+<<<<<<< HEAD
 def parse_refinement_response(
     raw: str | None, *, expected_section_id: str
 ) -> ComposedSection | None:
@@ -280,6 +316,8 @@ def parse_refinement_response(
     return section if section.section_id == expected_section_id else None
 
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 def compose_sections(
     *,
     llm: GenerativeAIClient,
@@ -288,8 +326,11 @@ def compose_sections(
     audience: str,
     tone: str,
     detail_level: str,
+<<<<<<< HEAD
     instructions: dict[str, str] | None = None,
     include_manual: bool = False,
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 ) -> dict[str, Any]:
     """Write narrative blocks from evidence, keeping the facts intact.
 
@@ -308,7 +349,11 @@ def compose_sections(
         if section.get("type") in NARRATIVE_TYPES and section.get("visible", True)
         # A hand-edited block is the user's text; regenerating it silently
         # would discard their work.
+<<<<<<< HEAD
         and (include_manual or not section.get("manually_edited"))
+=======
+        and not section.get("manually_edited")
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     ]
     if not narrative:
         return {"sections": {}, "warnings": warnings, "conflicts": conflicts}
@@ -327,6 +372,7 @@ def compose_sections(
         )
         return {"sections": {}, "warnings": warnings, "conflicts": conflicts}
 
+<<<<<<< HEAD
     accepted: dict[str, str] = {}
     by_source = {str(source.get("id")): source for source in sources}
     for target in narrative:
@@ -385,6 +431,34 @@ def compose_sections(
             for source in section_sources
         )
         issues = fact_check(section_evidence, composed.content)
+=======
+    system, user = build_request(
+        sections=narrative,
+        sources=sources,
+        audience=audience,
+        tone=tone,
+        detail_level=detail_level,
+    )
+    raw = llm.complete(system, user, json_mode=True, temperature=0.2)
+    parsed = parse_response(raw)
+    if parsed is None:
+        warnings.append(
+            "The AI response could not be validated against the report schema, "
+            "so no section was changed."
+        )
+        return {"sections": {}, "warnings": warnings, "conflicts": conflicts}
+
+    combined_evidence = "\n".join(
+        (source.get("evidence") or {}).get("answer") or "" for source in sources
+    )
+    by_id = {section["id"]: section for section in narrative}
+    accepted: dict[str, str] = {}
+    for composed in parsed.sections:
+        target = by_id.get(composed.section_id)
+        if target is None:
+            continue
+        issues = fact_check(combined_evidence, composed.content)
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         issues += classification_issues(
             target.get("content_classification", "observed_fact"), composed.content
         )
@@ -393,7 +467,11 @@ def compose_sections(
                 f"Section {target.get('title') or target['type']!r}: {issue}" for issue in issues
             )
             continue
+<<<<<<< HEAD
         accepted[target["id"]] = composed.content.strip()
+=======
+        accepted[composed.section_id] = composed.content.strip()
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
     return {"sections": accepted, "warnings": warnings, "conflicts": conflicts}
 
@@ -406,6 +484,9 @@ __all__ = [
     "extract_numbers",
     "fact_check",
     "normalize_number",
+<<<<<<< HEAD
     "parse_refinement_response",
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     "parse_response",
 ]

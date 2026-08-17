@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Copy,
+<<<<<<< HEAD
   ChevronDown,
   Download,
   Eye,
@@ -16,13 +17,27 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+=======
+  Download,
+  Eye,
+  EyeOff,
+  FileText,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Sparkles,
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   Trash2,
   Wand2,
 } from "lucide-react";
 import {
   addSection,
   addSource,
+<<<<<<< HEAD
   applyReportTemplate,
+=======
+  composeReport,
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   generateReport,
   createReport,
   deleteSection,
@@ -31,6 +46,7 @@ import {
   getReport,
   listReports,
   listTemplates,
+<<<<<<< HEAD
   previewReportPdf,
   reorderSections,
   refineReportSection,
@@ -40,6 +56,15 @@ import {
 } from "../../services/reports";
 import NewReport from "./NewReport";
 import ReportAssistantPanel from "./ReportAssistantPanel";
+=======
+  reorderSections,
+  takePendingSource,
+  updateReport,
+  updateSection,
+  validateReport,
+} from "../../services/reports";
+import NewReport from "./NewReport";
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 import "./report-studio.css";
 
 /**
@@ -51,6 +76,16 @@ import "./report-studio.css";
  * new-report chooser, and the editor.
  */
 
+<<<<<<< HEAD
+=======
+const CLASSIFICATION_LABEL = {
+  observed_fact: "Observed fact",
+  interpretation: "Interpretation",
+  recommendation: "Recommendation",
+  user_authored: "Author's note",
+};
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 const ADDABLE_BLOCKS = [
   ["rich_text", "Text"],
   ["key_finding", "Key finding"],
@@ -71,10 +106,13 @@ function scopeLine(scope = {}) {
     scope.squad ? `Squad ${scope.squad}` : "All squads",
     scope.sprint ? `Sprint ${scope.sprint}` : null,
     scope.release ? `Release ${scope.release}` : null,
+<<<<<<< HEAD
     scope.feature ? `Feature ${scope.feature}` : null,
     scope.issue_type ? `Type ${scope.issue_type}` : null,
     scope.status ? `Status ${scope.status}` : null,
     scope.priority ? `Priority ${scope.priority}` : null,
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   ].filter(Boolean);
   if (scope.date_from || scope.date_to) {
     parts.push(`${scope.date_from || "start"} → ${scope.date_to || "today"}`);
@@ -133,6 +171,11 @@ function ReportLibrary({ reports, status, error, onOpen, onNew, onDuplicate, onR
           <dl>
             <div><dt>Template</dt><dd>{label(report.template)}</dd></div>
             <div><dt>Sections</dt><dd>{report.section_count}</dd></div>
+<<<<<<< HEAD
+=======
+            <div><dt>Evidence</dt><dd>{report.source_count} source{report.source_count === 1 ? "" : "s"}</dd></div>
+            <div><dt>Version</dt><dd>v{report.version}</dd></div>
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             <div><dt>Edited</dt><dd>{new Date(report.updated_at).toLocaleString()}</dd></div>
             <div>
               <dt>Data</dt>
@@ -155,6 +198,7 @@ function ReportLibrary({ reports, status, error, onOpen, onNew, onDuplicate, onR
 /* Editor                                                             */
 /* ------------------------------------------------------------------ */
 
+<<<<<<< HEAD
 function StructuredTable({ payload }) {
   const columns = payload?.columns || [];
   const rows = payload?.rows || [];
@@ -185,14 +229,24 @@ function SimpleChart({ payload }) {
 }
 
 function SectionBlock({ section, index, total, busy, selected, onSelect, onChange, onMove, onToggle, onRemove, onExportCsv }) {
+=======
+function SectionBlock({ section, index, total, busy, onChange, onMove, onToggle, onRemove, onExportCsv }) {
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   const [draft, setDraft] = useState(section.content);
   const [editing, setEditing] = useState(false);
   useEffect(() => { setDraft(section.content); }, [section.content]);
 
+<<<<<<< HEAD
   const tabular = section.type === "data_table" || section.type === "feature_status" || section.type === "chart" || section.type === "kpi_group";
 
   return (
     <article className={`report-block ${section.visible ? "" : "is-hidden"} ${selected ? "is-selected" : ""}`} data-type={section.type} onClick={() => onSelect(section)}>
+=======
+  const tabular = section.type === "data_table" || section.type === "chart" || section.type === "kpi_group";
+
+  return (
+    <article className={`report-block ${section.visible ? "" : "is-hidden"}`} data-type={section.type}>
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
       <header>
         <div>
           <span className="report-block-type">{label(section.type)}</span>
@@ -213,6 +267,19 @@ function SectionBlock({ section, index, total, busy, selected, onSelect, onChang
         </div>
       </header>
 
+<<<<<<< HEAD
+=======
+      <div className="report-block-flags">
+        <span className={`report-classification report-classification--${section.content_classification}`}>
+          {CLASSIFICATION_LABEL[section.content_classification] || label(section.content_classification)}
+        </span>
+        {section.source_ids?.length > 0 && <span className="report-flag">{section.source_ids.length} source{section.source_ids.length === 1 ? "" : "s"}</span>}
+        {section.manually_edited && <span className="report-flag">Edited by hand</span>}
+        {section.needs_review && <span className="report-flag report-flag--warn">Needs review — not re-verified</span>}
+        {section.content_mode !== "rewrite" && <span className="report-flag">{label(section.content_mode)}</span>}
+      </div>
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
       {section.type !== "page_break" && (
         editing ? (
           <div className="report-block-editor">
@@ -229,6 +296,7 @@ function SectionBlock({ section, index, total, busy, selected, onSelect, onChang
           </div>
         ) : (
           <div className="report-block-body">
+<<<<<<< HEAD
             {section.state === "needs_input" && !section.content && !section.payload?.rows?.length
               ? <div className="report-needs-input"><strong>Needs Input</strong><span>{section.state_reason}</span></div>
               : section.content
@@ -238,6 +306,18 @@ function SectionBlock({ section, index, total, busy, selected, onSelect, onChang
             {section.type === "kpi_group" ? <KpiCards payload={section.payload} /> : <StructuredTable payload={section.payload} />}
             {section.type === "chart" && <SimpleChart payload={section.payload} />}
             {!tabular && <button type="button" onClick={(event) => { event.stopPropagation(); setEditing(true); }}>Edit section</button>}
+=======
+            {section.content
+              ? section.content.split("\n").filter(Boolean).map((line, i) => <p key={i}>{line}</p>)
+              : <p className="report-placeholder">Not written yet.</p>}
+            {section.payload?.rows?.length > 0 && (
+              <p className="report-placeholder">{section.payload.rows.length} rows of supporting data.</p>
+            )}
+            {section.payload?.data?.length > 0 && (
+              <p className="report-placeholder">{section.payload.data.length} plotted values.</p>
+            )}
+            <button type="button" onClick={() => setEditing(true)}>Edit section</button>
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
           </div>
         )
       )}
@@ -245,6 +325,7 @@ function SectionBlock({ section, index, total, busy, selected, onSelect, onChang
   );
 }
 
+<<<<<<< HEAD
 function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSection, onMove, onRemove, onAdd, onGenerate, onApplyTemplate, onPreview, onExport, onExportCsv, onDuplicate, onSaveDraft, onCopy, onRefine }) {
   const sections = report.sections.filter((section) => !["cover", "methodology"].includes(section.type));
   const deliveryLayout = ["weekly_scrum", "executive_summary"].includes(report.template);
@@ -284,6 +365,10 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
     if (!window.confirm("Apply this template? Existing report sections will be replaced before verified data is refreshed.")) return;
     onApplyTemplate(next);
   }
+=======
+function ReportEditor({ report, busy, notice, onBack, onPatch, onSection, onMove, onRemove, onAdd, onCompose, onGenerate, onValidate, onExport, onExportCsv, onDuplicate }) {
+  const visible = report.sections.filter((section) => section.visible);
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   return (
     <div className="report-editor">
       <header className="report-editor-header">
@@ -297,6 +382,7 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
           />
           <div className="report-editor-meta">
             <StatusPill status={report.status} />
+<<<<<<< HEAD
             <span>{scopeLine(report.scope)}</span>
             <span>{report.freshness?.stale ? `Data may be outdated — ${report.freshness.reason}` : "Data current"}</span>
           </div>
@@ -312,6 +398,24 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
             : <button type="button" onClick={showPreview} disabled={busy || previewBusy}>{previewBusy ? <Loader2 className="is-spinning" /> : <Eye />} Preview PDF</button>}
           <details className="report-action-menu"><summary className="primary"><Download aria-hidden="true" /> Export <ChevronDown aria-hidden="true" /></summary><div><button type="button" onClick={() => onExport("pdf")} disabled={busy}>PDF</button><button type="button" onClick={() => onExport("docx")} disabled={busy}>DOCX</button></div></details>
           <details className="report-action-menu"><summary aria-label="More report actions"><MoreHorizontal aria-hidden="true" /> More</summary><div><button type="button" onClick={onCopy} disabled={busy}><Copy /> Copy report content</button><button type="button" onClick={onDuplicate} disabled={busy}><Copy aria-hidden="true" /> Duplicate report</button></div></details>
+=======
+            <span>v{report.version}</span>
+            <span>{scopeLine(report.scope)}</span>
+            <span>{report.freshness?.stale ? `Data may be outdated — ${report.freshness.reason}` : "Data current"}</span>
+          </div>
+        </div>
+        <div className="report-editor-actions">
+          <button type="button" onClick={onValidate} disabled={busy}><CheckCircle2 aria-hidden="true" /> Validate</button>
+          <button type="button" onClick={onGenerate} disabled={busy} title="Answer this template's standard questions from live data">
+            {busy ? <Loader2 className="is-spinning" aria-hidden="true" /> : <Wand2 aria-hidden="true" />} Refresh from data
+          </button>
+          <button type="button" onClick={onCompose} disabled={busy} title="Rewrite the narrative from the attached evidence">
+            <Sparkles aria-hidden="true" /> Rewrite text
+          </button>
+          <button type="button" onClick={onDuplicate} disabled={busy}><Copy aria-hidden="true" /> Duplicate</button>
+          <button type="button" className="primary" onClick={() => onExport("pdf")} disabled={busy}><Download aria-hidden="true" /> Export PDF</button>
+          <button type="button" onClick={() => onExport("docx")} disabled={busy}>DOCX</button>
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         </div>
       </header>
 
@@ -327,22 +431,40 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
         </div>
       )}
 
+<<<<<<< HEAD
       {mode === "preview" ? (
         <section className="report-pdf-preview" aria-label="PDF preview">
           <header><div><strong>Final PDF preview</strong><span>{preview?.filename}</span></div><button type="button" onClick={() => setMode("edit")}><Pencil /> Back to Edit Report</button></header>
           {preview?.url && <iframe src={preview.url} title={`PDF preview of ${report.title}`} />}
         </section>
       ) : (
+=======
+      {report.validation?.issues?.length > 0 && (
+        <div className="report-conflicts report-conflicts--info" role="status">
+          <ClipboardList aria-hidden="true" />
+          <div>
+            <strong>Validation</strong>
+            {report.validation.issues.map((issue) => <p key={issue}>{issue}</p>)}
+          </div>
+        </div>
+      )}
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
       <div className="report-editor-body">
         <nav className="report-navigator" aria-label="Report sections">
           <h3>Sections</h3>
           <ol>
+<<<<<<< HEAD
             {sections.map((section) => (
+=======
+            {report.sections.map((section) => (
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
               <li key={section.id} className={section.visible ? "" : "is-hidden"}>
                 <a href={`#section-${section.id}`}>{section.title || label(section.type)}</a>
               </li>
             ))}
           </ol>
+<<<<<<< HEAD
           {!deliveryLayout && <>
             <h3>Add a block</h3>
             <div className="report-add-blocks">
@@ -353,10 +475,35 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
               ))}
             </div>
           </>}
+=======
+          <h3>Evidence</h3>
+          {report.sources.length === 0 ? (
+            <p className="report-placeholder">No sources yet. Use “Add to report” on a Zara answer.</p>
+          ) : (
+            <ul className="report-source-list">
+              {report.sources.map((source) => (
+                <li key={source.id}>
+                  <strong>{source.label}</strong>
+                  <small>{scopeLine(source.scope)}</small>
+                  {source.query_ids?.length > 0 && <small>{source.query_ids.length} approved quer{source.query_ids.length === 1 ? "y" : "ies"}</small>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <h3>Add a block</h3>
+          <div className="report-add-blocks">
+            {ADDABLE_BLOCKS.map(([type, text]) => (
+              <button key={type} type="button" disabled={busy} onClick={() => onAdd(type, text)}>
+                <Plus aria-hidden="true" /> {text}
+              </button>
+            ))}
+          </div>
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         </nav>
 
         <main className="report-preview" aria-label="Report preview">
           <div className="report-page">
+<<<<<<< HEAD
             <p className="report-page-brand">RHB <span>REPORT</span></p>
             <h1>{deliveryLayout ? "ZARA WEEKLY DELIVERY REPORT" : report.title}</h1>
             {deliveryLayout && <h2>{report.scope?.squad || "All DCP Squads"} - {report.scope?.sprint || "All Sprints"}</h2>}
@@ -366,14 +513,30 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
             </p>
           </div>
           {sections.map((section, index) => (
+=======
+            <p className="report-page-brand">DORA COPILOT · ZARA</p>
+            <h1>{report.title}</h1>
+            <p className="report-page-scope">{scopeLine(report.scope)}</p>
+            <p className="report-page-meta">
+              Version v{report.version} · {visible.length} visible section{visible.length === 1 ? "" : "s"} ·{" "}
+              {report.data_as_of ? `Data as of ${new Date(report.data_as_of).toLocaleString()}` : "No evidence attached"}
+            </p>
+          </div>
+          {report.sections.map((section, index) => (
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
             <div id={`section-${section.id}`} key={section.id}>
               <SectionBlock
                 section={section}
                 index={index}
+<<<<<<< HEAD
                 total={sections.length}
                 busy={busy}
                 selected={selectedSection?.id === section.id}
                 onSelect={setSelectedSection}
+=======
+                total={report.sections.length}
+                busy={busy}
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
                 onChange={onSection}
                 onMove={onMove}
                 onToggle={(target) => onPatch(null, target, { visible: !target.visible })}
@@ -383,9 +546,13 @@ function ReportEditor({ report, catalogue, busy, notice, onBack, onPatch, onSect
             </div>
           ))}
         </main>
+<<<<<<< HEAD
         <ReportAssistantPanel report={report} selectedSection={selectedSection} busy={busy} onSelectSection={setSelectedSection} onRefine={onRefine} />
       </div>
       )}
+=======
+      </div>
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     </div>
   );
 }
@@ -404,12 +571,19 @@ export default function ReportStudio() {
   const params = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
   const startMode = params?.get("start") || "";
   const autoTemplate = params?.get("create") || "";
+<<<<<<< HEAD
   const autoCurrent = startMode === "current" && params?.get("auto") === "1";
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   const deepLinkId = typeof window === "undefined"
     ? ""
     : (window.location.pathname.match(/\/reports\/([0-9a-f-]{36})/i)?.[1] || "");
   const scopeFromQuery = Object.fromEntries(
+<<<<<<< HEAD
     ["project", "squad", "sprint", "release", "date_from", "date_to", "feature", "issue_type", "status", "priority"]
+=======
+    ["project", "squad", "sprint", "release", "date_from", "date_to"]
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
       .map((key) => [key, params?.get(key) || ""])
       .filter(([, value]) => value),
   );
@@ -493,6 +667,7 @@ export default function ReportStudio() {
     );
   }, [status, autoTemplate, autoRan, catalogue]); // eslint-disable-line react-hooks/exhaustive-deps
 
+<<<<<<< HEAD
   // The dashboard's Generate Report action lands directly in the editor. Its
   // URL contains identifiers only; generation re-resolves all evidence on the
   // server rather than trusting values rendered by the dashboard.
@@ -515,6 +690,8 @@ export default function ReportStudio() {
     }, { generate: true });
   }, [status, autoCurrent, autoRan, catalogue]); // eslint-disable-line react-hooks/exhaustive-deps
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   // An "add this answer to a report" hand-off from the chat lands here.
   useEffect(() => {
     if (status !== "ready") return;
@@ -556,9 +733,12 @@ export default function ReportStudio() {
     setNotice(generate ? { tone: "info", text: "Answering the template questions from live data…" } : null);
     try {
       const created = await createReport(payload);
+<<<<<<< HEAD
       if ((autoCurrent || autoTemplate) && typeof window !== "undefined") {
         window.history.replaceState({}, "", `/reports/${created.id}`);
       }
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
       const attached = await attachPending(created.id);
       setReport(attached || created);
       setView("editor");
@@ -614,6 +794,7 @@ export default function ReportStudio() {
     }
   }
 
+<<<<<<< HEAD
   async function refineSection(section, instruction) {
     if (!report) return null;
     setBusy(true);
@@ -655,6 +836,8 @@ export default function ReportStudio() {
     await navigator.clipboard.writeText(lines.join("\n").trim());
   }
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
   const move = useCallback(async (index, delta) => {
     if (!report) return;
     const order = report.sections.map((section) => section.id);
@@ -665,13 +848,21 @@ export default function ReportStudio() {
   }, [report]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const body = useMemo(() => {
+<<<<<<< HEAD
     if (view === "new" && !report && (autoTemplate || autoCurrent || deepLinkId) && (busy || !autoRan)) {
+=======
+    if ((autoTemplate || deepLinkId) && !report) {
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
       return (
         <div className="report-empty" role="status">
           <Loader2 className="is-spinning" aria-hidden="true" />
           <strong>{autoTemplate ? "Building your report" : "Opening your report"}</strong>
           <p>
+<<<<<<< HEAD
             {autoTemplate || autoCurrent
+=======
+            {autoTemplate
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
               ? "Zara is answering this report's standard questions from today's data. This takes about a minute."
               : "Loading the saved report."}
           </p>
@@ -682,6 +873,10 @@ export default function ReportStudio() {
       return (
         <NewReport
           catalogue={catalogue}
+<<<<<<< HEAD
+=======
+          start={startMode}
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
           initialScope={scopeFromQuery}
           pending={pending}
           busy={busy}
@@ -694,7 +889,10 @@ export default function ReportStudio() {
       return (
         <ReportEditor
           report={report}
+<<<<<<< HEAD
           catalogue={catalogue}
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
           busy={busy || filling}
           notice={notice}
           onBack={() => { setView("library"); setReport(null); setNotice(null); refreshLibrary(); }}
@@ -706,6 +904,7 @@ export default function ReportStudio() {
             run(() => deleteSection(report.id, section.id), "Section deleted.");
           }}
           onAdd={(type, text) => run(() => addSection(report.id, { type, title: text }), `${text} block added.`)}
+<<<<<<< HEAD
           onSaveDraft={() => run(() => updateReport(report.id, { status: "draft" }), "Draft saved.")}
           onCopy={() => run(async () => { await copyReportContent(); return null; }, "Report content copied.")}
           onRefine={refineSection}
@@ -723,6 +922,19 @@ export default function ReportStudio() {
               throw failure;
             }
           }}
+=======
+          onCompose={() => run(async () => {
+            const result = await composeReport(report.id);
+            const warnings = result.warnings || [];
+            setNotice(
+              warnings.length
+                ? { tone: "warn", text: warnings.join(" ") }
+                : { tone: "info", text: `${result.updated_sections.length} section(s) written from the attached evidence.` },
+            );
+            return result;
+          })}
+          onValidate={() => run(() => validateReport(report.id), null)}
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
           onGenerate={() => run(async () => {
             const result = await generateReport(report.id);
             setNotice(
@@ -761,14 +973,23 @@ export default function ReportStudio() {
         onDuplicate={(id) => run(() => duplicateReport(id), "Report duplicated.")}
       />
     );
+<<<<<<< HEAD
   }, [view, report, reports, status, error, busy, filling, notice, catalogue, pending, startMode, autoTemplate, autoCurrent, deepLinkId]); // eslint-disable-line react-hooks/exhaustive-deps
+=======
+  }, [view, report, reports, status, error, busy, filling, notice, catalogue, pending, startMode, autoTemplate, deepLinkId]); // eslint-disable-line react-hooks/exhaustive-deps
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
   return (
     <main className="report-studio">
       <header className="report-studio-header">
         <a className="report-back" href="/" aria-label="Return to DORA Copilot"><ArrowLeft aria-hidden="true" /></a>
         <div>
+<<<<<<< HEAD
           <h1>ZARA Report Studio</h1>
+=======
+          <p>DORA Copilot</p>
+          <h1>Report Studio</h1>
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         </div>
         <div className="report-studio-actions">
           <button type="button" onClick={refreshLibrary} disabled={busy}><RefreshCw aria-hidden="true" /> Refresh</button>
@@ -779,7 +1000,11 @@ export default function ReportStudio() {
           )}
         </div>
       </header>
+<<<<<<< HEAD
       {view !== "editor" && notice && (
+=======
+      {view === "library" && notice && (
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
         <div className={`report-notice report-notice--${notice.tone}`} role="status">{notice.text}</div>
       )}
       {body}

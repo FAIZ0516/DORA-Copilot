@@ -162,6 +162,17 @@ class JiraDashboardResponse(BaseModel):
     notes: list[str]
 
 
+<<<<<<< HEAD
+=======
+# --------------------------------------------------------------------------- #
+# Report Studio                                                               #
+#                                                                             #
+# Reports are persistent objects, not chat answers, so they own their own      #
+# request/response contracts here alongside the rest of the API layer's.       #
+# --------------------------------------------------------------------------- #
+
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 class ReportScope(BaseModel):
     """The slice of data a report describes."""
 
@@ -171,6 +182,7 @@ class ReportScope(BaseModel):
     release: str | None = Field(default=None, max_length=120)
     date_from: date | None = None
     date_to: date | None = None
+<<<<<<< HEAD
     feature: str | None = Field(default=None, max_length=120)
     issue_type: str | None = Field(default=None, max_length=80)
     status: str | None = Field(default=None, max_length=80)
@@ -204,6 +216,8 @@ class ReportScope(BaseModel):
     @classmethod
     def normalize_report_project(cls, value: str | None) -> str | None:
         return value.upper() if value else None
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
 
 class ReportCreateRequest(BaseModel):
@@ -216,6 +230,7 @@ class ReportCreateRequest(BaseModel):
     scope: ReportScope | None = None
 
 
+<<<<<<< HEAD
 class ReportRefineRequest(BaseModel):
     section_id: UUID
     instruction: str = Field(min_length=1, max_length=500)
@@ -229,6 +244,8 @@ class ReportRefineRequest(BaseModel):
         return cleaned
 
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 class ReportUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     audience: str | None = Field(default=None, max_length=40)
@@ -239,10 +256,13 @@ class ReportUpdateRequest(BaseModel):
     scope: ReportScope | None = None
 
 
+<<<<<<< HEAD
 class ReportApplyTemplateRequest(BaseModel):
     template: str = Field(max_length=60)
 
 
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 class ReportSectionCreateRequest(BaseModel):
     type: str = Field(max_length=40)
     title: str = Field(default="", max_length=200)
@@ -265,6 +285,11 @@ class ReportReorderRequest(BaseModel):
 
 
 class ReportSourceRequest(BaseModel):
+<<<<<<< HEAD
+=======
+    """Attach one assistant message from one of the caller's conversations."""
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     conversation_id: UUID
     message_id: UUID
     selection: str = Field(default="full", max_length=20)
@@ -272,6 +297,11 @@ class ReportSourceRequest(BaseModel):
 
 
 class ReportComposeRequest(BaseModel):
+<<<<<<< HEAD
+=======
+    """Regenerate narrative sections. Optionally limit to specific sections."""
+
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     section_ids: list[UUID] = Field(default_factory=list, max_length=100)
 
 
@@ -282,7 +312,10 @@ class ReportDuplicateRequest(BaseModel):
 class ReportExportRequest(BaseModel):
     format: Literal["pdf", "docx", "csv"] = "pdf"
     section_id: UUID | None = None
+<<<<<<< HEAD
     preview: bool = False
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
 
 
 class ReportSectionResponse(BaseModel):
@@ -297,8 +330,11 @@ class ReportSectionResponse(BaseModel):
     content_classification: str
     manually_edited: bool
     needs_review: bool
+<<<<<<< HEAD
     state: Literal["ready", "needs_input", "needs_review"] = "needs_input"
     state_reason: str = ""
+=======
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f
     source_ids: list[str] = Field(default_factory=list)
 
 
@@ -375,3 +411,39 @@ class ReportComposeResponse(BaseModel):
     updated_sections: list[UUID] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     conflicts: list[dict[str, Any]] = Field(default_factory=list)
+<<<<<<< HEAD
+=======
+
+
+# --------------------------------------------------------------------------- #
+# Realtime voice                                                              #
+# --------------------------------------------------------------------------- #
+
+
+class VoiceSessionRequest(BaseModel):
+    """Open a voice session. Authenticated over HTTP, unlike the socket."""
+
+    conversation_id: UUID | None = None
+    workspace: Literal["business", "technical"] = "technical"
+    project_key: str | None = Field(default=None, min_length=2, max_length=16)
+    dashboard_context: DashboardContext | None = None
+
+
+class VoiceSessionResponse(BaseModel):
+    # Opaque and short-lived: it identifies the session, it is not a credential
+    # for anything else, and it expires on its own.
+    session_token: str
+    expires_in_seconds: int
+    sample_rate: int
+    frame_bytes: int
+    end_silence_ms: int
+    max_utterance_seconds: int
+
+
+class VoiceCapabilityResponse(BaseModel):
+    enabled: bool
+    stt_available: bool
+    vad_available: bool
+    tts_configured: bool
+    detail: str | None = None
+>>>>>>> d7a58633ffe37fc0be2f3b43ac9913145a90716f

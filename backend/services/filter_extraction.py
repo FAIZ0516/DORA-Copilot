@@ -35,6 +35,32 @@ _DIMENSION_STOP_WORDS = {
 }
 
 
+# Words that follow "status" as part of the field name or the shape of the
+# question, never as a status value. Without this, "a chart of work by status
+# category" extracted status="category" and the plan was then rejected as an
+# unknown entity -- the user got a clarifying question instead of a chart.
+_FIELD_QUALIFIERS = frozenset(
+    {
+        "category",
+        "categories",
+        "breakdown",
+        "distribution",
+        "counts",
+        "count",
+        "summary",
+        "values",
+        "value",
+        "field",
+        "column",
+        "by",
+        "of",
+        "for",
+        "and",
+        "or",
+    }
+)
+
+
 def _safe_named_dimension(raw_value: str) -> str | None:
     value = re.sub(r"\s+", " ", raw_value.strip(" \t\r\n\"'?.!,")).upper()
     if not value or len(value) > 40:
@@ -138,6 +164,7 @@ def extract_filters(message: str, *, project_key: str = "DCPM") -> dict[str, Any
             break
     if match := re.search(r"\bstatus\s+(?:is\s+)?[\"']?([A-Za-z][A-Za-z ]{1,30})", message, re.I):
         status = match.group(1).strip().rstrip("?.")
-        if status.lower().split()[0] not in _DIMENSION_STOP_WORDS:
+        head = status.lower().split()[0]
+        if head not in _DIMENSION_STOP_WORDS and head not in _FIELD_QUALIFIERS:
             filters["status"] = status
     return filters

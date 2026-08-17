@@ -452,7 +452,8 @@ def describe_policy(policy: ResponsePolicy) -> str:
         else "Respond in the same language the user used for this message."
     )
     lines.append(
-        "Offer at most one or two concise, specific next steps."
+        "Offer at most one or two concise, specific next steps under a bold "
+        "**What to Improve** header."
         if policy["suggest_next_action"]
         else "Do not append a suggested next action to this answer."
     )
