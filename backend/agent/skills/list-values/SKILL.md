@@ -27,6 +27,11 @@ Discover what dimension values currently exist in the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 Here are the [dimension] values currently in DoraDB for project DCPM:
 
@@ -35,6 +40,4 @@ Here are the [dimension] values currently in DoraDB for project DCPM:
 [X] total values found [note if limited].
 
 [If relevant: flag any data quality concern, e.g. "Only 21 squads have data — 74.5% of issues have no squad assigned."]
-
-Would you like me to analyze any of these [dimension values]?
 ```

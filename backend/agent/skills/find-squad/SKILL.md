@@ -26,6 +26,11 @@ Discover which squads have Jira data in the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 Squads with Jira data in the DCPM project:
 
@@ -36,8 +41,6 @@ Squads with Jira data in the DCPM project:
 21 squads have data. 63,481 issues (74.5%) have NO squad assigned — the majority of work cannot be attributed to any specific team.
 
 Important: Squad is a custom Jira field. Whether it reflects current or historical ownership is unconfirmed. Issue count does not measure team size, effort, or productivity.
-
-Would you like me to analyze a specific squad's work composition?
 ```
 
 ## Common Mistakes to Avoid

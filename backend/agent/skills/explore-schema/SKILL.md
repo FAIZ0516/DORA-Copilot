@@ -52,6 +52,11 @@ Explore the DoraDB database schema for the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 The DoraDB database contains:
 
@@ -62,6 +67,4 @@ The DoraDB database contains:
 - [view name] — [brief purpose] ([X] rows, may be stale)
 
 All tables are in the `public` schema. Logical relationships exist between tables but are not enforced by foreign keys — they rely on naming conventions and approved query logic.
-
-Would you like me to show the columns for any specific table?
 ```

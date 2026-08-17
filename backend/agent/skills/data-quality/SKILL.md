@@ -39,6 +39,11 @@ Run data quality checks on the DCPM Jira issue snapshot.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 Data quality summary for the DCPM Jira snapshot (85,223 rows):
 
@@ -55,8 +60,6 @@ Data quality summary for the DCPM Jira snapshot (85,223 rows):
 Biggest concern: 74.5% of issues have no squad assigned. Any team-level report MUST acknowledge this gap — you cannot attribute most work to specific teams.
 
 The 2 invalid resolution intervals and 4 inconsistent Done rows should be filtered before calculating metrics. They are small in count but would produce misleading averages if included.
-
-Would you like me to deep-dive into any specific quality area?
 ```
 
 ## Common Mistakes to Avoid

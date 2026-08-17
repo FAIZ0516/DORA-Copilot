@@ -41,6 +41,11 @@ class AdvancedDoraDbAgent(AgentOrchestrator):
         graph.add_node("repair", self._repair)
         graph.add_node("analyze", self._analyze)
         graph.add_node("respond", self.responder.respond)
+        # Relevance gating sits between composing an answer and checking it
+        # is true: strip what the request did not earn, then validate what
+        # remains. Regeneration re-enters here too, so a retry cannot
+        # reintroduce a padded section.
+        graph.add_node("enforce_relevance", self._enforce_relevance)
         graph.add_node("validate_answer", self._validate_answer)
         graph.add_node("regenerate", self.responder.regenerate)
         graph.add_node("save", self._save)
@@ -59,13 +64,14 @@ class AdvancedDoraDbAgent(AgentOrchestrator):
         )
         graph.add_edge("repair", "validate_result")
         graph.add_edge("analyze", "respond")
-        graph.add_edge("respond", "validate_answer")
+        graph.add_edge("respond", "enforce_relevance")
+        graph.add_edge("enforce_relevance", "validate_answer")
         graph.add_conditional_edges(
             "validate_answer",
             self._route_after_answer_validation,
             {"regenerate": "regenerate", "save": "save"},
         )
-        graph.add_edge("regenerate", "validate_answer")
+        graph.add_edge("regenerate", "enforce_relevance")
         graph.add_edge("save", END)
         self.graph = graph.compile()
 

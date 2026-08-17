@@ -95,10 +95,14 @@ STRUCTURE_RULES: tuple[str, ...] = (
     "markdown bullet list, one item per line.",
     "Keep paragraphs to three sentences or fewer, and put a blank line "
     "between them. A wall of text is a failed answer even if it is accurate.",
+    # This used to offer "Worth knowing" and "Next step" as examples, and the
+    # model duly produced them on answers that needed neither -- the headings
+    # were being instructed, not tolerated. Which sections are admissible is
+    # now decided per turn in response_decision.py.
     "When an answer has genuinely distinct parts, label them with short bold "
-    "headers on their own line (for example **Evidence**, **Worth knowing**, "
-    "**Next step**). Use only the headers that carry real content -- never "
-    "emit an empty or padded section.",
+    "headers on their own line, naming what the section actually contains. "
+    "Use only headers that carry content the request called for -- never emit "
+    "an empty, generic, or padded section.",
     "Put supporting numbers next to what they describe, not in a separate "
     "recital of figures.",
     "Prefer the shortest layout that stays clear: a two-sentence answer needs "
@@ -113,7 +117,6 @@ PRIORITY_ORDER: tuple[str, ...] = (
     "strongest evidence",
     "important risks/limitations",
     "secondary detail",
-    "optional next steps",
 )
 
 
@@ -405,7 +408,11 @@ def derive_policy(
             else "none"
         ),
         "priority_order": PRIORITY_ORDER,
-        "suggest_next_action": mode == "data" and follow_up_type not in {"format_change", "correction"},
+        # Was true for every data answer, which is why every data answer ended
+        # with a suggestion nobody asked for -- duplicating the interface's own
+        # follow-up feature. A next step is content like any other: it appears
+        # when the user asked for direction.
+        "suggest_next_action": _is_recommendation(message, intent),
     }
 
 
@@ -454,7 +461,9 @@ def describe_policy(policy: ResponsePolicy) -> str:
     lines.append(
         "Offer at most one or two concise, specific next steps."
         if policy["suggest_next_action"]
-        else "Do not append a suggested next action to this answer."
+        else "Do not append a suggested next action, an offer of further help, "
+        "or a suggested follow-up question. The interface has its own "
+        "follow-up feature; duplicating it inside the answer is noise."
     )
     lines.extend(PLAIN_LANGUAGE_RULES)
     lines.extend(STRUCTURE_RULES)

@@ -47,6 +47,11 @@ from ..tools import execute_approved_query
 from .audit import audit_log
 from .controls.execution_control import ensure_within_deadline, public_policy
 from .controls.response_controller import derive_policy
+from .response.response_decision import decide_response
+from .validators.relevance_validator import (
+    find_relevance_violations,
+    strip_unpermitted_sections,
+)
 from .guardrails.input_guardrail import check_input
 from .planner import create_plan
 from .request_router import DATABASE_METADATA, DATA_RETRIEVAL
@@ -559,9 +564,58 @@ class AgentOrchestrator:
             "analysis": analysis,
             "chart": chart,
             "response_policy": response_policy,
+            # What the answer may contain, from the same signals as the policy.
+            "response_decision": decide_response(
+                state["message"],
+                plan=state.get("plan", {}),
+                policy=response_policy,
+                results=results,
+                warnings=state.get("warnings", []),
+                database_error=bool(state.get("database_error")),
+            ),
             "table": (
                 _table_spec(results) if response_policy["format"] == "table" else None
             ),
+        }
+
+    def _enforce_relevance(self, state: AgentState) -> dict[str, Any]:
+        """Remove content the request did not earn, and record what was removed.
+
+        Gating the prompt stops most of it; this is the deterministic backstop
+        for the part that is reliably checkable. It strips rather than
+        regenerates on purpose -- a second model round trip to delete a
+        paragraph nobody asked for would double an already slow turn.
+        """
+
+        answer = state.get("answer") or ""
+        if not answer:
+            return {}
+        decision = state.get("response_decision") or decide_response(
+            state.get("message", ""),
+            plan=state.get("plan", {}),
+            policy=state.get("response_policy", {}),
+            results=state.get("results", []),
+            warnings=state.get("warnings", []),
+            database_error=bool(state.get("database_error")),
+        )
+        violations = find_relevance_violations(
+            answer,
+            decision,
+            previous_answer=state.get("memory", {}).get("previous_answer", ""),
+        )
+        if not violations:
+            return {"response_decision": decision, "relevance_violations": []}
+
+        stripped = strip_unpermitted_sections(answer, decision)
+        return {
+            "response_decision": decision,
+            # Never let the strip empty an answer: a heading-only reply is
+            # still better than nothing to show the user.
+            "answer": stripped or answer,
+            "relevance_violations": [
+                {"code": violation.code, "detail": violation.detail}
+                for violation in violations
+            ],
         }
 
     def _validate_answer(self, state: AgentState) -> dict[str, Any]:
@@ -613,6 +667,8 @@ class AgentOrchestrator:
             "confidence": state["plan"]["confidence"],
             "warnings": state.get("warnings", []),
             "validation_status": state.get("validation", {}).get("status", "not_applicable"),
+            "response_profile": (state.get("response_decision") or {}).get("profile", ""),
+            "relevance_violations": state.get("relevance_violations", []),
             "validation_checks": state.get("validation", {}).get("checks", []),
             "repairs": state.get("repair_count", 0),
             "answer_regenerations": state.get("answer_retry_count", 0),

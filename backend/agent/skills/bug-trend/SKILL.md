@@ -27,6 +27,11 @@ Analyze bug creation vs resolution trends in the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 Bug trend in the DCPM snapshot:
 
@@ -41,8 +46,6 @@ Possible interpretations (not proven by this data):
 - [If falling]: Could indicate fewer new bugs, faster resolution, or reduced reporting
 
 Limitations: This data doesn't include bug severity (column absent), reopening history (no changelog), or whether resolved bugs were verified. Squad-level analysis is limited — 74.5% of issues lack squad assignment.
-
-Would you like me to break this down by squad or check how many bugs are currently open vs resolved?
 ```
 
 ## Common Mistakes to Avoid

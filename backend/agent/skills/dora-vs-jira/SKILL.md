@@ -43,6 +43,11 @@ These are useful but are NOT DORA metrics:
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 The metrics in this project use organisation-specific definitions — they are NOT official DORA metrics as defined by the DORA research program.
 
@@ -59,8 +64,6 @@ The metrics in this project use organisation-specific definitions — they are N
 - Bug creation and resolution rates over time
 
 These indicators are useful for asking questions, but they don't prove delivery performance by themselves.
-
-Would you like me to show the available delivery indicators?
 ```
 
 ## Common Mistakes to Avoid

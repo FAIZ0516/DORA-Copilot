@@ -27,6 +27,11 @@ Analyze the age distribution of unresolved Jira issues.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 Open issues by calendar age in the DCPM snapshot:
 
@@ -40,8 +45,6 @@ Open issues by calendar age in the DCPM snapshot:
 [X] issues have been open for more than 90 days. Of these, [Y] are currently IMPEDED.
 
 Important: Calendar age measures time since creation, not time spent actively working. Some long-running issues may be epics or features with extended timelines. This is not the same as DORA lead time or cycle time.
-
-Would you like me to break down the oldest issues by type or priority?
 ```
 
 ## Common Mistakes to Avoid

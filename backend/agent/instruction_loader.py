@@ -31,39 +31,6 @@ def strip_markdown_fence(text: str) -> str:
     ).strip()
 
 
-def load_response_protocol_phrase() -> str:
-    """Extract the response phrase from the runtime instructions at request time.
-
-    Reads the RESPONSE PROTOCOL section, extracts ONLY the phrase inside the
-    ``` code block (e.g. "Yes, I'm Zara."), and returns it. Reading on every
-    call means edits to INSTRUCTIONS.md take effect immediately.
-    """
-    try:
-        full = RUNTIME_INSTRUCTIONS_PATH.read_text(encoding="utf-8")
-    except OSError:
-        logger.warning("Runtime instructions not found at %s.", RUNTIME_INSTRUCTIONS_PATH)
-        return ""
-
-    m = re.search(
-        r"##\s*⚠️\s*RESPONSE\s+PROTOCOL.*?\n(?=\n*(?:---|##\s))",
-        full,
-        re.DOTALL | re.IGNORECASE,
-    )
-    if not m:
-        logger.warning("RESPONSE PROTOCOL section not found in runtime instructions.")
-        return ""
-
-    section = m.group(0)
-    phrase_match = re.search(r"```\s*\n(.+?)\n```", section, re.DOTALL)
-    if not phrase_match:
-        logger.warning("No code block found in RESPONSE PROTOCOL section.")
-        return ""
-
-    phrase = phrase_match.group(1).strip()
-    logger.info("Loaded runtime response phrase: %s", phrase)
-    return phrase
-
-
 def load_system_instructions(message: str = "") -> str:
     """Load the runtime instructions, the skill catalogue, and any matched skill.
 
@@ -87,7 +54,6 @@ def load_system_instructions(message: str = "") -> str:
 __all__ = [
     "RUNTIME_INSTRUCTIONS_PATH",
     "RUNTIME_SKILLS_DIR",
-    "load_response_protocol_phrase",
     "load_system_instructions",
     "strip_markdown_fence",
 ]

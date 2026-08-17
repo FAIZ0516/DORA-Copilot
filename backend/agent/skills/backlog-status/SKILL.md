@@ -25,6 +25,11 @@ Analyze Jira backlog composition in the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 The DCPM backlog contains [X] issues in To Do status category.
 
@@ -35,8 +40,6 @@ Breakdown by status:
 [X] issues are in actionable states (Ready 4 Development, Grooming), while [Y] are in New/To Do with no further detail.
 
 Note: This is a current snapshot. I cannot show sprint commitment history or how long items have been in the backlog. Backlog size alone does not indicate health — it depends on team capacity, priorities, and whether items are actively groomed.
-
-Would you like me to break the backlog down by issue type or check for aged items?
 ```
 
 ## Common Mistakes to Avoid

@@ -29,6 +29,11 @@ Analyze feature-to-user-story relationships in the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 Feature-to-story analysis for DCPM:
 
@@ -39,8 +44,6 @@ Feature-to-story analysis for DCPM:
 Issues with feature links: 24,192 (28.4% of all issues). 73 feature link values reference keys that don't exist in the current snapshot.
 
 Limitations: `featurelink_key` is a custom project field without FK enforcement. This ratio reflects how features are defined and linked in Jira, not necessarily development patterns. Tests, Bugs, and Sub-tasks are typically not feature-linked.
-
-Would you like me to break this down by release or squad?
 ```
 
 ## Common Mistakes to Avoid

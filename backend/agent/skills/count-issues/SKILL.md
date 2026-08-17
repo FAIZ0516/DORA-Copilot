@@ -30,6 +30,11 @@ Count Jira issues in the DCPM project snapshot.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 [Direct count with number]. This represents [what is being counted] out of [total] total issues in the DCPM snapshot.
 
@@ -38,9 +43,7 @@ Breakdown:
 - Type B: Y
 - Type C: Z
 
-Keep in mind: [key caveat about Done ≠ success, or tests/sub-tasks included].
-
-Would you like me to break this down by [status/priority/squad]?
+[Only if it changes how the count should be read: one short caveat, e.g. Done includes Cancelled/Rejected.]
 ```
 
 ## Common Mistakes to Avoid

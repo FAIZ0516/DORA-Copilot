@@ -27,6 +27,11 @@ Present DORA metrics broken down by squad for the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 DORA-style metrics by squad in the DCPM project:
 
@@ -37,8 +42,6 @@ DORA-style metrics by squad in the DCPM project:
 ⚠️ Critical: 74.5% of all issues (63,481 rows) have NO squad assigned. These metrics represent only the ~25% of work with squad mappings. The patterns seen here may not reflect the full project.
 
 These are organisation-specific metrics — not official DORA. Different squads may handle different issue types and scopes, so direct comparison is not meaningful.
-
-Would you like me to look at a specific squad's work composition in more detail?
 ```
 
 ## Common Mistakes to Avoid

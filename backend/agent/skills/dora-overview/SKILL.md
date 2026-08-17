@@ -36,6 +36,11 @@ Present DORA delivery performance metrics for the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 DORA-style delivery metrics for the DCPM project (organisation-specific definitions):
 
@@ -46,8 +51,6 @@ DORA-style delivery metrics for the DCPM project (organisation-specific definiti
 [Current year] is incomplete — comparisons with earlier full years should note this limitation.
 
 Important: These metrics use project-specific definitions and data sources. They are NOT official DORA metrics. The underlying data comes from project release tables and Jira issue snapshots — not from CI/CD deployment events, production incidents, or commit-to-deploy tracking. Deployment frequency, lead time for changes, change failure rate, and recovery time as defined by the DORA research program require additional data sources this project does not contain.
-
-Would you like me to break these down by squad or look at a specific year in detail?
 ```
 
 ## Common Mistakes to Avoid

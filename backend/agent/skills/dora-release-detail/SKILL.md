@@ -27,6 +27,11 @@ Present per-release DORA metric details for the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 Per-release metrics for DCPM:
 
@@ -37,8 +42,6 @@ Per-release metrics for DCPM:
 [X] releases found. [Y] have detailed release info records.
 
 Important: Fix version association with an issue does not prove it was deployed to production. Release metrics use project-specific definitions — they are NOT official DORA.
-
-Would you like me to analyze a specific release's issue composition?
 ```
 
 ## Common Mistakes to Avoid

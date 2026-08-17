@@ -55,6 +55,11 @@ Reference `backend/knowledge/jira_issues.md` — specifically:
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 The DCPM Jira snapshot has several important limitations:
 

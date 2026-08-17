@@ -29,8 +29,8 @@ from ...knowledge_service import (
 from ...llm import GenerativeAIClient
 from ...config import settings
 from ..controls.response_controller import ResponsePolicy, derive_policy, describe_policy
+from .response_decision import ResponseDecision, decide_response, describe_decision
 from ..instruction_loader import (
-    load_response_protocol_phrase,
     load_system_instructions,
     strip_markdown_fence,
 )
@@ -132,6 +132,33 @@ def _policy(state: AgentState) -> ResponsePolicy:
         results=state.get("results", []),
         warnings=state.get("warnings", []),
     )
+
+
+def _decision(state: AgentState) -> ResponseDecision:
+    """What this turn's answer may contain.
+
+    Same defensive shape as ``_policy``: ``_analyze`` stores one, and this
+    recomputes for paths that never reach it -- conversation and knowledge
+    answers, and unit tests driving the responder directly.
+    """
+
+    decision = state.get("response_decision")
+    if decision:
+        return decision
+    return decide_response(
+        state.get("message", ""),
+        plan=state.get("plan", {}),
+        policy=_policy(state),
+        results=state.get("results", []),
+        warnings=state.get("warnings", []),
+        database_error=bool(state.get("database_error")),
+    )
+
+
+def _guidance(state: AgentState) -> str:
+    """The full per-turn instruction block: how to sound, and what may appear."""
+
+    return describe_policy(_policy(state)) + "\n" + describe_decision(_decision(state))
 
 
 class Responder:
@@ -238,7 +265,7 @@ Approved capability catalogue:
 {SQUAD_CAPABILITY_BOUNDARY}
 
 Response policy for this turn:
-{describe_policy(_policy(state))}"""
+{_guidance(state)}"""
             generated = self.llm.complete(
                 capability_system,
                 state["message"],
@@ -290,7 +317,7 @@ Approved capability catalogue:
                 + "\n\n"
                 + SQUAD_CAPABILITY_BOUNDARY
                 + "\n\n"
-                + f"Response policy for this turn:\n{describe_policy(_policy(state))}",
+                + f"Response policy for this turn:\n{_guidance(state)}",
                 f"Question: {state['message']}\n\nVerified excerpts:\n{knowledge_context}",
                 temperature=min(settings.llm_response_temperature, 0.2),
             )
@@ -342,7 +369,7 @@ matching, planner confidence, database fields, query IDs, or internal
 controls. Do not answer with data that has not been retrieved.
 
 Response policy for this turn:
-{describe_policy(_policy(state))}""",
+{_guidance(state)}""",
                     json.dumps(
                         {
                             "question": state["message"],
@@ -389,7 +416,7 @@ Response policy for this turn:
                 "or filters.\n\n"
                 f"Approved capability catalogue:\n{planner_context()}\n\n"
                 f"{SQUAD_CAPABILITY_BOUNDARY}\n\n"
-                f"Response policy for this turn:\n{describe_policy(_policy(state))}"
+                f"Response policy for this turn:\n{_guidance(state)}"
             )
             generated = self.llm.complete(prompt, state["message"])
             answer = generated or getattr(
@@ -431,7 +458,7 @@ this is a connectivity failure, not an empty result. Keep it short and
 suggest trying again shortly. Speak in your own natural voice.
 
 Response policy for this turn:
-{describe_policy(_policy(state))}""",
+{_guidance(state)}""",
                     state["message"],
                 )
                 answer = (
@@ -526,7 +553,7 @@ under 550 words.
 Metric definitions: {json.dumps(METRIC_DEFINITIONS)}
 
 Response policy for this turn:
-{describe_policy(_policy(state))}"""
+{_guidance(state)}"""
                 generated = self.llm.complete(
                     prompt,
                     evidence,
@@ -535,11 +562,6 @@ Response policy for this turn:
                 if generated:
                     answer = strip_markdown_fence(generated)
                     answer_source = self.llm.source
-        # Prepend the configured response phrase to every answer path.
-        phrase = load_response_protocol_phrase()
-        if phrase and not answer.startswith(phrase):
-            answer = f"{phrase}\n\n{answer}"
-
         return {"answer": answer, "answer_source": answer_source}
 
     def regenerate(self, state: AgentState) -> dict[str, Any]:
@@ -570,7 +592,7 @@ validation internals. If the question asks what years exist, count and list
 those years. Keep under 350 words.
 
 """
-            + f"Response policy for this turn:\n{describe_policy(_policy(state))}",
+            + f"Response policy for this turn:\n{_guidance(state)}",
             evidence,
             temperature=min(settings.llm_response_temperature, 0.2),
         )

@@ -26,6 +26,11 @@ Analyze impeded (blocked) Jira issues in the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 There are [X] impeded issues in the DCPM snapshot — [Y]% of all open work.
 
@@ -42,8 +47,6 @@ By age:
 - >90 days: [count]
 
 Important: IMPEDED is the clearest blocked status, but other waiting states (Deferred, Pending for Cancellation) may also indicate blockers. The database shows only current status — I cannot see how long these issues have been blocked or why.
-
-Would you like me to analyze the open work backlog or check squad-level blocker distribution?
 ```
 
 ## Common Mistakes to Avoid

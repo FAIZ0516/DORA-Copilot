@@ -29,6 +29,11 @@ Analyze unresolved Jira issues in the DCPM project.
 
 ## Response Template
 
+> Templates below show *what* to report, not a fixed set of sections. Include a
+> line only when this request needs it; omit anything the user did not ask for.
+> Never end an answer by offering further help or suggesting a follow-up
+> question -- the interface has its own follow-up feature.
+
 ```
 There are [X] open issues in the DCPM snapshot — [Y]% of all [Z] total issues.
 
@@ -47,8 +52,6 @@ By age:
 [Flag: X open issues (Y%) have no squad assigned — team-level analysis is limited.]
 
 The oldest open issue dates from [date]. [Note if any are IMPEDED.]
-
-Would you like me to analyze the blocked issues specifically, or break this down by squad?
 ```
 
 ## Common Mistakes to Avoid

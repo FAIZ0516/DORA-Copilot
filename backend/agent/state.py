@@ -48,6 +48,8 @@ class AgentState(TypedDict, total=False):
     database_error: str
     plan: AgentPlan
     response_policy: dict[str, Any]
+    response_decision: dict[str, Any]
+    relevance_violations: list[dict[str, str]]
     knowledge_sections: list[dict[str, str]]
     evidence_sources: list[str]
     metric: dict[str, str]
