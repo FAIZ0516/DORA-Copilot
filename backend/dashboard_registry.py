@@ -117,10 +117,11 @@ _COMMON_ROLES = ["scrum_master", "head_of_department"]
 
 METRIC_REGISTRY: dict[str, dict[str, Any]] = {
     "total_work": {
-        "title": "Total Work",
-        "description": "Jira issues in the active project and filter scope.",
+        "title": "Total Tickets",
+        "description": "All Jira tickets in the current dashboard scope.",
         "why_it_matters": "Shows the size of the visible Jira work set; issues are not equal units of effort.",
         "formula": "Count of distinct Jira issue keys in scope.",
+        "data_quality_note": "This is a ticket count, not an estimate of effort, complexity, or team capacity.",
         "required_fields": ["key", "project_key"],
         "source_tables": [JIRA_TABLE],
         "supported_roles": _COMMON_ROLES,
@@ -131,10 +132,11 @@ METRIC_REGISTRY: dict[str, dict[str, Any]] = {
         ],
     },
     "active_work": {
-        "title": "Active Jira Work",
-        "description": "Issues that are unresolved and not in Jira's Done category.",
+        "title": "Open Work",
+        "description": "Tickets that are unresolved and not in Jira's Done category.",
         "why_it_matters": "Highlights the current open workload without treating ended work as active.",
         "formula": "Count where resolved is null and status_category is not Done.",
+        "data_quality_note": "Resolved tickets and tickets in Jira's Done category are excluded.",
         "required_fields": ["resolved", "status_category"],
         "source_tables": [JIRA_TABLE],
         "supported_roles": _COMMON_ROLES,
@@ -151,10 +153,11 @@ METRIC_REGISTRY: dict[str, dict[str, Any]] = {
         "suggested_questions": ["How much Done work was cancelled or rejected?", "Show the end-state mix."],
     },
     "completion_pct": {
-        "title": "End-state Percentage",
-        "description": "Share of scoped issues in Jira's Done category.",
+        "title": "Work Completed",
+        "description": "Percentage of scoped tickets currently in Jira's Done category.",
         "why_it_matters": "Provides a transparent workflow-position indicator, not a productivity or success score.",
         "formula": "100 × end-state issue count ÷ total issue count.",
+        "data_quality_note": "Done is a Jira workflow end state and can include rejected or cancelled outcomes.",
         "required_fields": ["status_category", "key"],
         "source_tables": [JIRA_TABLE],
         "supported_roles": _COMMON_ROLES,
@@ -182,9 +185,10 @@ METRIC_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "open_bugs": {
         "title": "Open Bugs",
-        "description": "Bug issues in scope that are unresolved and not in the Done category.",
+        "description": "Bug tickets in scope that are unresolved and not in Jira's Done category.",
         "why_it_matters": "Highlights unresolved defect work without inventing business impact or severity.",
         "formula": "Count where issuetype is Bug, resolved is null, and status_category is not Done.",
+        "data_quality_note": "This reflects Jira issue type and workflow state; it does not infer defect severity or business impact.",
         "required_fields": ["issuetype", "resolved", "status_category"],
         "source_tables": [JIRA_TABLE],
         "supported_roles": _COMMON_ROLES,

@@ -69,6 +69,14 @@ def test_pages_are_numbered_individually_not_all_page_one() -> None:
         assert f"Page {index}" in (page.extract_text() or "")
 
 
+def test_pdf_uses_management_report_branding() -> None:
+    pdf = render_pdf(REPORT)
+    reader = pytest.importorskip("pypdf").PdfReader(io.BytesIO(pdf))
+    text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    assert "ZARA DELIVERY REPORT" in text
+    assert "DORA COPILOT · ZARA" not in text
+
+
 def test_the_static_template_number_is_covered_by_the_real_one() -> None:
     """The template's "1" is a fixed Word field; it must not repeat."""
 
@@ -100,3 +108,94 @@ def test_the_page_size_is_unchanged_by_stamping() -> None:
 def test_a_broken_template_never_breaks_the_export() -> None:
     # An unbranded report is worth delivering; a failed export is not.
     assert apply_template(b"not a pdf at all") == b"not a pdf at all"
+
+
+def test_weekly_report_uses_the_fixed_two_page_dynamic_layout() -> None:
+    weekly = {
+        "template": "weekly_scrum",
+        "title": "Dynamic weekly report",
+        "version": 1,
+        "scope": {"project": "DCPM", "squad": "JAEGER", "sprint": "Sprint 42"},
+        "sections": [
+            {"type": "kpi_group", "title": "Delivery at a Glance", "position": 1, "visible": True, "payload": {"items": [
+                {"key": "total_work", "label": "Total", "value": "100"},
+                {"key": "completed_work", "label": "Completed", "value": "87"},
+                {"key": "completion_pct", "label": "Sprint Completion", "value": "87%"},
+                {"key": "active_work", "label": "Open Work", "value": "13"},
+                {"key": "impeded_work", "label": "Active Blockers", "value": "2"},
+                {"key": "open_bugs", "label": "Open Bugs", "value": "4"},
+            ]}},
+            {"type": "feature_status", "title": "Feature Delivery Status", "position": 2, "visible": True, "payload": {
+                "columns": [
+                    {"key": "feature", "label": "Feature ID"},
+                    {"key": "feature_name", "label": "Feature Name"},
+                    {"key": "status", "label": "Status"},
+                ],
+                "rows": [{"feature": "DCPM-1", "feature_name": "Dynamic Feature", "status": "In Progress"}],
+            }},
+            {"type": "executive_summary", "title": "Executive Summary", "position": 3, "visible": True, "content": "Dynamic executive summary."},
+            {"type": "key_finding", "title": "Key Highlights", "position": 4, "visible": True, "content": "Dynamic highlight."},
+            {"type": "risk", "title": "Risks Requiring Attention", "position": 5, "visible": True, "content": "Two work items are blocked."},
+            {"type": "action_list", "title": "Recommended Actions", "position": 6, "visible": True, "content": "Confirm an owner for blocked work."},
+            {"type": "data_quality", "title": "Data Quality & Limitations", "position": 7, "visible": True, "content": "Dynamic limitation."},
+            {"type": "methodology", "position": 8, "visible": True, "content": "Internal evidence details."},
+        ],
+    }
+
+    reader = pytest.importorskip("pypdf").PdfReader(io.BytesIO(render_pdf(weekly)))
+    assert len(reader.pages) == 2
+    first = reader.pages[0].extract_text() or ""
+    second = reader.pages[1].extract_text() or ""
+    assert first.index("DELIVERY AT A GLANCE") < first.index("FEATURE DELIVERY STATUS")
+    assert first.index("FEATURE DELIVERY STATUS") < first.index("EXECUTIVE SUMMARY")
+    assert "JAEGER - Sprint 42" in first
+    assert "87%" in first and "Dynamic Feature" in first
+    assert second.index("RISKS REQUIRING ATTENTION") < second.index("RECOMMENDED ACTIONS")
+    assert "DATA QUALITY & LIMITATIONS" in second
+    combined = first + second
+    assert "EVIDENCE" not in combined.upper()
+    assert "METHODOLOGY" not in combined.upper()
+    assert "INTERPRETATION" not in combined.upper()
+    assert "REPORT VERSION" not in combined.upper()
+    assert "KEY MEASURES" not in combined.upper()
+
+
+def test_delivery_report_renders_only_selected_sections() -> None:
+    report = {
+        "template": "executive_summary",
+        "title": "JAEGER Delivery Report",
+        "scope": {"project": "DCPM", "squad": "JAEGER"},
+        "sections": [
+            {"type": "kpi_group", "position": 1, "visible": False, "payload": {"items": [
+                {"key": "total_work", "value": "100"},
+                {"key": "completed_work", "value": "80"},
+                {"key": "completion_pct", "value": "80%"},
+                {"key": "active_work", "value": "20"},
+                {"key": "impeded_work", "value": "1"},
+                {"key": "open_bugs", "value": "3"},
+            ]}},
+            {"type": "executive_summary", "position": 2, "visible": True,
+             "content": "Selected executive summary."},
+            {"type": "key_finding", "position": 3, "visible": False,
+             "content": "HIDDEN HIGHLIGHT"},
+            {"type": "risk", "position": 4, "visible": False,
+             "content": "HIDDEN RISK"},
+            {"type": "recommendation", "position": 5, "visible": False,
+             "content": "HIDDEN ACTION"},
+            {"type": "data_quality", "position": 6, "visible": False,
+             "content": "HIDDEN QUALITY"},
+            {"type": "methodology", "position": 7, "visible": True,
+             "content": "HIDDEN METHODOLOGY"},
+        ],
+    }
+
+    reader = pytest.importorskip("pypdf").PdfReader(io.BytesIO(render_pdf(report)))
+    assert len(reader.pages) == 1
+    text = reader.pages[0].extract_text() or ""
+    assert "DELIVERY AT A GLANCE" not in text
+    assert "Selected executive summary." in text
+    for forbidden in (
+        "KEY HIGHLIGHTS", "RISKS REQUIRING ATTENTION", "RECOMMENDED ACTIONS",
+        "DATA QUALITY", "HIDDEN", "METHODOLOGY", "KEY MEASURES",
+    ):
+        assert forbidden not in text.upper()

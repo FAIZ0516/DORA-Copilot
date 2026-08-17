@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { Database } from "lucide-react";
 import Chat from "./components/Chat";
 import { DashboardProvider } from "./dashboardContext";
+import zaraWordmark from "./assets/zara-wordmark.png";
 
 const ZaraDataWorkspace = lazy(() => import("./features/zara-workspace/ZaraDataWorkspace"));
 // Report Studio is a full workspace, not a drawer: reports are persistent
@@ -70,7 +71,7 @@ function LegacyDoraCopilot() {
   return (
     <main className="echo-chat-app zara-workspace-app">
       <header className="echo-chat-app-header zara-app-header">
-        <div className="zara-app-brand"><span className="zara-text-brand">Zara</span><small>AI decision workspace</small></div>
+        <div className="zara-app-brand"><img src={zaraWordmark} alt="ZARA" /><small>AI decision workspace</small></div>
         <div className="zara-app-context"><span className={`zara-system-status ${system.dataSource}`}><i aria-hidden="true" />{statusLabel}</span></div>
       </header>
       <section className="echo-chat-app-body" aria-label="Zara enterprise analytics workspace">

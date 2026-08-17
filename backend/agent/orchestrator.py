@@ -308,10 +308,11 @@ class AgentOrchestrator:
         # planned queries. The user's question is deliberately NOT rewritten
         # to carry hidden scope text; the scope arrives as structured
         # `dashboard_context` and is applied here only where the selected
-        # query actually accepts that filter. It fills in a default when the
-        # plan left that dimension unset — it must not override a dimension
-        # the planner already grounded from the user's own wording (e.g. the
-        # user naming a different squad than the one they're viewing).
+        # query actually accepts that filter. A focused dashboard's squad is
+        # authoritative for the turn: the scope-mismatch guard above already
+        # blocks a different explicitly named squad, so overwriting dcpsquad
+        # here prevents stale conversation/model context from changing the
+        # visible scope. Other dimensions remain defaults.
         dashboard_filters = {
             "dcpsquad": dashboard_context.get("squad"),
             "fixversion": dashboard_context.get("release"),
@@ -322,7 +323,9 @@ class AgentOrchestrator:
                 QUERY_CATALOGUE.get(action["query_id"], {}).get("allowed_filters", [])
             )
             for key, value in dashboard_filters.items():
-                if value and key in allowed and key not in action["filters"]:
+                if not value or key not in allowed:
+                    continue
+                if key == "dcpsquad" or key not in action["filters"]:
                     action["filters"][key] = value
         metric = select_metric(state["message"])
         if (

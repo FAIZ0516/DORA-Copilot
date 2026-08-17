@@ -48,6 +48,17 @@
   --chart-tooltip-surface: #0f172a;
   --chart-tooltip-ink: #f8fafc;
   --chart-tooltip-muted: #cbd5e1;
+
+  /* Zara intelligence surfaces. Shared by the dashboard assistant and the
+     Report Studio assistant so both read as one product capability. */
+  --zara-ai-blue: #4f7ff0;
+  --zara-ai-blue-strong: #386be4;
+  --zara-ai-periwinkle: #7b83ee;
+  --zara-ai-lavender: #b8a9f2;
+  --zara-ai-surface: linear-gradient(155deg, #dbe8ff 0%, #e2e7ff 50%, #eee8ff 100%);
+  --zara-ai-surface-soft: rgba(255, 255, 255, 0.7);
+  --zara-ai-border: #b8c8f0;
+  --zara-ai-shadow: 0 16px 38px rgba(63, 91, 178, 0.17);
 }
 
 /* Dark theme.
@@ -4019,7 +4030,7 @@ a {
   position: relative;
   min-height: 156px;
   padding: 15px;
-  overflow: hidden;
+  overflow: visible;
   background:
     linear-gradient(145deg, rgba(180, 220, 255, 0.07), rgba(103, 153, 215, 0.02)),
     var(--dashboard-surface);

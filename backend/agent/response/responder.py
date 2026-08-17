@@ -52,6 +52,63 @@ _CURRENT_DATASET_COUNT = re.compile(
     re.IGNORECASE,
 )
 
+_DASHBOARD_SCOPE_KEYS = (
+    "project",
+    "squad",
+    "release",
+    "sprint",
+    "date_from",
+    "date_to",
+)
+_SELECTED_SQUAD_KPI_KEYS = (
+    "squad",
+    "total_work",
+    "completed_work",
+    "completion_pct",
+    "active_work",
+    "in_progress_work",
+    "todo_work",
+    "open_bugs",
+    "impeded_work",
+    "high_priority_open_bugs",
+    "unassigned_open_work",
+    "unknown_status_count",
+    "missing_issue_type_count",
+    "status",
+    "reasons",
+)
+
+
+def focused_dashboard_evidence(dashboard_context: dict[str, Any]) -> dict[str, Any]:
+    """Project bounded, relevant dashboard facts for an assistant turn.
+
+    DashboardContext is frontend state, not evidence wholesale. This projection
+    keeps only the active scope and the verified KPI row for that same squad.
+    A stale/mismatched row is deliberately omitted.
+    """
+
+    scope = {
+        key: dashboard_context[key]
+        for key in _DASHBOARD_SCOPE_KEYS
+        if dashboard_context.get(key) not in (None, "")
+    }
+    evidence: dict[str, Any] = {"scope": scope}
+    for key in ("selected_metric", "current_metric_value"):
+        if dashboard_context.get(key) not in (None, ""):
+            evidence[key] = dashboard_context[key]
+
+    row = dashboard_context.get("selected_squad_row")
+    active_squad = str(scope.get("squad") or "").strip()
+    if isinstance(row, dict):
+        row_squad = str(row.get("squad") or "").strip()
+        if not active_squad or not row_squad or row_squad.casefold() == active_squad.casefold():
+            evidence["selected_squad_kpis"] = {
+                key: row[key]
+                for key in _SELECTED_SQUAD_KPI_KEYS
+                if row.get(key) not in (None, "")
+            }
+    return evidence
+
 
 def generate_follow_up_questions(
     llm: GenerativeAIClient,
@@ -77,7 +134,7 @@ suggestion must stay within that squad and must not compare or name another
 squad. Do not answer the questions and do not request database tools.""",
             json.dumps(
                 {
-                    "active_context": dashboard_context,
+                    "active_context": focused_dashboard_evidence(dashboard_context),
                     "current_user_question": question[:2000],
                     "current_zara_answer": answer[:6000],
                 },
@@ -378,6 +435,9 @@ Response policy for this turn:
                             ),
                             "reason_clarification_is_needed": plan.get("reason", ""),
                             "planner_suggestion": plan.get("clarification", ""),
+                            "verified_dashboard_evidence": focused_dashboard_evidence(
+                                state.get("memory", {}).get("dashboard_context", {})
+                            ),
                         },
                         default=str,
                     ),
@@ -481,8 +541,8 @@ Response policy for this turn:
                         "memory_context": state.get("memory", {}).get(
                             "last_context", {}
                         ),
-                        "dashboard_context": state.get("memory", {}).get(
-                            "dashboard_context", {}
+                        "verified_dashboard_evidence": focused_dashboard_evidence(
+                            state.get("memory", {}).get("dashboard_context", {})
                         ),
                         "metric": state["metric"],
                         "results": results,

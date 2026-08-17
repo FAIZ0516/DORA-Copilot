@@ -1,0 +1,14 @@
+.zara-avatar {
+  width: var(--zara-avatar-size, 34px);
+  height: var(--zara-avatar-size, 34px);
+  flex: 0 0 var(--zara-avatar-size, 34px);
+  display: block;
+  box-sizing: border-box;
+  overflow: hidden;
+  object-fit: cover;
+  object-position: center;
+  border: 1px solid rgba(157, 220, 255, .68);
+  border-radius: 50%;
+  background: #dce8ff;
+  box-shadow: 0 0 0 1px rgba(22, 111, 230, .16), 0 3px 10px rgba(0, 48, 137, .22);
+}

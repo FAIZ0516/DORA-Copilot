@@ -10,6 +10,7 @@ report is never reachable by guessing its identifier. Deterministic work
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -25,11 +26,13 @@ from ..report_repository import ReportNotFound, ReportRepository
 from ..schemas import (
     ReportComposeRequest,
     ReportComposeResponse,
+    ReportApplyTemplateRequest,
     ReportCreateRequest,
     ReportDuplicateRequest,
     ReportExportRequest,
     ReportListResponse,
     ReportReorderRequest,
+    ReportRefineRequest,
     ReportResponse,
     ReportSectionCreateRequest,
     ReportSectionUpdateRequest,
@@ -39,7 +42,11 @@ from ..schemas import (
     ReportUpdateRequest,
 )
 from ..services.report_composition import compose_sections
-from ..services.report_generation import run_template_questions
+from ..services.report_generation import (
+    current_view_dashboard_evidence,
+    run_template_questions,
+    weekly_scrum_feature_evidence,
+)
 from ..services.report_evidence import (
     detect_scope_conflicts,
     evidence_timestamp,
@@ -53,7 +60,10 @@ from ..services.report_templates import (
     AUDIENCES,
     CLASSIFICATIONS,
     CONTENT_MODES,
+    DELIVERY_REPORT_SECTION_TYPES,
     DETAIL_LEVELS,
+    HIDDEN_REPORT_SECTION_TYPES,
+    NARRATIVE_TYPES,
     SECTION_TYPES,
     SELECTIONS,
     STATUSES,
@@ -131,6 +141,17 @@ def _freshness(report: Report) -> dict[str, Any]:
     return info
 
 
+def _section_state(section: Any) -> tuple[str, str]:
+    if section.needs_review:
+        return "needs_review", "This narrative was modified and requires review."
+    payload = section.payload or {}
+    if payload.get("state") == "needs_input":
+        return "needs_input", payload.get("reason") or "Required verified evidence is unavailable."
+    if section.type == "cover" or section.content.strip() or payload.get("rows") or payload.get("data"):
+        return "ready", ""
+    return "needs_input", "Verified evidence is not available for this section yet."
+
+
 def _serialize(report: Report) -> dict[str, Any]:
     return {
         "id": report.id,
@@ -164,9 +185,12 @@ def _serialize(report: Report) -> dict[str, Any]:
                 "content_classification": section.content_classification,
                 "manually_edited": section.manually_edited,
                 "needs_review": section.needs_review,
+                "state": _section_state(section)[0],
+                "state_reason": _section_state(section)[1],
                 "source_ids": [str(sid) for sid in (section.source_ids or [])],
             }
             for section in sorted(report.sections, key=lambda s: s.position)
+            if section.type not in HIDDEN_REPORT_SECTION_TYPES
         ],
         "sources": [
             _serialize_source(source, index) for index, source in enumerate(report.sources, start=1)
@@ -185,7 +209,9 @@ def _summary(report: Report) -> dict[str, Any]:
         "updated_at": report.updated_at,
         "data_as_of": report.data_as_of,
         "last_exported_at": report.last_exported_at,
-        "section_count": len(report.sections),
+        "section_count": sum(
+            section.type not in HIDDEN_REPORT_SECTION_TYPES for section in report.sections
+        ),
         "source_count": len(report.sources),
         "freshness": _freshness(report),
     }
@@ -270,6 +296,7 @@ def update_report(
     session: Session = Depends(get_db),
 ) -> ReportResponse:
     report = _resolve(session, report_id, user_id)
+    logger.info("save_report_called report_id=%s version=%s", report_id, report.version)
     if request.status is not None and request.status not in STATUSES:
         raise HTTPException(status_code=422, detail=f"Unknown report status: {request.status}")
     if request.audience is not None and request.audience not in AUDIENCES:
@@ -280,6 +307,22 @@ def update_report(
     if request.scope is not None:
         fields["scope"] = request.scope.model_dump(mode="json", exclude_none=True)
     _repository(session).update(report, **fields)
+    return ReportResponse.model_validate(_serialize(report))
+
+
+@router.post("/{report_id}/template", response_model=ReportResponse)
+def apply_report_template(
+    report_id: UUID,
+    request: ReportApplyTemplateRequest,
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> ReportResponse:
+    """Apply a fixed layout inside the existing Report Studio report."""
+
+    if request.template not in TEMPLATE_IDS:
+        raise HTTPException(status_code=422, detail=f"Unknown report template: {request.template}")
+    report = _resolve(session, report_id, user_id)
+    _repository(session).apply_template(report, template=request.template)
     return ReportResponse.model_validate(_serialize(report))
 
 
@@ -320,6 +363,16 @@ def add_section(
     report = _resolve(session, report_id, user_id)
     if request.type not in SECTION_TYPES:
         raise HTTPException(status_code=422, detail=f"Unknown section type: {request.type}")
+    if request.type in HIDDEN_REPORT_SECTION_TYPES:
+        raise HTTPException(status_code=422, detail="This internal section type is not available.")
+    if (
+        report.template in {"weekly_scrum", "executive_summary"}
+        and request.type not in DELIVERY_REPORT_SECTION_TYPES
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="This section is not part of the selected delivery-report template.",
+        )
     _repository(session).add_section(
         report,
         type=request.type,
@@ -349,6 +402,16 @@ def update_section(
         )
     if request.content_mode is not None and request.content_mode not in CONTENT_MODES:
         raise HTTPException(status_code=422, detail=f"Unknown content mode: {request.content_mode}")
+    existing = _repository(session).get_section(report, section_id)
+    logger.info(
+        "section_state_update_requested report_id=%s section_id=%s section_type=%s",
+        report_id, section_id, existing.type,
+    )
+    if request.payload is not None and existing.content_classification == "observed_fact" and existing.source_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="Structured verified facts cannot be edited. Refresh their evidence instead.",
+        )
     try:
         _repository(session).update_section(
             report, section_id, **request.model_dump(exclude_none=True)
@@ -366,6 +429,7 @@ def delete_section(
     session: Session = Depends(get_db),
 ) -> ReportResponse:
     report = _resolve(session, report_id, user_id)
+    logger.info("section_delete_requested report_id=%s section_id=%s", report_id, section_id)
     try:
         _repository(session).remove_section(report, section_id)
     except ReportNotFound:
@@ -381,6 +445,10 @@ def reorder_sections(
     session: Session = Depends(get_db),
 ) -> ReportResponse:
     report = _resolve(session, report_id, user_id)
+    logger.info(
+        "section_reorder_requested report_id=%s section_count=%s",
+        report_id, len(request.section_ids),
+    )
     try:
         _repository(session).reorder_sections(report, request.section_ids)
     except ReportNotFound:
@@ -541,6 +609,8 @@ def compose_report(
             "content_classification": section.content_classification,
             "manually_edited": section.manually_edited,
             "visible": section.visible,
+            "source_ids": [str(value) for value in (section.source_ids or [])],
+            "strict_sources": report.template == "weekly_scrum",
         }
         for section in sorted(report.sections, key=lambda s: s.position)
         if not wanted or str(section.id) in wanted
@@ -595,6 +665,109 @@ def compose_report(
     )
 
 
+@router.post("/{report_id}/refine", response_model=ReportComposeResponse)
+def refine_report_section(
+    report_id: UUID,
+    request: ReportRefineRequest,
+    user_id: str = Depends(development_session),
+    session: Session = Depends(get_db),
+) -> ReportComposeResponse:
+    """Refine one narrative section without touching structured facts."""
+
+    report = _resolve(session, report_id, user_id)
+    repository = _repository(session)
+    try:
+        section = repository.get_section(report, request.section_id)
+    except ReportNotFound:
+        raise HTTPException(status_code=404, detail="Report section not found.") from None
+    if section.type not in NARRATIVE_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail="Structured verified facts cannot be rewritten. Select a narrative section.",
+        )
+    logger.info(
+        "refinement_request_received report_id=%s section_id=%s section_type=%s",
+        report_id, section.id, section.type,
+    )
+    if not section.source_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="This section has no verified evidence to refine. It remains Needs Input.",
+        )
+    if re.search(r"\b(change|set|replace|update|make)\b.{0,40}\b\d[\d,.]*%?\b", request.instruction, re.I):
+        raise HTTPException(
+            status_code=422,
+            detail="Zara can refine wording, but cannot change a verified metric value.",
+        )
+    sources = [
+        {"id": str(source.id), "evidence": source.evidence or {}, "scope": source.scope or {}}
+        for source in report.sources
+        if str(source.id) in {str(value) for value in section.source_ids}
+    ]
+    result = compose_sections(
+        llm=GenerativeAIClient(settings),
+        sections=[{
+            "id": str(section.id), "type": section.type, "title": section.title,
+            "content": section.content,
+            "content_mode": section.content_mode,
+            "content_classification": section.content_classification,
+            "manually_edited": section.manually_edited, "visible": section.visible,
+            "source_ids": [str(value) for value in section.source_ids],
+        }],
+        sources=sources,
+        audience=report.audience,
+        tone=report.tone,
+        detail_level=report.detail_level,
+        instructions={str(section.id): request.instruction},
+        include_manual=True,
+    )
+    content = result["sections"].get(str(section.id))
+    updated: list[UUID] = []
+    public_warnings = result["warnings"]
+    if content is not None:
+        logger.info(
+            "refinement_response_received report_id=%s section_id=%s section_type=%s",
+            report_id, section.id, section.type,
+        )
+        section.content = content
+        section.manually_edited = False
+        section.needs_review = True
+        report.status = "needs_review"
+        report.version += 1
+        updated.append(section.id)
+        logger.info(
+            "section_state_updated report_id=%s section_id=%s version=%s",
+            report_id, section.id, report.version,
+        )
+    else:
+        logger.warning(
+            "Report section refinement failed validation for report=%s section=%s: %s",
+            report_id,
+            section.id,
+            result["warnings"],
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Zara could not refine this section right now. The section was not changed, "
+                "and its verified facts remain protected."
+            ),
+        )
+    report.validation = {
+        "state": "needs_review" if updated else "unchanged",
+        "warnings": public_warnings,
+        "conflicts": result["conflicts"],
+    }
+    report.last_validated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(report)
+    return ReportComposeResponse(
+        report=ReportResponse.model_validate(_serialize(report)),
+        updated_sections=updated,
+        warnings=public_warnings,
+        conflicts=result["conflicts"],
+    )
+
 
 @router.post("/{report_id}/generate", response_model=ReportComposeResponse)
 def generate_report(
@@ -628,14 +801,27 @@ def generate_report(
         )
 
     repository = _repository(session)
+    feature_result: dict[str, Any] | None = None
+    dashboard_result: dict[str, Any] | None = None
+    answers: list[dict[str, Any]] = []
     try:
         with doradb_session() as doradb:
-            answers = run_template_questions(
-                agent_factory=lambda: DoraDbAgent(doradb),
-                questions=questions,
-                scope=report.scope or {},
-                session_id=f"report-{report.id}",
-            )
+            if report.template == "weekly_scrum":
+                feature_result = weekly_scrum_feature_evidence(doradb, report.scope or {})
+            if report.template in {"executive_summary", "weekly_scrum"}:
+                # Current View is a dashboard operation, not an open-ended chat
+                # prompt. Re-run the same trusted server-side calculations that
+                # produced the dashboard before asking a model to write prose.
+                dashboard_result = current_view_dashboard_evidence(
+                    doradb, report.scope or {}
+                )
+            else:
+                answers = run_template_questions(
+                    agent_factory=lambda: DoraDbAgent(doradb),
+                    questions=questions,
+                    scope=report.scope or {},
+                    session_id=f"report-{report.id}",
+                )
     except DoraDbConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception:  # noqa: BLE001 - never surface provider or driver internals
@@ -646,20 +832,112 @@ def generate_report(
         ) from None
 
     warnings = [f"{item['question']}: {item['error']}" for item in answers if item.get("error")]
-    produced = [item for item in answers if not item.get("error")]
-    if not produced:
-        raise HTTPException(
-            status_code=502,
-            detail="None of the template questions could be answered from the current data.",
+
+    def usable(item: dict[str, Any]) -> bool:
+        structured = item.get("structured_content") or {}
+        validation = structured.get("validation") or {}
+        return bool(
+            (item.get("answer") or "").strip()
+            and structured.get("query_identifiers")
+            and validation.get("valid", True) is not False
         )
 
-    for item in produced:
+    produced = [(index, item) for index, item in enumerate(answers) if usable(item)]
+    warnings.extend(
+        f"{item['question']}: no usable verified evidence was returned."
+        for item in answers
+        if not item.get("error") and not usable(item)
+    )
+    if (
+        not produced
+        and not (feature_result and feature_result.get("rows"))
+        and not (dashboard_result and dashboard_result.get("state") == "ready")
+    ):
+        warnings.append(
+            "No usable verified evidence was returned; affected sections remain Needs Input."
+        )
+
+    # A refresh replaces only the previous template-generated material. Chat
+    # answers and hand-edited narrative remain intact.
+    repository.replace_generated_content(report)
+
+    if dashboard_result is not None:
+        report.scope = dict(dashboard_result.get("scope") or report.scope or {})
+        if dashboard_result.get("state") == "ready":
+            dashboard_source = repository.add_source(
+                report,
+                conversation_id=None,
+                message_id=None,
+                selection="full",
+                evidence=dashboard_result["evidence"],
+                scope=dict(dashboard_result["scope"]),
+                data_as_of=datetime.now(timezone.utc),
+            )
+            source_id = str(dashboard_source.id)
+            section_values = dashboard_result.get("sections") or {}
+            for section in report.sections:
+                value = section_values.get(section.type)
+                if value is None or section.manually_edited:
+                    continue
+                if "content" in value:
+                    section.content = value["content"]
+                if "payload" in value:
+                    section.payload = value["payload"]
+                section.source_ids = [source_id]
+                section.needs_review = False
+            session.commit()
+            session.refresh(report)
+        else:
+            warnings.append(
+                dashboard_result.get("reason")
+                or "The trusted dashboard calculation returned no usable evidence."
+            )
+
+    feature_section = next((item for item in report.sections if item.type == "feature_status"), None)
+    if feature_section is not None:
+        feature_section.payload = feature_result or {
+            "state": "needs_input",
+            "reason": "Feature status evidence was not available.",
+            "rows": [],
+        }
+        feature_section.content = ""
+        feature_section.source_ids = []
+        if feature_result and feature_result.get("rows"):
+            feature_evidence = {
+                "generated_by": "report_template",
+                "target_section_type": "feature_status",
+                "question": "Feature status overview from each Feature issue's stored current status.",
+                "answer": "\n".join(
+                    f"{row['feature']} | {row['feature_name']} | {row['status']}"
+                    for row in feature_result["rows"]
+                ),
+                "table": {
+                    "title": "Feature Status Overview",
+                    "columns": feature_result["columns"],
+                    "rows": feature_result["rows"],
+                },
+                "query_ids": [feature_result["query_id"]],
+                "row_counts": [feature_result["row_count"]],
+                "warnings": [],
+            }
+            feature_source = repository.add_source(
+                report, conversation_id=None, message_id=None, selection="table",
+                evidence=feature_evidence, scope=dict(report.scope or {}),
+                data_as_of=datetime.now(timezone.utc),
+            )
+            feature_section.source_ids = [str(feature_source.id)]
+            session.commit()
+        elif feature_result and feature_result.get("reason"):
+            warnings.append(f"Feature Status: {feature_result['reason']}")
+
+    for _generated_index, item in produced:
         evidence = snapshot_from_message(
             question=item["question"],
             answer=item["answer"],
             structured_content=item["structured_content"],
             selection="full",
         )
+        evidence["generated_by"] = "report_template"
         source = repository.add_source(
             report,
             conversation_id=None,
@@ -714,6 +992,13 @@ def validate_report(
     ]
     if empty:
         issues.append("These sections have no content yet: " + ", ".join(empty) + ".")
+    needs_input = [
+        section.title or section.type
+        for section in visible
+        if _section_state(section)[0] == "needs_input"
+    ]
+    if needs_input:
+        issues.append("These sections need verified input: " + ", ".join(needs_input) + ".")
     if any(section.needs_review for section in visible):
         issues.append(
             "One or more sections were edited by hand after validation and are no "
@@ -756,6 +1041,14 @@ def export_report(
     """
 
     report = _resolve(session, report_id, user_id)
+    logger.info(
+        "export_report_called report_id=%s format=%s preview=%s "
+        "export_document_version=%s section_count=%s",
+        report_id, request.format, request.preview, report.version,
+        len([section for section in report.sections if section.visible]),
+    )
+    if request.preview and request.format != "pdf":
+        raise HTTPException(status_code=422, detail="PDF preview is available only for PDF reports.")
     payload = _serialize(report)
     payload["sources"] = [
         {"evidence": source.evidence or {}} for source in report.sources
@@ -771,7 +1064,7 @@ def export_report(
                 section = _repository(session).get_section(report, request.section_id)
             except ReportNotFound:
                 raise HTTPException(status_code=404, detail="Report section not found.") from None
-            if section.type not in {"data_table", "chart", "kpi_group"}:
+            if section.type not in {"data_table", "feature_status", "chart", "kpi_group"}:
                 raise HTTPException(
                     status_code=422,
                     detail="Only a table, chart or KPI section can be exported as CSV.",
@@ -793,15 +1086,19 @@ def export_report(
             detail="The report could not be exported. Your report is unchanged.",
         ) from None
 
-    report.last_exported_at = datetime.now(timezone.utc)
-    if report.status in {"draft", "ready"}:
-        report.status = "exported"
-    session.commit()
+    if not request.preview:
+        report.last_exported_at = datetime.now(timezone.utc)
+        if report.status in {"draft", "ready"}:
+            report.status = "exported"
+        session.commit()
 
     return Response(
         content=body,
         media_type=EXPORT_MEDIA_TYPES[request.format],
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition":
+                f'{"inline" if request.preview else "attachment"}; filename="{filename}"'
+        },
     )
 
 

@@ -201,6 +201,42 @@ def test_policy_always_carries_structure_rules() -> None:
     assert "markdown bullet list" in rendered
     assert "wall of text" in rendered
 
+    # Generic supplementary sections stay banned, but the ban moved. The policy
+    # governs *layout* and no longer names any heading -- naming one is how
+    # "Worth knowing" came to be produced in the first place. The prohibition,
+    # now a full list rather than one example, is carried by the response
+    # decision, which rides alongside the policy on every prompt.
+    assert "worth knowing" not in rendered, "naming a heading here invites it"
+
+    from backend.agent.response.response_decision import (
+        decide_response,
+        describe_decision,
+    )
+
+    gating = describe_decision(
+        decide_response(
+            "list all the squad",
+            plan=_plan("data", "DATA_RETRIEVAL"),
+            policy=derive_policy("list all the squad", plan=_plan("data", "DATA_RETRIEVAL")),
+        )
+    ).lower()
+    assert "never use these headings" in gating
+    assert "worth knowing" in gating
+
+
+def test_scope_guardrail_remains_after_answer_format_cleanup() -> None:
+    """Removing a generic heading must not weaken squad-scope enforcement."""
+
+    from backend.services.entity_grounding import detect_squad_scope_mismatch
+
+    mismatch = detect_squad_scope_mismatch(
+        "Which squad needs the most attention?",
+        active_squad="TITAN",
+        catalogue={"squad": ["TITAN", "JAEGER"]},
+    )
+    assert mismatch is not None
+    assert mismatch["requested_squad"] is None
+
 
 def test_enumeration_requests_use_bullets_for_live_intent_names() -> None:
     """Regression: _detect_format only knew the retired lowercase planner

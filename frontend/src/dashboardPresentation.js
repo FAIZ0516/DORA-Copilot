@@ -62,31 +62,62 @@ export function buildRiskItems(payload) {
       severity: severityFor(squad ? reason.status || status : status, reason.metric),
       evidence: squad ? `${squad}: ${detail}` : detail,
       ...copy,
+      baseTitle: copy.title,
       title: squad ? `${squad} — ${copy.title}` : copy.title,
     };
   });
 }
 
+export function rankRiskItems(payload, limit) {
+  const severityOrder = { High: 0, Medium: 1, Low: 2 };
+  const ranked = buildRiskItems(payload).sort((a, b) => (
+    (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3)
+    || Number(b.value || 0) - Number(a.value || 0)
+    || a.title.localeCompare(b.title)
+  ));
+  return Number.isFinite(limit) ? ranked.slice(0, limit) : ranked;
+}
+
+export function isSprintAvailable(selectedSprint, options) {
+  if (!selectedSprint) return true;
+  return (options?.sprints || []).some((item) => item.value === selectedSprint);
+}
+
 export function buildPrimaryKpis(payload) {
   const kpis = payload?.kpis || {};
   const registry = payload?.metric_registry || {};
+  const attentionByMetric = new Map(
+    (payload?.attention_items || []).map((item) => [item.metric, item]),
+  );
+  const completed = Number(kpis.completed_work || 0);
+  const scoped = Number(kpis.total_work || 0);
   return [
     {
       key: "completion_pct",
-      title: "Sprint Progress",
+      title: "Sprint Completion",
       value: kpis.completion_pct,
       suffix: "%",
       tone: "blue",
-      comparison: "Previous sprint comparison unavailable",
-      definition: registry.completion_pct,
+      comparison: `${completed.toLocaleString()} of ${scoped.toLocaleString()} scoped tickets completed`,
+      attention: attentionByMetric.get("completion_pct") || null,
+      definition: {
+        ...registry.completion_pct,
+        title: "Sprint Completion",
+        description: "Percentage of scoped tickets currently in Jira's Done category.",
+        data_quality_note: "This uses the current filtered scope, not a historical sprint-commitment baseline. Done can include rejected or cancelled outcomes.",
+      },
     },
     {
-      key: "completed_work",
-      title: "Completed vs Scoped",
-      value: `${Number(kpis.completed_work || 0).toLocaleString()} / ${Number(kpis.total_work || 0).toLocaleString()}`,
-      tone: "green",
-      comparison: "Scoped tickets are not a commitment baseline",
-      definition: registry.completed_work,
+      key: "active_work",
+      title: "Open Work",
+      value: kpis.active_work,
+      tone: Number(kpis.active_work || 0) > 0 ? "blue" : "green",
+      comparison: "Unresolved and not in Jira's Done category",
+      attention: attentionByMetric.get("active_work") || null,
+      definition: {
+        ...registry.active_work,
+        title: "Open Work",
+      },
     },
     {
       key: "impeded_work",
@@ -94,12 +125,15 @@ export function buildPrimaryKpis(payload) {
       value: kpis.impeded_work ?? 0,
       tone: Number(kpis.impeded_work || 0) > 0 ? "orange" : "green",
       comparison: "Based on current Impeded status",
+      attention: attentionByMetric.get("impeded_work") || null,
       definition: {
         title: "Active Blockers",
         description: "Tickets whose current Jira status is Impeded.",
         why_it_matters: "Impeded work may need an explicit owner and next action.",
         formula: "Count where status equals Impeded.",
+        required_fields: ["status"],
         source_tables: ["public.tbl_gdt_dte_jira_issues"],
+        data_quality_note: "Only tickets whose current Jira status is exactly Impeded are counted. Issue links and other waiting states are not inferred as blockers.",
         suggested_questions: ["Which impeded tickets need attention first?"],
       },
     },
@@ -109,12 +143,15 @@ export function buildPrimaryKpis(payload) {
       value: kpis.status || "Monitor",
       tone: String(kpis.status).toLowerCase() === "needs attention" ? "red" : "amber",
       comparison: `${(kpis.reasons || []).length} transparent attention signal${(kpis.reasons || []).length === 1 ? "" : "s"}`,
+      attention: attentionByMetric.get("delivery_risk") || null,
       definition: {
         title: "Delivery Risk",
         description: "A deterministic status derived from visible defect, ageing, progress, impediment, and ownership signals.",
         why_it_matters: "It focuses review without replacing team judgment.",
         formula: "Configured attention thresholds; no model-generated risk score.",
+        required_fields: ["priority", "created", "assignee", "status", "status_category"],
         source_tables: ["public.tbl_gdt_dte_jira_issues"],
+        data_quality_note: "This is a rule-based review signal, not a prediction. Any configured threshold can change the displayed status.",
         suggested_questions: ["Why is this squad at risk?"],
       },
     },

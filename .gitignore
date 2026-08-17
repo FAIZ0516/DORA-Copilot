@@ -9,6 +9,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.python-runtime/
+python-*-embed-amd64.zip
 venv/
 backend/dora_dashboard.db
 backend/*.db

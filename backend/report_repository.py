@@ -102,6 +102,46 @@ class ReportRepository:
         self.session.refresh(report)
         return report
 
+    def apply_template(self, report: Report, *, template: str) -> Report:
+        """Replace the report layout with a selected fixed template.
+
+        Applying a template is an explicit editor action. Existing generated
+        evidence is removed so a subsequent refresh cannot mix two template
+        runs; independently attached chat evidence remains available as
+        supporting provenance.
+        """
+
+        generated_source_ids = {
+            str(source.id)
+            for source in report.sources
+            if (source.evidence or {}).get("generated_by") == "report_template"
+        }
+        for section in list(report.sections):
+            self.session.delete(section)
+        for source in list(report.sources):
+            if str(source.id) in generated_source_ids:
+                self.session.delete(source)
+
+        report.template = template
+        report.status = "draft"
+        report.validation = {}
+        report.last_validated_at = None
+        report.data_as_of = min(
+            (
+                _as_utc(source.data_as_of)
+                for source in report.sources
+                if str(source.id) not in generated_source_ids and source.data_as_of
+            ),
+            default=None,
+        )
+        report.version += 1
+        self.session.flush()
+        for section in sections_for_template(template):
+            self.session.add(ReportSection(report_id=report.id, **section))
+        self.session.commit()
+        self.session.refresh(report)
+        return report
+
     def set_status(self, report: Report, status: str) -> Report:
         if status not in STATUSES:
             raise ValueError(f"Unknown report status: {status}")
@@ -213,6 +253,7 @@ class ReportRepository:
             source_ids=source_ids or [],
         )
         self.session.add(section)
+        report.version += 1
         self.session.commit()
         self.session.refresh(report)
         return section
@@ -295,12 +336,14 @@ class ReportRepository:
                 setattr(section, key, value)
         if edits_content and not fields.get("manually_edited") is False:
             section.manually_edited = True
-            # A hand-edited factual block can no longer claim to be
-            # evidence-verified: the number on the page may no longer be the
-            # number the query returned.
-            if section.content_classification == "observed_fact" and section.source_ids:
+            # Hand-edited evidence-backed narrative requires review: a
+            # hand-edited block can no longer claim to be evidence-verified,
+            # and wording changes can alter the meaning even when no number
+            # was touched.
+            if section.source_ids:
                 section.needs_review = True
                 report.status = "needs_review"
+        report.version += 1
         self.session.commit()
         self.session.refresh(section)
         return section
@@ -311,6 +354,7 @@ class ReportRepository:
         self.session.flush()
         self.session.refresh(report)
         self._renumber(report)
+        report.version += 1
         self.session.commit()
 
     def reorder_sections(self, report: Report, ordered_ids: list[UUID]) -> Report:
@@ -328,6 +372,7 @@ class ReportRepository:
             if section.id not in set(ordered_ids):
                 section.position = position
                 position += 1
+        report.version += 1
         self.session.commit()
         self.session.refresh(report)
         return report
@@ -388,6 +433,57 @@ class ReportRepository:
                 self.session.refresh(report)
                 return
         raise ReportNotFound(str(source_id))
+
+    def replace_generated_content(self, report: Report) -> None:
+        """Remove the previous template run while preserving user/chat evidence."""
+
+        generated = {
+            str(source.id)
+            for source in report.sources
+            if (source.evidence or {}).get("generated_by") == "report_template"
+        }
+        if not generated:
+            return
+        template_visual_counts: dict[str, int] = {}
+        for item in sections_for_template(report.template):
+            if item["type"] in {"chart", "data_table"}:
+                template_visual_counts[item["type"]] = template_visual_counts.get(item["type"], 0) + 1
+        kept_visuals: dict[str, int] = {}
+        for section in sorted(list(report.sections), key=lambda item: item.position):
+            linked = {str(value) for value in (section.source_ids or [])}
+            generated_links = linked & generated
+            if not generated_links:
+                continue
+            remaining = linked - generated
+            if section.type in {"chart", "data_table"} and not remaining:
+                # Keep template placeholders, remove extra visuals created by
+                # the prior run. A placeholder has always existed since v1.
+                kept = kept_visuals.get(section.type, 0)
+                if kept < template_visual_counts.get(section.type, 0):
+                    section.payload = None
+                    section.source_ids = []
+                    kept_visuals[section.type] = kept + 1
+                else:
+                    self.session.delete(section)
+                continue
+            section.source_ids = sorted(remaining)
+            if not section.manually_edited:
+                section.content = ""
+                if section.type == "feature_status":
+                    section.payload = None
+            section.needs_review = bool(section.manually_edited and remaining)
+        for source in list(report.sources):
+            if str(source.id) in generated:
+                self.session.delete(source)
+        report.data_as_of = min(
+            (_as_utc(source.data_as_of) for source in report.sources
+             if str(source.id) not in generated and source.data_as_of),
+            default=None,
+        )
+        self.session.flush()
+        self._renumber(report)
+        self.session.commit()
+        self.session.refresh(report)
 
 
 __all__ = ["ReportNotFound", "ReportRepository"]

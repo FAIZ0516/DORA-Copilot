@@ -5,6 +5,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "jsdom",
-    include: ["src/features/zara-workspace/**/*.test.{ts,tsx}"],
+    include: [
+      "src/features/zara-workspace/**/*.test.{ts,tsx}",
+      "src/components/**/*.test.{js,jsx,ts,tsx}",
+    ],
   },
 });

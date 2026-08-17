@@ -12,10 +12,10 @@
  *    its value and its scope, so it stands on its own.
  *
  * 2. **Presumed direction.** "Why is this percentage low?" is wrong whenever
- *    the percentage is high. Options are chosen from the *current value*, so a
- *    strong number offers "what is driving this?" and a weak one offers "what
- *    is holding it back?". A metric at zero never offers questions about items
- *    that do not exist.
+ *    the percentage is healthy. Qualitative wording is taken only from the
+ *    dashboard's verified attention state; a raw frontend number never invents
+ *    its own threshold. Unknown states therefore get neutral questions. A
+ *    metric at zero still avoids questions about items that do not exist.
  */
 
 const DEFAULT_PROJECT = "DCPM";
@@ -67,29 +67,24 @@ function numeric(value) {
  * Every question maps onto evidence the approved query catalogue can supply.
  */
 const BUILDERS = {
-  completion_pct(value, scope) {
+  completion_pct(card, scope) {
     const where = scopePhrase(scope);
-    const shown = describeValue(value, "%");
-    const pct = numeric(value);
+    const shown = describeValue(card.value, "%");
     const options = [];
-    // Only ask "why low" when it is actually low.
-    if (pct !== null && pct < 50) {
+    // The attention item is emitted by the dashboard's configured backend
+    // threshold. Absence of that item is not treated as proof that a raw
+    // percentage is high or low.
+    if (card.attention) {
       options.push({
         id: "why-low",
-        label: "Why is it this low?",
-        question: `End-state completion for ${where} is ${shown}. Why is it this low? Break down the work still outside Done by status category and issue type.`,
-      });
-    } else if (pct !== null && pct < 75) {
-      options.push({
-        id: "holding-back",
-        label: "What is holding it back?",
-        question: `End-state completion for ${where} is ${shown}. What work is holding completion back? Show what remains outside Done by status and priority.`,
+        label: "Why does completion need attention?",
+        question: `Sprint Completion for ${where} is ${shown} and is flagged by the dashboard attention rules. What is driving the current completion rate? Break down work still outside Done by status category and issue type.`,
       });
     } else {
       options.push({
-        id: "why-strong",
-        label: "What is driving it?",
-        question: `End-state completion for ${where} is ${shown}. What is driving this level of completion, and is any remaining work still at risk?`,
+        id: "drivers",
+        label: "What is driving completion?",
+        question: `Sprint Completion for ${where} is ${shown}. What is driving the current completion rate, and is any remaining work still at risk?`,
       });
     }
     options.push(
@@ -113,30 +108,31 @@ const BUILDERS = {
     return options;
   },
 
-  completed_work(value, scope) {
+  active_work(card, scope) {
     const where = scopePhrase(scope);
+    const shown = describeValue(card.value);
     return [
       {
-        id: "end-state-mix",
-        label: "What is the end-state mix?",
-        question: `For ${where}, show completed work broken down by resolution, separating genuinely delivered work from cancelled or rejected work.`,
+        id: "attention",
+        label: "Which open items need attention?",
+        question: `Open Work for ${where} is currently ${shown}. Which open items need the most attention? Rank them using verified priority and age.`,
       },
       {
-        id: "remaining",
-        label: "What is left to finish?",
-        question: `For ${where}, show the work that is not yet in an end state, grouped by status category and priority.`,
+        id: "distribution",
+        label: "How is open work distributed?",
+        question: `Open Work for ${where} is currently ${shown}. Show how it is distributed by status category, issue type and priority.`,
       },
       {
-        id: "composition",
-        label: "What makes up the total?",
-        question: `For ${where}, break the total work down by issue type and status category.`,
+        id: "prioritise",
+        label: "What should be prioritised next?",
+        question: `Open Work for ${where} is currently ${shown}. What should the squad prioritise next, based on the available priority, age and impediment evidence?`,
       },
     ];
   },
 
-  impeded_work(value, scope) {
+  impeded_work(card, scope) {
     const where = scopePhrase(scope);
-    const count = numeric(value) ?? 0;
+    const count = numeric(card.value) ?? 0;
     // Nothing is blocked -- offering "which blocker first?" would be a
     // question about items that do not exist.
     if (count <= 0) {
@@ -157,7 +153,7 @@ const BUILDERS = {
       {
         id: "unblock-first",
         label: "Which should be unblocked first?",
-        question: `${describeValue(value)} tickets are currently impeded for ${where}. Which should be unblocked first? Rank them by priority and age, and explain the ranking.`,
+        question: `Active Blockers for ${where} is currently ${describeValue(card.value)} tickets based on the verified Impeded status. Which should be unblocked first? Rank them by priority and age, and explain the ranking.`,
       },
       {
         id: "how-long",
@@ -172,9 +168,31 @@ const BUILDERS = {
     ];
   },
 
-  delivery_risk(value, scope) {
+  open_bugs(card, scope) {
     const where = scopePhrase(scope);
-    const status = String(value ?? "").toLowerCase();
+    const shown = describeValue(card.value);
+    return [
+      {
+        id: "prioritise",
+        label: "Which bugs should be prioritised?",
+        question: `Open Bugs for ${where} is currently ${shown}. Which open bugs should be prioritised using their verified priority and age?`,
+      },
+      {
+        id: "priority-distribution",
+        label: "How are bugs distributed by priority?",
+        question: `Open Bugs for ${where} is currently ${shown}. Show how the open bugs are distributed by priority.`,
+      },
+      {
+        id: "delivery-risk",
+        label: "Are bugs creating delivery risk?",
+        question: `Open Bugs for ${where} is currently ${shown}. Are any of these bugs contributing to a verified delivery attention signal?`,
+      },
+    ];
+  },
+
+  delivery_risk(card, scope) {
+    const where = scopePhrase(scope);
+    const status = String(card.value ?? "").toLowerCase();
     if (status === "needs attention") {
       return [
         {
@@ -199,7 +217,7 @@ const BUILDERS = {
       {
         id: "near-threshold",
         label: "What is closest to a threshold?",
-        question: `The delivery-risk status for ${where} is ${describeValue(value)}. Which signals are closest to crossing an attention threshold, and how far away are they?`,
+        question: `The delivery-risk status for ${where} is ${describeValue(card.value)}. Which signals are closest to crossing an attention threshold, and how far away are they?`,
       },
       {
         id: "signals",
@@ -223,7 +241,7 @@ const BUILDERS = {
 export function buildMetricQuestions(card, scope = {}) {
   if (!card) return [];
   const builder = BUILDERS[card.key];
-  if (builder) return builder(card.value, scope);
+  if (builder) return builder(card, scope);
   const suggested = card.definition?.suggested_questions || [];
   if (suggested.length) {
     return suggested.map((question, index) => ({

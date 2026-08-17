@@ -7,7 +7,9 @@ ownership rules are the point, and mocking them out would test nothing.
 
 from __future__ import annotations
 
+import io
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -17,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.database.db import Base, Conversation, ConversationMessage, get_db
 from backend.main import app
+from backend.report_repository import ReportRepository
 
 USER_A = {"X-Development-Session": "user-alpha-0001"}
 USER_B = {"X-Development-Session": "user-bravo-0002"}
@@ -110,7 +113,7 @@ def test_templates_are_offered(client):
     payload = client.get("/api/reports/templates").json()
     ids = {template["id"] for template in payload["templates"]}
     assert {"executive_summary", "sprint_performance", "risk_and_action",
-            "weekly_management_update", "dora_performance", "blank"} <= ids
+            "weekly_management_update", "weekly_scrum", "dora_performance", "blank"} <= ids
     assert "senior_leadership" in payload["audiences"]
     assert "rewrite" in payload["content_modes"]
 
@@ -120,15 +123,43 @@ def test_create_report_from_template_builds_its_sections(client):
     assert report["status"] == "draft"
     assert report["version"] == 1
     types = [section["type"] for section in report["sections"]]
-    assert types[0] == "cover"
-    assert "executive_summary" in types and "methodology" in types
+    assert "cover" not in types
+    assert "executive_summary" in types and "data_quality" in types
+    assert "methodology" not in types
     # Positions are contiguous and ordered.
     assert [s["position"] for s in report["sections"]] == list(range(1, len(types) + 1))
+
+
+def test_weekly_scrum_starts_with_deterministic_needs_input_states(client):
+    report = _create(
+        client, template="weekly_scrum",
+        scope={"project": "DCPM", "squad": "TITAN", "sprint": "Sprint 24"},
+    )
+    feature = next(section for section in report["sections"] if section["type"] == "feature_status")
+    assert feature["state"] == "needs_input"
+    assert feature["state_reason"]
 
 
 def test_unknown_template_is_rejected(client):
     response = client.post("/api/reports", json={"template": "not_a_template"}, headers=USER_A)
     assert response.status_code == 422
+
+
+def test_weekly_scrum_template_can_be_applied_inside_the_same_report(client):
+    report = _create(client, template="executive_summary", title="KAIJU Delivery Report")
+    response = client.post(
+        f"/api/reports/{report['id']}/template",
+        json={"template": "weekly_scrum"},
+        headers=USER_A,
+    )
+    assert response.status_code == 200, response.text
+    applied = response.json()
+    assert applied["id"] == report["id"]
+    assert applied["template"] == "weekly_scrum"
+    assert [section["type"] for section in applied["sections"]] == [
+        "kpi_group", "feature_status", "executive_summary", "key_finding",
+        "risk", "action_list", "data_quality",
+    ]
 
 
 def test_a_report_is_not_reachable_by_another_user(client):
@@ -334,6 +365,17 @@ def test_unknown_section_type_is_rejected(client):
     assert response.status_code == 422
 
 
+def test_delivery_templates_reject_sections_outside_the_visible_template(client):
+    report = _create(client, template="weekly_scrum")
+    for type_ in ("methodology", "rich_text"):
+        response = client.post(
+            f"/api/reports/{report['id']}/sections",
+            json={"type": type_, "title": "Not part of the delivery template"},
+            headers=USER_A,
+        )
+        assert response.status_code == 422
+
+
 def test_editing_a_validated_fact_marks_it_for_review(client):
     conversation_id, message_id = _seed_conversation(
         client, user_id="user-alpha-0001", squad="TITAN",
@@ -358,6 +400,56 @@ def test_editing_a_validated_fact_marks_it_for_review(client):
     assert updated["manually_edited"] is True
     assert updated["needs_review"] is True
     assert edited["status"] == "needs_review"
+
+
+def test_refinement_updates_only_the_selected_section(client, monkeypatch):
+    report = _create(client, template="executive_summary")
+    session = client.session_factory()
+    repository = ReportRepository(session)
+    stored = repository.get(uuid.UUID(report["id"]), user_id="user-alpha-0001")
+    source = repository.add_source(
+        stored,
+        conversation_id=None,
+        message_id=None,
+        selection="full",
+        evidence={"answer": "KAIJU has completed 812 tickets.", "warnings": []},
+        scope={"project": "DCPM", "squad": "KAIJU"},
+        data_as_of=datetime.now(timezone.utc),
+    )
+    summary = next(section for section in stored.sections if section.type == "executive_summary")
+    other = next(section for section in stored.sections if section.type == "key_finding")
+    summary.content = "KAIJU has completed 812 tickets across the verified scope."
+    summary.source_ids = [str(source.id)]
+    other.content = "This other section must remain unchanged."
+    other.source_ids = [str(source.id)]
+    selected_id = str(summary.id)
+    other_id = str(other.id)
+    session.commit()
+    session.close()
+
+    class RefiningProvider:
+        enabled = True
+
+        def complete(self, *_args, **_kwargs):
+            return (
+                '{"section":{"section_id":"' + selected_id + '","title":"Executive Summary",'
+                '"content":"KAIJU has completed 812 tickets."}}'
+            )
+
+    from backend.api import reports as reports_api
+    monkeypatch.setattr(reports_api, "GenerativeAIClient", lambda *_args, **_kwargs: RefiningProvider())
+
+    response = client.post(
+        f"/api/reports/{report['id']}/refine",
+        json={"section_id": selected_id, "instruction": "Make this shorter."},
+        headers=USER_A,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["updated_sections"] == [selected_id]
+    by_id = {section["id"]: section for section in body["report"]["sections"]}
+    assert by_id[selected_id]["content"] == "KAIJU has completed 812 tickets."
+    assert by_id[other_id]["content"] == "This other section must remain unchanged."
 
 
 # --------------------------------------------------------------------------- #
@@ -413,6 +505,26 @@ def test_pdf_export_returns_a_real_pdf(client):
     assert ".pdf" in response.headers["content-disposition"]
     # Exporting advances the lifecycle so the library can show it.
     assert client.get(f"/api/reports/{report['id']}", headers=USER_A).json()["status"] == "exported"
+
+
+def test_pdf_preview_uses_the_export_renderer_without_marking_exported(client, monkeypatch):
+    from backend.api import reports as reports_api
+
+    calls = []
+    monkeypatch.setattr(reports_api, "render_pdf", lambda payload: calls.append(payload["id"]) or b"%PDF-preview")
+    report = _create(client, title="Preview Report")
+    response = client.post(
+        f"/api/reports/{report['id']}/export",
+        json={"format": "pdf", "preview": True},
+        headers=USER_A,
+    )
+    assert response.status_code == 200
+    assert response.content == b"%PDF-preview"
+    assert response.headers["content-disposition"].startswith("inline;")
+    reopened = client.get(f"/api/reports/{report['id']}", headers=USER_A).json()
+    assert reopened["status"] == "draft"
+    assert reopened["last_exported_at"] is None
+    assert [str(value) for value in calls] == [report["id"]]
 
 
 def test_docx_export_returns_a_word_document(client):
@@ -478,12 +590,403 @@ def test_a_report_survives_reload(client):
     assert len(reopened["sections"]) == len(report["sections"])
 
 
+def test_regeneration_replaces_prior_generated_evidence(client):
+    report = _create(client)
+    session = client.session_factory()
+    repository = ReportRepository(session)
+    stored = repository.get(uuid.UUID(report["id"]), user_id="user-alpha-0001")
+    for run in (1, 2):
+        repository.replace_generated_content(stored)
+        repository.add_source(
+            stored, conversation_id=None, message_id=None, selection="full",
+            evidence={"generated_by": "report_template", "answer": f"Run {run}"},
+            scope={"project": "DCPM"}, data_as_of=datetime.now(timezone.utc),
+        )
+        session.refresh(stored)
+        generated = [source for source in stored.sources if source.evidence.get("generated_by") == "report_template"]
+        assert len(generated) == 1
+    session.close()
+
+
+def _verified_current_view_snapshot() -> dict:
+    content = {
+        "executive_summary": {"content": "JAEGER has 2,682 scoped tickets and is 92.47% in Done."},
+        "kpi_group": {
+            "payload": {
+                "state": "ready",
+                "items": [{"key": "completion_pct", "label": "Sprint Completion", "value": "92.47%", "raw_value": 92.47}],
+                "columns": [{"key": "label", "label": "Measure"}, {"key": "value", "label": "Value"}],
+                "rows": [{"label": "Sprint Completion", "value": "92.47%"}],
+            }
+        },
+        "key_finding": {"content": "202 tickets remain open."},
+        "risk": {"content": "16 tickets are currently in Impeded status."},
+        "recommendation": {"content": "Review the impeded tickets and record a next action."},
+        "action_list": {"content": "Review the impeded tickets and record a next action."},
+        "data_quality": {"content": "Done is an end-state category."},
+        "methodology": {"content": "Recalculated server-side from read-only DoraDB."},
+    }
+    return {
+        "state": "ready",
+        "scope": {"project": "DCPM", "squad": "JAEGER"},
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "evidence": {
+            "generated_by": "report_template",
+            "evidence_type": "verified_dashboard_snapshot",
+            "question": "Verified current dashboard snapshot",
+            "answer": "JAEGER has 2,682 scoped tickets and is 92.47% in Done. 202 remain open and 16 are Impeded.",
+            "query_ids": ["dashboard_service.get_squad_dashboard"],
+            "row_counts": [2682],
+            "validation": {"valid": True},
+            "warnings": [],
+        },
+        "sections": content,
+    }
+
+
+def _midas_current_view_snapshot() -> dict:
+    items = [
+        {"key": "total_work", "label": "Total Tickets", "value": "220", "raw_value": 220},
+        {"key": "completed_work", "label": "Done / End-State Work", "value": "154", "raw_value": 154},
+        {"key": "completion_pct", "label": "Sprint Completion", "value": "70%", "raw_value": 70},
+        {"key": "active_work", "label": "Open Work", "value": "66", "raw_value": 66},
+        {"key": "impeded_work", "label": "Active Blockers", "value": "0", "raw_value": 0},
+        {"key": "open_bugs", "label": "Open Bugs", "value": "12", "raw_value": 12},
+    ]
+    summary = (
+        "MIDAS is at 70% completion, with 66 work items still open. "
+        "The verified delivery status is Needs Attention. Management attention "
+        "should focus on 12 open bugs."
+    )
+    return {
+        "state": "ready",
+        "scope": {"project": "DCPM", "squad": "MIDAS"},
+        "generated_at": "2026-08-15T06:15:00+00:00",
+        "evidence": {
+            "generated_by": "report_template",
+            "evidence_type": "verified_dashboard_snapshot",
+            "question": "Verified current dashboard snapshot",
+            "answer": (
+                f"{summary} 154 of 220 work items are complete. No work is Impeded. "
+                "Four high-priority bugs remain open and the oldest work is 740 days old."
+            ),
+            "query_ids": ["dashboard_service.get_squad_dashboard"],
+            "row_counts": [220],
+            "validation": {"valid": True},
+            "warnings": [],
+        },
+        "sections": {
+            "executive_summary": {"content": summary},
+            "kpi_group": {"payload": {"state": "ready", "items": items}},
+            "key_finding": {"content": (
+                "154 of 220 work items have reached an end state (70%).\n"
+                "66 work items remain open in the current scope.\n"
+                "12 open bugs remain unresolved."
+            )},
+            "risk": {"content": (
+                "4 high-priority bugs remain open and may affect delivery planning.\n"
+                "The oldest unresolved work has been open for 740 days and may require review."
+            )},
+            "recommendation": {"content": (
+                "Review the 4 open high-priority bugs and agree their delivery order.\n"
+                "Review ageing unresolved work, beginning with items up to 740 days old."
+            )},
+            "action_list": {"content": (
+                "Review the 4 open high-priority bugs and agree their delivery order.\n"
+                "Review ageing unresolved work, beginning with items up to 740 days old."
+            )},
+            "data_quality": {"content": "Calendar issue age is not engineering cycle time."},
+        },
+    }
+def _enable_current_view_generation(monkeypatch):
+    from backend.api import reports as reports_api
+
+    @contextmanager
+    def fake_doradb():
+        yield object()
+
+    class NoNarrativeProvider:
+        enabled = False
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    monkeypatch.setattr(reports_api.settings, "doradb_user", "report-test")
+    monkeypatch.setattr(reports_api.settings, "doradb_password", "report-test")
+    monkeypatch.setattr(reports_api, "doradb_session", fake_doradb)
+    monkeypatch.setattr(reports_api, "GenerativeAIClient", NoNarrativeProvider)
+    monkeypatch.setattr(
+        reports_api, "current_view_dashboard_evidence",
+        lambda *_args, **_kwargs: _verified_current_view_snapshot(),
+    )
+    monkeypatch.setattr(
+        reports_api, "run_template_questions",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Current View must not ask broad agent questions")),
+    )
+    return reports_api
+
+
+def test_current_view_generates_from_dashboard_without_chat_evidence(client, monkeypatch):
+    _enable_current_view_generation(monkeypatch)
+    report = _create(
+        client,
+        template="executive_summary",
+        title="JAEGER Delivery Report",
+        scope={
+            "project": "dcpm", "squad": "JAEGER",
+            "sprint": "All sprints", "release": "All releases",
+            "current_metric_value": 999999,
+        },
+    )
+    assert report["sources"] == []
+    assert report["scope"] == {"project": "DCPM", "squad": "JAEGER"}
+
+    first = client.post(f"/api/reports/{report['id']}/generate", headers=USER_A)
+    assert first.status_code == 200, first.text
+    body = first.json()["report"]
+    assert len(body["sources"]) == 1
+    assert body["sources"][0]["query_ids"] == ["dashboard_service.get_squad_dashboard"]
+    states = {section["type"]: section["state"] for section in body["sections"]}
+    for section_type in (
+        "executive_summary", "kpi_group", "key_finding", "risk",
+        "recommendation", "data_quality",
+    ):
+        assert states[section_type] == "ready"
+
+    second = client.post(f"/api/reports/{report['id']}/generate", headers=USER_A)
+    assert second.status_code == 200, second.text
+    assert len(second.json()["report"]["sources"]) == 1
+
+
+def test_current_document_survives_refine_reorder_delete_save_and_exports(client, monkeypatch):
+    """The browser, reopened draft, PDF and DOCX must consume one document."""
+
+    reports_api = _enable_current_view_generation(monkeypatch)
+    monkeypatch.setattr(
+        reports_api,
+        "current_view_dashboard_evidence",
+        lambda *_args, **_kwargs: _midas_current_view_snapshot(),
+    )
+    report = _create(
+        client,
+        template="executive_summary",
+        title="MIDAS Delivery Report",
+        scope={"project": "DCPM", "squad": "MIDAS", "sprint": "All Sprints"},
+    )
+    generated = client.post(f"/api/reports/{report['id']}/generate", headers=USER_A)
+    assert generated.status_code == 200, generated.text
+    current = generated.json()["report"]
+    by_type = {section["type"]: section for section in current["sections"]}
+    summary_id = by_type["executive_summary"]["id"]
+    original_by_id = {section["id"]: section["content"] for section in current["sections"]}
+    refined_text = (
+        "MIDAS is at 70% completion, with 66 work items open and "
+        "12 open bugs requiring attention."
+    )
+
+    class RefiningProvider:
+        enabled = True
+
+        def complete(self, *_args, **_kwargs):
+            return (
+                '{"section":{"section_id":"' + summary_id
+                + '","title":"Executive Summary","content":"' + refined_text + '"}}'
+            )
+
+    monkeypatch.setattr(
+        reports_api, "GenerativeAIClient", lambda *_args, **_kwargs: RefiningProvider()
+    )
+    refined = client.post(
+        f"/api/reports/{report['id']}/refine",
+        json={"section_id": summary_id, "instruction": "Make this shorter."},
+        headers=USER_A,
+    )
+    assert refined.status_code == 200, refined.text
+    refined_body = refined.json()
+    assert refined_body["updated_sections"] == [summary_id]
+    refined_by_id = {
+        section["id"]: section["content"]
+        for section in refined_body["report"]["sections"]
+    }
+    assert refined_by_id[summary_id] == refined_text
+    assert all(
+        refined_by_id[section_id] == content
+        for section_id, content in original_by_id.items()
+        if section_id != summary_id
+    )
+
+    reopened = client.get(f"/api/reports/{report['id']}", headers=USER_A).json()
+    assert next(
+        section["content"] for section in reopened["sections"] if section["id"] == summary_id
+    ) == refined_text
+
+    by_type = {section["type"]: section for section in reopened["sections"]}
+    quality_id = by_type["data_quality"]["id"]
+    reordered_ids = [
+        by_type["executive_summary"]["id"],
+        by_type["kpi_group"]["id"],
+        by_type["risk"]["id"],
+        by_type["key_finding"]["id"],
+        by_type["recommendation"]["id"],
+        quality_id,
+    ]
+    reordered = client.post(
+        f"/api/reports/{report['id']}/sections/reorder",
+        json={"section_ids": reordered_ids},
+        headers=USER_A,
+    )
+    assert reordered.status_code == 200, reordered.text
+    deleted = client.delete(
+        f"/api/reports/{report['id']}/sections/{quality_id}", headers=USER_A
+    )
+    assert deleted.status_code == 200, deleted.text
+    saved = client.patch(
+        f"/api/reports/{report['id']}",
+        json={"title": "MIDAS Current Delivery Report", "status": "draft"},
+        headers=USER_A,
+    )
+    assert saved.status_code == 200, saved.text
+
+    reopened = client.get(f"/api/reports/{report['id']}", headers=USER_A).json()
+    assert reopened["title"] == "MIDAS Current Delivery Report"
+    assert [section["type"] for section in reopened["sections"]] == [
+        "executive_summary", "kpi_group", "risk", "key_finding", "recommendation",
+    ]
+    assert quality_id not in {section["id"] for section in reopened["sections"]}
+    assert reopened["version"] > current["version"]
+
+    pdf_response = client.post(
+        f"/api/reports/{report['id']}/export", json={"format": "pdf"}, headers=USER_A
+    )
+    assert pdf_response.status_code == 200, pdf_response.text
+    reader = pytest.importorskip("pypdf").PdfReader(io.BytesIO(pdf_response.content))
+    pdf_text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    assert refined_text in pdf_text.replace("\n", " ")
+    headings = [
+        "EXECUTIVE SUMMARY",
+        "DELIVERY AT A GLANCE",
+        "RISKS REQUIRING ATTENTION",
+        "KEY HIGHLIGHTS",
+        "RECOMMENDED ACTIONS",
+    ]
+    assert [pdf_text.index(heading) for heading in headings] == sorted(
+        pdf_text.index(heading) for heading in headings
+    )
+    for expected in ("SPRINT COMPLETION", "70%", "OPEN WORK", "66", "ACTIVE BLOCKERS", "0", "OPEN BUGS", "12"):
+        assert expected in pdf_text
+    for forbidden in (
+        "DATA QUALITY", "EVIDENCE & METHODOLOGY", "KEY MEASURES", "INTERPRETATION",
+        "REPORT VERSION", "VALIDATION STATE", "APPROVED QUERY",
+    ):
+        assert forbidden not in pdf_text.upper()
+
+    docx_response = client.post(
+        f"/api/reports/{report['id']}/export", json={"format": "docx"}, headers=USER_A
+    )
+    assert docx_response.status_code == 200, docx_response.text
+    document = pytest.importorskip("docx").Document(io.BytesIO(docx_response.content))
+    docx_text = "\n".join(
+        [paragraph.text for paragraph in document.paragraphs]
+        + [cell.text for table in document.tables for row in table.rows for cell in row.cells]
+    )
+    assert refined_text in docx_text
+    docx_upper = docx_text.upper()
+    assert [docx_upper.index(heading) for heading in headings] == sorted(
+        docx_upper.index(heading) for heading in headings
+    )
+    assert "DATA QUALITY" not in docx_text.upper()
+    for expected in ("SPRINT COMPLETION", "70%", "OPEN WORK", "66", "ACTIVE BLOCKERS", "0", "OPEN BUGS", "12"):
+        assert expected in docx_text
+
+
+def test_weekly_scrum_only_leaves_unsupported_feature_status_needing_input(client, monkeypatch):
+    reports_api = _enable_current_view_generation(monkeypatch)
+    monkeypatch.setattr(
+        reports_api,
+        "weekly_scrum_feature_evidence",
+        lambda *_args, **_kwargs: {
+            "state": "needs_input",
+            "reason": "No Feature issues with a verified status were found for this squad and sprint.",
+            "rows": [],
+        },
+    )
+    report = _create(
+        client,
+        template="weekly_scrum",
+        scope={"project": "DCPM", "squad": "JAEGER", "sprint": "Sprint 24"},
+    )
+    response = client.post(f"/api/reports/{report['id']}/generate", headers=USER_A)
+    assert response.status_code == 200, response.text
+    states = {section["type"]: section["state"] for section in response.json()["report"]["sections"]}
+    assert states["feature_status"] == "needs_input"
+    assert states["executive_summary"] == "ready"
+    assert states["key_finding"] == "ready"
+    assert states["risk"] == "ready"
+    assert states["action_list"] == "ready"
+    assert states["data_quality"] == "ready"
+    assert "methodology" not in states
+
+
+def test_weekly_scrum_feature_evidence_keeps_id_name_and_status(client, monkeypatch):
+    reports_api = _enable_current_view_generation(monkeypatch)
+    monkeypatch.setattr(
+        reports_api,
+        "weekly_scrum_feature_evidence",
+        lambda *_args, **_kwargs: {
+            "state": "ready",
+            "reason": "",
+            "columns": [
+                {"key": "feature", "label": "Feature ID"},
+                {"key": "feature_name", "label": "Feature Name"},
+                {"key": "status", "label": "Status"},
+            ],
+            "rows": [{
+                "feature": "DCPM-42",
+                "feature_name": "Payments upgrade",
+                "status": "READY FOR TEST",
+                "status_category": "In Progress",
+            }],
+            "query_id": "jira_weekly_scrum_feature_status",
+            "row_count": 1,
+            "data_as_of": "2026-08-14T10:00:00+00:00",
+        },
+    )
+    report = _create(
+        client,
+        template="weekly_scrum",
+        scope={"project": "DCPM", "squad": "JAEGER", "sprint": "Sprint 24"},
+    )
+
+    response = client.post(f"/api/reports/{report['id']}/generate", headers=USER_A)
+    assert response.status_code == 200, response.text
+    body = response.json()["report"]
+    feature = next(section for section in body["sections"] if section["type"] == "feature_status")
+    assert [column["label"] for column in feature["payload"]["columns"]] == [
+        "Feature ID", "Feature Name", "Status",
+    ]
+    assert feature["payload"]["rows"][0] == {
+        "feature": "DCPM-42",
+        "feature_name": "Payments upgrade",
+        "status": "READY FOR TEST",
+        "status_category": "In Progress",
+    }
+    source = next(item for item in body["sources"] if item["query_ids"] == ["jira_weekly_scrum_feature_status"])
+    from backend.database.db import ReportSource
+
+    session = client.session_factory()
+    try:
+        stored = session.get(ReportSource, uuid.UUID(source["id"]))
+        assert stored.evidence["answer"] == "DCPM-42 | Payments upgrade | READY FOR TEST"
+    finally:
+        session.close()
+
+
 def test_visuals_land_with_the_analysis_not_in_a_heap_at_the_end(client):
     """A chart belongs beside the section it illustrates.
 
     Appending every visual produced a report of prose followed by a block of
-    unexplained diagrams, with the data-quality and methodology blocks stranded
-    above them.
+    unexplained diagrams, with the data-quality closing block stranded above
+    them.
     """
 
     conversation_id, message_id = _seed_conversation(
@@ -508,9 +1011,7 @@ def test_visuals_land_with_the_analysis_not_in_a_heap_at_the_end(client):
     assert len([s for s in sections if s["type"] == "data_table"]) == 1
 
     # And they sit above the closing blocks, not after them.
-    closing = [
-        s["position"] for s in sections if s["type"] in {"data_quality", "methodology"}
-    ]
+    closing = [s["position"] for s in sections if s["type"] == "data_quality"]
     assert closing
     assert charts[0]["position"] < min(closing)
     assert tables[0]["position"] < min(closing)
@@ -538,9 +1039,8 @@ def test_extra_visuals_go_before_the_closing_blocks(client):
 
     sections = sorted(body["sections"], key=lambda s: s["position"])
     charts = [s for s in sections if s["type"] == "chart"]
-    closing = [s["position"] for s in sections if s["type"] == "methodology"]
     # Both charts are kept -- "if there are a lot of diagrams, put them all".
     assert len(charts) == 2
-    assert all(chart["position"] < min(closing) for chart in charts)
+    assert all(section["type"] != "methodology" for section in sections)
     # Positions stay contiguous after the inserts.
     assert [s["position"] for s in sections] == list(range(1, len(sections) + 1))

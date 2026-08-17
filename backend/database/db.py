@@ -183,7 +183,9 @@ class Report(Base):
         order_by="ReportSection.position",
     )
     sources: Mapped[list["ReportSource"]] = relationship(
-        back_populates="report", cascade="all, delete-orphan", order_by="ReportSource.created_at"
+        back_populates="report",
+        cascade="all, delete-orphan",
+        order_by="ReportSource.created_at",
     )
 
 

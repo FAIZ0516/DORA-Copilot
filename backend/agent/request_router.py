@@ -133,7 +133,10 @@ def route_jira_request(message: str) -> AgentPlan | None:
             actions=[_action("jira_issue_counts_by_status", reason="Return issue-type and status-category counts.")],
         )
 
-    if "current open jira work" in lowered:
+    if "current open jira work" in lowered or (
+        re.search(r"\b(?:open work|work still outside done|outside done)\b", lowered)
+        and re.search(r"\b(?:break down|breakdown|status categor|issue type)\b", lowered)
+    ):
         return _plan(
             mode="data",
             intent=ANALYSIS,

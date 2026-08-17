@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { ChevronRight, Sparkles } from "lucide-react";
 
 export default function SuggestedQuestionChips({ questions = [], onSuggestionClick, label = "Suggested questions" }) {
   if (!questions.length) return null;
@@ -7,7 +7,7 @@ export default function SuggestedQuestionChips({ questions = [], onSuggestionCli
       <p><Sparkles aria-hidden="true" /> {label}</p>
       <div className="suggested-question-chips">
         {questions.slice(0, 5).map((question) => (
-          <button type="button" key={question} onClick={() => onSuggestionClick(question)}>{question}</button>
+          <button type="button" key={question} onClick={() => onSuggestionClick(question)}><span>{question}</span><ChevronRight aria-hidden="true" /></button>
         ))}
       </div>
     </section>

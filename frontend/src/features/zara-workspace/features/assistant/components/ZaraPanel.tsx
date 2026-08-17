@@ -1,6 +1,7 @@
-import { Bot, ChevronRight, PanelRightClose, PanelRightOpen, Send, Sparkles, User } from "lucide-react";
+import { ChevronRight, PanelRightClose, PanelRightOpen, Send, User } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import ZaraAvatar from "../../../../../components/chat/ZaraAvatar";
 import { zaraAssistantService } from "../services/zaraAssistantService";
 import type { AssistantMessage, DashboardContext } from "../types/assistant";
 
@@ -48,8 +49,8 @@ export function ZaraPanel({ context, collapsed, promptRequest, onToggle, onCreat
 
   if (collapsed) return <aside className="zara-panel zara-panel--collapsed"><button onClick={onToggle} aria-label="Open Zara Assistant"><PanelRightOpen size={18} /><span>Zara</span></button></aside>;
   return <aside className="zara-panel">
-    <header><div><span><Sparkles size={17} /></span><div><strong>Zara Assistant</strong><small><i /> Analyzing current view · Demo mode</small></div></div><button onClick={onToggle} aria-label="Collapse Zara Assistant"><PanelRightClose size={17} /></button></header>
-    <div className="zara-conversation">{!messages.length ? <div className="assistant-empty"><span><Bot size={25} /></span><h2>Ask Zara about this data</h2><p>I understand the prepared output, visible charts, and selected categories.</p><div>{suggestions.map((question) => <button key={question} onClick={() => void ask(question)}>{question}<ChevronRight size={12} /></button>)}</div></div> : messages.map((message) => <article key={message.id} className={`assistant-message assistant-message--${message.role}`}><span>{message.role === "assistant" ? <Sparkles size={14} /> : <User size={14} />}</span><div>{message.prototype && <small>PROTOTYPE INSIGHT</small>}<p>{message.content}</p>{message.followUps && <div className="assistant-followups">{message.followUps.map((item) => <button key={item} onClick={() => followUp(item)}>{item}</button>)}</div>}</div></article>)}{thinking && <div className="assistant-thinking"><i /><i /><i /><span>Reviewing this view</span></div>}</div>
+    <header><div><ZaraAvatar decorative size={34} /><div><strong>Zara Assistant</strong><small><i /> Analyzing current view · Demo mode</small></div></div><button onClick={onToggle} aria-label="Collapse Zara Assistant"><PanelRightClose size={17} /></button></header>
+    <div className="zara-conversation">{!messages.length ? <div className="assistant-empty"><ZaraAvatar decorative size={36} /><h2>Ask Zara about this data</h2><p>I understand the prepared output, visible charts, and selected categories.</p><div>{suggestions.map((question) => <button key={question} onClick={() => void ask(question)}>{question}<ChevronRight size={12} /></button>)}</div></div> : messages.map((message) => <article key={message.id} className={`assistant-message assistant-message--${message.role}`}>{message.role === "assistant" ? <ZaraAvatar decorative size={32} /> : <span><User size={14} /></span>}<div>{message.prototype && <small>PROTOTYPE INSIGHT</small>}<p>{message.content}</p>{message.followUps && <div className="assistant-followups">{message.followUps.map((item) => <button key={item} onClick={() => followUp(item)}>{item}</button>)}</div>}</div></article>)}{thinking && <div className="assistant-thinking"><i /><i /><i /><span>Reviewing this view</span></div>}</div>
     <form className="assistant-composer" onSubmit={submit}><div>{/* A voice-input button sat here with no handler. Removed rather than left
     as a dead control; the main assistant is where dictation is wired up. */}
 <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask Zara about this dashboard…" aria-label="Ask Zara" /><button type="submit" aria-label="Send question" disabled={!draft.trim() || thinking}><Send size={15} /></button></div><small>Prototype responses use structured dashboard context.</small></form>

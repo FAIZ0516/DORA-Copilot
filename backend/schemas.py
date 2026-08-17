@@ -179,6 +179,39 @@ class ReportScope(BaseModel):
     release: str | None = Field(default=None, max_length=120)
     date_from: date | None = None
     date_to: date | None = None
+    feature: str | None = Field(default=None, max_length=120)
+    issue_type: str | None = Field(default=None, max_length=80)
+    status: str | None = Field(default=None, max_length=80)
+    priority: str | None = Field(default=None, max_length=80)
+
+    @field_validator(
+        "project", "squad", "sprint", "release", "feature",
+        "issue_type", "status", "priority", mode="before",
+    )
+    @classmethod
+    def normalize_scope_label(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        if cleaned.casefold() in {
+            "all projects", "all squads", "all sprints", "all releases",
+            "all visible features", "all features", "all tickets",
+            "all ticket types", "all statuses", "all priorities",
+        }:
+            return None
+        return cleaned or None
+
+    @field_validator("date_from", "date_to", mode="before")
+    @classmethod
+    def normalize_all_dates(cls, value: Any) -> Any:
+        if isinstance(value, str) and value.strip().casefold() == "all available dates":
+            return None
+        return value or None
+
+    @field_validator("project")
+    @classmethod
+    def normalize_report_project(cls, value: str | None) -> str | None:
+        return value.upper() if value else None
 
 
 class ReportCreateRequest(BaseModel):
@@ -191,6 +224,19 @@ class ReportCreateRequest(BaseModel):
     scope: ReportScope | None = None
 
 
+class ReportRefineRequest(BaseModel):
+    section_id: UUID
+    instruction: str = Field(min_length=1, max_length=500)
+
+    @field_validator("instruction")
+    @classmethod
+    def clean_instruction(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Instruction cannot be blank")
+        return cleaned
+
+
 class ReportUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     audience: str | None = Field(default=None, max_length=40)
@@ -199,6 +245,10 @@ class ReportUpdateRequest(BaseModel):
     include_recommendations: bool | None = None
     status: str | None = Field(default=None, max_length=20)
     scope: ReportScope | None = None
+
+
+class ReportApplyTemplateRequest(BaseModel):
+    template: str = Field(max_length=60)
 
 
 class ReportSectionCreateRequest(BaseModel):
@@ -244,6 +294,7 @@ class ReportDuplicateRequest(BaseModel):
 class ReportExportRequest(BaseModel):
     format: Literal["pdf", "docx", "csv"] = "pdf"
     section_id: UUID | None = None
+    preview: bool = False
 
 
 class ReportSectionResponse(BaseModel):
@@ -258,6 +309,8 @@ class ReportSectionResponse(BaseModel):
     content_classification: str
     manually_edited: bool
     needs_review: bool
+    state: Literal["ready", "needs_input", "needs_review"] = "needs_input"
+    state_reason: str = ""
     source_ids: list[str] = Field(default_factory=list)
 
 

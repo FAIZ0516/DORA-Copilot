@@ -97,6 +97,19 @@ def test_portfolio_metrics_retain_project_and_filter_scope():
     assert all(call.args[2]["release"] == "4.3.0" for call in execute.call_args_list)
 
 
+def test_primary_metric_registry_uses_friendly_labels_without_changing_formulas():
+    assert METRIC_REGISTRY["total_work"]["title"] == "Total Tickets"
+    assert METRIC_REGISTRY["active_work"]["title"] == "Open Work"
+    assert METRIC_REGISTRY["completion_pct"]["title"] == "Work Completed"
+    assert METRIC_REGISTRY["open_bugs"]["title"] == "Open Bugs"
+    assert METRIC_REGISTRY["active_work"]["formula"] == (
+        "Count where resolved is null and status_category is not Done."
+    )
+    assert METRIC_REGISTRY["completion_pct"]["formula"] == (
+        "100 × end-state issue count ÷ total issue count."
+    )
+
+
 def test_open_bugs_exclude_done_and_age_ignores_null_created_dates():
     sql = _aggregate_statement("j.project_key = :project", group_by_squad=False)
     compact = " ".join(sql.split())
@@ -105,6 +118,8 @@ def test_open_bugs_exclude_done_and_age_ignores_null_created_dates():
     assert "COALESCE(j.status_category, '') <> 'Done'" in compact
     assert "j.created IS NOT NULL" in compact
     assert "MAX(CURRENT_DATE - j.created::date)" in compact
+    assert "UPPER(COALESCE(j.status, '')) = 'IMPEDED'" in compact
+    assert "issuelinks" not in compact.lower()
 
 
 def test_squad_scope_and_invalid_squad_are_distinct_conditions():
