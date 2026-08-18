@@ -22,8 +22,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["system"])
 
 
-@router.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
+def _database_readiness() -> tuple[str, str, bool, str | None]:
+    """Return the database portion of health without probing the LLM provider."""
+
     database_connected = False
     database = f"postgresql:{settings.doradb_name}"
     status = "ok"
@@ -42,6 +43,33 @@ def health() -> HealthResponse:
             logger.warning("DoraDB health check failed: %s", exc)
             status = "degraded"
             detail = "DoraDB is configured but not reachable."
+
+    return status, database, database_connected, detail
+
+
+@router.get("/readiness")
+def readiness() -> dict[str, Any]:
+    """Check only the dependency required to render database-backed screens.
+
+    The main health endpoint also calls the configured LLM provider. That is
+    useful for operational diagnostics, but it unnecessarily delayed every
+    dashboard visit. The browser uses this focused probe while ``/health``
+    retains its full end-to-end semantics.
+    """
+
+    status, database, database_connected, detail = _database_readiness()
+    return {
+        "status": status,
+        "database": database,
+        "data_source": "doradb",
+        "database_connected": database_connected,
+        "detail": detail,
+    }
+
+
+@router.get("/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    status, database, database_connected, detail = _database_readiness()
 
     llm = GenerativeAIClient(settings)
     try:

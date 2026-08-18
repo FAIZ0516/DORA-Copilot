@@ -326,6 +326,23 @@ def get_dashboard_filter_options(
             params,
         )
 
+    issue_filters = {
+        "issue_types": [],
+        "statuses": [],
+        "priorities": [],
+        "assignees": [],
+    }
+    # The portfolio screen does not render ticket-level filters. Avoid four
+    # full-table GROUP BY queries during its initial load; the browser requests
+    # the populated dimensions when a user drills into a squad.
+    if squad:
+        issue_filters = {
+            "issue_types": issue_values("j.issuetype"),
+            "statuses": issue_values("j.status"),
+            "priorities": issue_values("j.priority"),
+            "assignees": issue_values("j.assignee"),
+        }
+
     return {
         "project": project.strip().upper(),
         "squad": squad,
@@ -333,12 +350,7 @@ def get_dashboard_filter_options(
         "sprints": sprints,
         "date_range": date_rows[0] if date_rows else {"minimum": None, "maximum": None},
         "date_field": "created",
-        "issue_filters": {
-            "issue_types": issue_values("j.issuetype"),
-            "statuses": issue_values("j.status"),
-            "priorities": issue_values("j.priority"),
-            "assignees": issue_values("j.assignee"),
-        },
+        "issue_filters": issue_filters,
         "notes": [
             "Release and sprint filters represent stored Jira associations, not deployment or commitment history.",
             "Date range filters Jira created dates.",
@@ -431,6 +443,15 @@ def _aggregate_statement(where: str, *, group_by_squad: bool) -> str:
                 WHERE j.resolved IS NULL AND COALESCE(j.status_category, '') <> 'Done'
                   AND j.created IS NOT NULL
             ) AS oldest_unresolved_days,
+            COUNT(*) FILTER (
+                WHERE j.dcpsquad IS NULL OR BTRIM(j.dcpsquad) = ''
+            ) AS missing_squad,
+            COUNT(*) FILTER (
+                WHERE j.assignee IS NULL OR BTRIM(j.assignee) = ''
+            ) AS missing_assignee,
+            COUNT(*) FILTER (
+                WHERE j.status_category = 'Done' AND j.resolved IS NULL
+            ) AS done_without_resolved,
             COUNT(*) FILTER (WHERE j.status_category IS NULL OR BTRIM(j.status_category) = '') AS unknown_status_count,
             COUNT(*) FILTER (WHERE j.issuetype IS NULL OR BTRIM(j.issuetype) = '') AS missing_issue_type_count
         FROM {JIRA_TABLE} AS j
@@ -469,18 +490,11 @@ def get_portfolio_dashboard(
             str(item.get("squad", "")).casefold(),
         )
     )
-    quality_rows = _execute_rows(
-        session,
-        f"""
-        SELECT
-            COUNT(*) FILTER (WHERE j.dcpsquad IS NULL OR BTRIM(j.dcpsquad) = '') AS missing_squad,
-            COUNT(*) FILTER (WHERE j.assignee IS NULL OR BTRIM(j.assignee) = '') AS missing_assignee,
-            COUNT(*) FILTER (WHERE j.status_category = 'Done' AND j.resolved IS NULL) AS done_without_resolved
-        FROM {JIRA_TABLE} AS j WHERE {where}
-        """,
-        params,
-    )
-    quality = quality_rows[0] if quality_rows else {}
+    quality = {
+        "missing_squad": int(portfolio.get("missing_squad") or 0),
+        "missing_assignee": int(portfolio.get("missing_assignee") or 0),
+        "done_without_resolved": int(portfolio.get("done_without_resolved") or 0),
+    }
     portfolio["total_squads"] = len(comparison)
     portfolio["missing_squad"] = int(quality.get("missing_squad") or 0)
     portfolio["squads_requiring_attention"] = sum(

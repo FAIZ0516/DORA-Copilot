@@ -63,6 +63,16 @@ def _planner_unavailable(reason: str) -> AgentPlan:
     }
 
 
+# Queries whose subject is a concrete named column, so a question mentioning it
+# is a request for the values rather than for a description of them. Kept
+# deliberately small: widening this re-opens the "answered a capability
+# question with a data dump" failure the recovery is otherwise careful to
+# avoid.
+_ANSWER_OUTRIGHT = frozenset(
+    {"jira_issue_counts_by_assignee", "jira_issue_counts_by_reporter"}
+)
+
+
 def _deterministic_recovery(message: str, plan: AgentPlan) -> tuple[AgentPlan, str] | None:
     """Recover when the model asked an unnecessary clarifying question.
 
@@ -76,10 +86,18 @@ def _deterministic_recovery(message: str, plan: AgentPlan) -> tuple[AgentPlan, s
     "NEVER set mode='conversation' for a data question"; prompt text alone
     did not hold, which is why this backstop is in code.
 
+    It also fires for ``mode="conversation"``, but only for the handful of
+    queries in ``_ANSWER_OUTRIGHT`` whose subject is a concrete named column.
+    Conversation is otherwise a deliberate semantic choice and is left alone --
+    answering "what data can I get?" with a data dump would be wrong. But "can
+    you give the name for the assignee?" reads as a capability question, and
+    the model duly explained that names are available instead of giving any.
+    Asking for a thing by name is a request for the thing.
+
     Deliberately narrow -- it never:
-      * touches ``mode="conversation"`` (a deliberate semantic choice, e.g.
-        CAPABILITY_EXPLANATION/KNOWLEDGE_EXPLANATION -- answering "what data
-        can I get?" with a data query would be wrong);
+      * touches ``mode="conversation"`` for anything outside
+        ``_ANSWER_OUTRIGHT`` (KNOWLEDGE_EXPLANATION and general capability
+        questions stay conversational);
       * touches ``mode="out_of_scope"`` (a safety decision);
       * runs when the model produced a usable data plan;
       * runs when the model/planner failed outright (malformed, invalid, or
@@ -90,11 +108,23 @@ def _deterministic_recovery(message: str, plan: AgentPlan) -> tuple[AgentPlan, s
       * invents a query the deterministic router doesn't already recognize.
     """
 
-    if plan["mode"] != "clarification":
+    if plan["mode"] not in {"clarification", "conversation"}:
         return None
-    if plan["intent"] in _INTENTIONAL_CLARIFICATIONS:
+    if plan["mode"] == "clarification" and plan["intent"] in _INTENTIONAL_CLARIFICATIONS:
         return None
     route = route_jira_request(message)
+    if plan["mode"] == "conversation":
+        # Conversation is normally a deliberate semantic choice and is left
+        # alone -- answering "what data can I get?" with a data dump would be
+        # wrong. The exception is a question naming a concrete column the
+        # router can answer outright. "Can you give the name for the assignee?"
+        # reads as a capability question, and the model duly explained that
+        # names are available instead of giving any: an answer that is true and
+        # useless. Asking for a thing by name is a request for the thing.
+        if route is None or not _ANSWER_OUTRIGHT.issuperset(
+            action["query_id"] for action in route.get("actions", [])
+        ):
+            return None
     if route is None or route["mode"] != "data" or not route["actions"]:
         return None
     recovered = enforce_plan(route)

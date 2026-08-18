@@ -159,7 +159,11 @@ The category is useful for broad reporting, but `Done` includes `Cancelled` and 
 
 ### Reporter and assignee
 
-The `reporter` is the person or account that reported the issue. The `assignee` is the person or account currently responsible for it. These values are personal or operational data and must be protected.
+The `reporter` is the person or account that reported the issue. The `assignee` is the person or account currently responsible for it.
+
+These names may be reported. Two approved queries return counts per person: `jira_issue_counts_by_assignee` and `jira_issue_counts_by_reporter`, each optionally scoped to one squad. Answer such questions from those queries rather than declining them.
+
+Two readings must always travel with the numbers. `assignee` is the **current** snapshot owner, not who did the work historically, so a count is a picture of where work sits today and never a productivity or performance measure. `reporter` describes who raised the work, so those counts describe intake, never delivery.
 
 **(2026-08-05 PDF)** The official column-definitions document describes the reporter as typically "a Business Analyst or QA Analyst" — a role hint, not a guarantee, and it does not change the need to protect the actual stored identity.
 
@@ -246,8 +250,8 @@ The `Nullable` column below describes what the database schema permits. Actual m
 | `project_key` | `varchar(20)` | Yes | None | Short Jira project code. | `DCPM` | Project filter/grouping. | Only `DCPM` exists in the inspected snapshot. Source: aggregate query and approved-query default. **(2026-08-05 PDF)** The official document's own examples (`DCPM`, `DXP`, `RBS`) show this column is shared org-wide across multiple projects even though this table's snapshot holds only `DCPM`. |
 | `project_name` | `varchar(50)` | Yes | None | Long Jira project name. | `DCPM - Digital Channel Platform` | Display labels for project reports. | All rows populated; still filter using stable `project_key`. |
 | `dcpsquad` | `varchar(20)` | Yes | Logical team field | Project-specific squad/team value. | `[anonymised squad]` | Team workload and delivery breakdowns. | 63,481 missing; 21 non-null values. Custom ownership meaning needs confirmation. **(2026-08-05 sample)** Real short-code values include `TITAN`, `MBK`, `IBK 1`, `IBK 2`, `BE 1`, `BO`, `Droid Spark`, `KAIJU`, `Prime`, `SRE` — see the Squad section above for why these differ from the PDF's long-form examples. |
-| `reporter` | `varchar(100)` | Yes | None | Person/account that reported the issue. | `[redacted Jira identity]` | Reporter-based operational analysis when authorised. | Personal data; 1,667 missing. Do not use as a productivity measure. |
-| `assignee` | `varchar(100)` | Yes | None | Person/account currently assigned. | `[redacted Jira identity]` | Unassigned work and workload context. | Personal data; 7,763 missing. Snapshot ownership may differ from historical ownership. |
+| `reporter` | `varchar(100)` | Yes | None | Person/account that reported the issue. | Jira identity | Reporter-based intake analysis; reportable by name. | 1,667 missing. Describes who raised work, not who delivered it; never a productivity measure. |
+| `assignee` | `varchar(100)` | Yes | None | Person/account currently assigned. | Jira identity | Workload distribution and unassigned work; reportable by name. | 7,763 missing. Snapshot ownership may differ from historical ownership, so never a productivity measure. |
 
 ### Dates and metadata
 
@@ -430,8 +434,8 @@ Every column is listed below with its relationship status, so "no relationship" 
 | `project_key` | Filter key | Scopes every approved query in `backend/doradb_catalog.py`; paired same-row with `project_name`. `backend/context/schema.yaml` lists only `key` and `project_key` for this table — the narrowest possible view of it. |
 | `project_name` | Same-row descriptive pair | Paired with `project_key`; no FK. |
 | `dcpsquad` | Filter/grouping dimension | Required filter for the approved `dora_metrics_by_squad` query, which resolves squad -> release indirectly through each issue's `fixversions`. |
-| `reporter` | None | Personal attribute, standalone. |
-| `assignee` | None | Personal attribute, standalone. |
+| `reporter` | Grouping dimension | Reportable by name via `jira_issue_counts_by_reporter`. |
+| `assignee` | Grouping dimension | Reportable by name via `jira_issue_counts_by_assignee`. |
 | `created` | Time axis | Logically precedes `updated`/`resolved`; used in trend and ageing queries. |
 | `updated` | Time axis | Logically >= `created`; distinct from `superset_updated_ts`. |
 | `resolved` | Time axis, paired with `resolution` | Logically >= `created` when populated (2 exceptions found live). |
@@ -761,7 +765,7 @@ Reliability labels mean:
 | Issues by project | Project distribution. | `project_key`, `project_name`. | Claiming comparison when only DCPM exists. | Yes, but currently single-project. |
 | Issues by sprint | Issues associated with sprint objects. | `id`, `sprints` or `mvw_gdt_dte_jira_sprints`; count distinct IDs. | Counting expanded rows as issues; assuming current sprint. | Partial. Sprint history/board rules may be needed. |
 | Issues by team | Current stored squad distribution. | `dcpsquad`, count unknown separately. | Dropping 63,481 null squad rows; assuming historical ownership. | Partial. Authoritative team mapping is needed. |
-| Issues by assignee | Current assignment distribution. | `assignee`, distinct issue count. | Ranking people or equating count with productivity. | Partial and sensitive. |
+| Issues by assignee | Current assignment distribution. | `jira_issue_counts_by_assignee`. | Ranking people or equating count with productivity. | Answerable by name; counts show where work sits, not how much anyone delivered. |
 | Bug trends | Bugs created/resolved by time period. | `issuetype = 'Bug'`, `created`, `resolved`. | Treating all priorities as severity; ignoring changing data coverage. | Partial; useful for arrival/resolution counts. |
 | Workload distribution | Current issues grouped by type/status/team/assignee. | `status_category`, `issuetype`, `dcpsquad`, `assignee`. | Assuming equal issue size or individual capacity. | Partial. Estimation/capacity data is absent. |
 | Delivery progress | Current distribution and optional stored percentage. | `status_category`, `progress_pct`. | Averaging mostly-null `progress_pct`; calling end-state successful delivery. | Partial. |
@@ -961,7 +965,7 @@ Its most important interpretation boundaries are:
 - JSON fields need inner-array checks and distinct issue counting after expansion;
 - relationships are logical rather than FK-enforced;
 - timestamps have no timezone;
-- sensitive free text and identities must be protected;
+- sensitive free text (`summary`, `root_cause`, `how_to_fix`, `labels`) must be protected; assignee and reporter names are reportable through their approved queries;
 - Jira issue data alone is not enough for official DORA metrics.
 
 Used with explicit filters, date ranges, null checks, privacy protection, and clearly labelled assumptions, this table can support useful learning and responsible reporting.

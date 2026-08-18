@@ -189,6 +189,40 @@ def route_jira_request(message: str) -> AgentPlan | None:
             reason="Explain the verified reporting limitation without querying identities.",
         )
 
+    # People questions route deterministically rather than relying on the
+    # planner to pick the right query. The model previously had nothing to
+    # reach for here and answered that the data was unavailable, so leaving the
+    # path to inference is exactly what failed before.
+    if re.search(
+        r"\b(assignee|assignees|assigned to|who(?:'s| is| are)? (?:working|handling)|"
+        r"workload|who owns)\b",
+        lowered,
+    ):
+        return _plan(
+            mode="data",
+            intent=DATA_RETRIEVAL,
+            reason="Count issues per named assignee, with unassigned work alongside.",
+            actions=[
+                _action(
+                    "jira_issue_counts_by_assignee",
+                    reason="Assignee names and their issue counts are the answer here.",
+                )
+            ],
+        )
+
+    if re.search(r"\b(reporter|reporters|reported by|who raised|who reported)\b", lowered):
+        return _plan(
+            mode="data",
+            intent=DATA_RETRIEVAL,
+            reason="Count issues per named reporter, describing intake rather than delivery.",
+            actions=[
+                _action(
+                    "jira_issue_counts_by_reporter",
+                    reason="Reporter names and their issue counts are the answer here.",
+                )
+            ],
+        )
+
     if re.search(r"\b(which|what)\b.*\bsquad\b.*\b(most|highest)\b.*\bbugs?\b", lowered):
         return _plan(
             mode="data",

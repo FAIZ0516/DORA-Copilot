@@ -171,7 +171,11 @@ def test_zero_rows_are_not_cached_and_sensitive_fields_are_removed():
     ) is None
     entry = cache_entry([{"dcpsquad": "TITAN", "summary": "secret", "assignee": "person"}])
     assert entry is not None
-    assert entry["results"][0]["rows"][0] == {"dcpsquad": "TITAN"}
+    # Issue text is still stripped before anything is cached. The assignee is
+    # kept now that people are reportable -- a follow-up like "how many of those
+    # are open?" has to reuse the same rows, and a name stripped on the way into
+    # the cache cannot come back.
+    assert entry["results"][0]["rows"][0] == {"dcpsquad": "TITAN", "assignee": "person"}
 
 
 def test_long_summary_retains_scope_filters_and_warnings():

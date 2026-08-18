@@ -21,9 +21,18 @@ from __future__ import annotations
 import re
 from typing import Any
 
-RESTRICTED_FIELDS = frozenset(
-    {"summary", "reporter", "assignee", "root_cause", "how_to_fix", "labels"}
-)
+# ``assignee`` and ``reporter`` were removed from this set deliberately, as a
+# product decision: the owner of the data asked for people to be nameable so
+# workload and intake questions can be answered. Two approved queries now
+# expose them as counts per person, and their catalogue entries carry the
+# reading that goes with them -- ownership is the current snapshot value, not
+# who did the work historically, and reporter counts describe intake rather
+# than delivery.
+#
+# Issue *text* stays restricted. Summaries, root causes and fix notes describe
+# incidents rather than aggregate them, and nothing about naming people
+# requires them.
+RESTRICTED_FIELDS = frozenset({"summary", "root_cause", "how_to_fix", "labels"})
 
 _RESTRICTED_MENTION = re.compile(
     r"\b(?:" + "|".join(re.escape(field) for field in RESTRICTED_FIELDS) + r")\s*[:=]",

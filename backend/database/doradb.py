@@ -121,6 +121,79 @@ _BASE_QUERIES = {
           AND BTRIM(j.dcpsquad) <> ''
         GROUP BY BTRIM(j.dcpsquad)
     """,
+    "jira_issue_counts_by_assignee": """
+        SELECT
+            BTRIM(j.assignee) AS assignee,
+            COUNT(*) AS issue_count,
+            COUNT(*) FILTER (
+                WHERE j.resolved IS NULL
+                  AND COALESCE(BTRIM(j.status_category), '') <> 'Done'
+            ) AS open_count,
+            COUNT(*) FILTER (
+                WHERE LOWER(COALESCE(BTRIM(j.issuetype), '')) = 'bug'
+            ) AS bug_count,
+            -- Reported alongside every row so an answer can say what share of
+            -- the work has nobody against it, which the per-person rows cannot
+            -- show on their own.
+            (
+                SELECT COUNT(*)
+                FROM public.tbl_gdt_dte_jira_issues AS unassigned
+                WHERE unassigned.project_key = :project_key
+                  AND (
+                      unassigned.assignee IS NULL
+                      OR BTRIM(unassigned.assignee) = ''
+                  )
+                  AND (
+                      CAST(:people_dcpsquad AS text) IS NULL
+                      OR UPPER(BTRIM(unassigned.dcpsquad))
+                         = UPPER(CAST(:people_dcpsquad AS text))
+                  )
+            ) AS unassigned_rows
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND j.assignee IS NOT NULL
+          AND BTRIM(j.assignee) <> ''
+          AND (
+              CAST(:people_dcpsquad AS text) IS NULL
+              OR UPPER(BTRIM(j.dcpsquad)) = UPPER(CAST(:people_dcpsquad AS text))
+          )
+        GROUP BY BTRIM(j.assignee)
+    """,
+    "jira_issue_counts_by_reporter": """
+        SELECT
+            BTRIM(j.reporter) AS reporter,
+            COUNT(*) AS issue_count,
+            COUNT(*) FILTER (
+                WHERE j.resolved IS NULL
+                  AND COALESCE(BTRIM(j.status_category), '') <> 'Done'
+            ) AS open_count,
+            COUNT(*) FILTER (
+                WHERE LOWER(COALESCE(BTRIM(j.issuetype), '')) = 'bug'
+            ) AS bug_count,
+            (
+                SELECT COUNT(*)
+                FROM public.tbl_gdt_dte_jira_issues AS unreported
+                WHERE unreported.project_key = :project_key
+                  AND (
+                      unreported.reporter IS NULL
+                      OR BTRIM(unreported.reporter) = ''
+                  )
+                  AND (
+                      CAST(:people_dcpsquad AS text) IS NULL
+                      OR UPPER(BTRIM(unreported.dcpsquad))
+                         = UPPER(CAST(:people_dcpsquad AS text))
+                  )
+            ) AS missing_reporter_rows
+        FROM public.tbl_gdt_dte_jira_issues AS j
+        WHERE j.project_key = :project_key
+          AND j.reporter IS NOT NULL
+          AND BTRIM(j.reporter) <> ''
+          AND (
+              CAST(:people_dcpsquad AS text) IS NULL
+              OR UPPER(BTRIM(j.dcpsquad)) = UPPER(CAST(:people_dcpsquad AS text))
+          )
+        GROUP BY BTRIM(j.reporter)
+    """,
     "jira_prioritized_open_bugs": """
         SELECT
             j.key AS jira_key,
@@ -803,6 +876,8 @@ _FILTER_COLUMNS = {
     "database_squad_sources": {},
     "jira_distinct_squads": {},
     "jira_bug_counts_by_squad": {},
+    "jira_issue_counts_by_assignee": {},
+    "jira_issue_counts_by_reporter": {},
     "jira_prioritized_open_bugs": {},
     "jira_issue_counts_by_status": {
         "issuetype": "approved.issuetype",
@@ -874,6 +949,8 @@ _ORDER_BY = {
     ),
     "jira_distinct_squads": "approved.dcpsquad",
     "jira_bug_counts_by_squad": "approved.bug_count DESC, approved.dcpsquad",
+    "jira_issue_counts_by_assignee": "approved.issue_count DESC, approved.assignee",
+    "jira_issue_counts_by_reporter": "approved.issue_count DESC, approved.reporter",
     "jira_prioritized_open_bugs": (
         "CASE LOWER(approved.priority) WHEN 'high' THEN 0 WHEN 'medium' THEN 1 "
         "WHEN 'low' THEN 2 ELSE 3 END, approved.age_days DESC NULLS LAST, approved.jira_key"
@@ -1090,6 +1167,9 @@ def _build_statement(
         params["dashboard_dcpsquad"] = filters.get("dcpsquad")
         params["dashboard_fixversion"] = filters.get("fixversion")
         params["dashboard_sprint"] = filters.get("sprint")
+    if query_id in {"jira_issue_counts_by_assignee", "jira_issue_counts_by_reporter"}:
+        # None means project-wide, matching the All Squads behaviour elsewhere.
+        params["people_dcpsquad"] = filters.get("dcpsquad")
     if query_id == "jira_open_work_breakdown":
         # Keep squad scoping inside the approved static SQL. None preserves
         # the existing All Squads/project-wide behavior.

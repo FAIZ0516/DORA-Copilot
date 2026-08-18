@@ -23,6 +23,8 @@ APPROVED_QUERY_IDS = {
     "database_squad_sources",
     "jira_distinct_squads",
     "jira_bug_counts_by_squad",
+    "jira_issue_counts_by_assignee",
+    "jira_issue_counts_by_reporter",
     "jira_prioritized_open_bugs",
     "jira_issue_counts_by_status",
     "jira_unresolved_older_than_days",
@@ -161,6 +163,40 @@ QUERY_CATALOGUE: dict[str, dict[str, Any]] = {
         "default_limit": 100,
         "allowed_filters": ["project_key"],
         "expected_columns": ["dcpsquad", "bug_count"],
+    },
+    "jira_issue_counts_by_assignee": {
+        "purpose": (
+            "Jira issue, open-work and bug counts per named assignee, optionally "
+            "for one squad. Returns the count of unassigned rows alongside every "
+            "row so the answer can say how much work has nobody against it. "
+            "Ownership is the current snapshot value, not who did the work "
+            "historically, so it must not be read as a productivity measure."
+        ),
+        "default_limit": 400,
+        "allowed_filters": ["project_key", "dcpsquad"],
+        "expected_columns": [
+            "assignee",
+            "issue_count",
+            "open_count",
+            "bug_count",
+            "unassigned_rows",
+        ],
+    },
+    "jira_issue_counts_by_reporter": {
+        "purpose": (
+            "Jira issue, open-work and bug counts per named reporter, optionally "
+            "for one squad. The reporter raised the issue and is not the person "
+            "working on it, so these counts describe intake, never delivery."
+        ),
+        "default_limit": 400,
+        "allowed_filters": ["project_key", "dcpsquad"],
+        "expected_columns": [
+            "reporter",
+            "issue_count",
+            "open_count",
+            "bug_count",
+            "missing_reporter_rows",
+        ],
     },
     "jira_prioritized_open_bugs": {
         "purpose": (

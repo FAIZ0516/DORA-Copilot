@@ -43,6 +43,26 @@ def test_dashboard_filter_options_include_live_ticket_dimensions():
     assert all(call.args[2]["squad"] == "TITAN" for call in execute.call_args_list)
 
 
+def test_portfolio_filter_options_skip_ticket_only_dimensions():
+    rows = [
+        [{"value": "4.3.0", "issue_count": 2}],
+        [{"value": "Sprint 1", "issue_count": 2}],
+        [{"minimum": "2026-01-01", "maximum": "2026-08-01"}],
+    ]
+    with patch("backend.dashboard_service._execute_rows", side_effect=rows) as execute:
+        payload = get_dashboard_filter_options(
+            object(), project="DCPM"  # type: ignore[arg-type]
+        )
+
+    assert len(execute.call_args_list) == 3
+    assert payload["issue_filters"] == {
+        "issue_types": [],
+        "statuses": [],
+        "priorities": [],
+        "assignees": [],
+    }
+
+
 def test_squad_list_excludes_only_documented_generic_values():
     rows = [
         {"name": "  TITAN  ", "issue_count": 10},
@@ -80,12 +100,14 @@ def test_portfolio_metrics_retain_project_and_filter_scope():
         "active_work": 4,
         "open_bugs": 2,
         "high_priority_open_bugs": 0,
+        "missing_squad": 1,
+        "missing_assignee": 2,
+        "done_without_resolved": 0,
     }
     squad = {**aggregate, "squad": "TITAN", "oldest_unresolved_days": 10}
-    quality = {"missing_squad": 1, "missing_assignee": 2, "done_without_resolved": 0}
     with patch(
         "backend.dashboard_service._execute_rows",
-        side_effect=[[aggregate], [squad], [quality]],
+        side_effect=[[aggregate], [squad]],
     ) as execute:
         payload = get_portfolio_dashboard(
             object(), project="DCPM", release="4.3.0"  # type: ignore[arg-type]
@@ -93,6 +115,12 @@ def test_portfolio_metrics_retain_project_and_filter_scope():
     assert payload["applied_filters"]["project"] == "DCPM"
     assert payload["applied_filters"]["release"] == "4.3.0"
     assert payload["kpis"]["total_work"] == 10
+    assert payload["data_quality"] == {
+        "missing_squad": 1,
+        "missing_assignee": 2,
+        "done_without_resolved": 0,
+    }
+    assert len(execute.call_args_list) == 2
     assert all(call.args[2]["project"] == "DCPM" for call in execute.call_args_list)
     assert all(call.args[2]["release"] == "4.3.0" for call in execute.call_args_list)
 
@@ -119,6 +147,9 @@ def test_open_bugs_exclude_done_and_age_ignores_null_created_dates():
     assert "j.created IS NOT NULL" in compact
     assert "MAX(CURRENT_DATE - j.created::date)" in compact
     assert "UPPER(COALESCE(j.status, '')) = 'IMPEDED'" in compact
+    assert "AS missing_squad" in compact
+    assert "AS missing_assignee" in compact
+    assert "AS done_without_resolved" in compact
     assert "issuelinks" not in compact.lower()
 
 
