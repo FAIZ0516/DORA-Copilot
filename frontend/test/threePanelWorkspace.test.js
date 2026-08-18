@@ -59,9 +59,9 @@ test("Grainient is an isolated responsive background for the Zara panel", () => 
   assert.match(grainientSource, /ZARA_GRAINIENT_SPEED = 0\.32/);
   assert.match(grainientSource, /timeSpeed: ZARA_GRAINIENT_SPEED/);
   assert.match(grainientSource, /saturation: 1\.18/);
-  assert.match(grainientSource, /color1: "#A855F7"/);
-  assert.match(grainientSource, /color2: "#6D28D9"/);
-  assert.match(grainientSource, /color3: "#1A0B3D"/);
+  assert.match(grainientSource, /color1: "#E3EEF9"/);
+  assert.match(grainientSource, /color2: "#A7C7E7"/);
+  assert.match(grainientSource, /color3: "#7EA9D2"/);
   assert.match(cssSource, /\.zara-grainient-background \{ position: absolute; z-index: 0; inset: 0;/);
   assert.match(cssSource, /pointer-events: none/);
   assert.match(cssSource, /\.workspace-panel-chat > \.workspace-panel-content[\s\S]*z-index: 1/);
@@ -116,22 +116,22 @@ test("assistant identity uses one shared circular Zara portrait", () => {
 });
 
 test("the Zara surface keeps a premium high-contrast visual hierarchy", () => {
-  assert.match(cssSource, /\.copilot-empty-state h2 \{[^}]*color: #fff;/s);
+  assert.match(cssSource, /\.copilot-empty-state h2 \{[^}]*color: #0e2c4d;/s);
   assert.match(cssSource, /\.suggested-question-chips button \{[^}]*color: #09245f;[^}]*background: rgba\(255,255,255,\.94\);/s);
-  assert.match(cssSource, /\.copilot-message\.user \.copilot-message-body \{[^}]*rgba\(124,45,214,\.97\)[^}]*border-radius: 19px/s);
+  assert.match(cssSource, /\.copilot-message\.user \.copilot-message-body \{[^}]*rgba\(29,78,216,\.97\)[^}]*border-radius: 19px/s);
   assert.match(cssSource, /\.copilot-message-body \{[^}]*background: rgba\(255,255,255,\.96\);[^}]*border-radius: 6px 18px 18px 18px;/s);
   assert.match(cssSource, /\.copilot-message-content \{[^}]*color: #10182e;/s);
-  assert.match(cssSource, /\.copilot-composer \{[^}]*rgba\(74,29,148,\.7\)[^}]*border-radius: 21px;/s);
+  assert.match(cssSource, /\.copilot-composer \{[^}]*rgba\(255,255,255,\.9\)[^}]*border-radius: 21px;/s);
 });
 
 test("the Zara panel remains one continuous glass surface with subtle scrolling", () => {
-  assert.match(cssSource, /\.workspace-panel-chat \.workspace-panel-header \{[^}]*rgba\(22,9,50,\.62\)[^}]*backdrop-filter: blur\(16px\);/s);
-  assert.match(cssSource, /\.copilot-toolbar \{[^}]*rgba\(23,10,52,\.58\)[^}]*backdrop-filter: blur\(16px\);/s);
-  assert.match(cssSource, /\.copilot-composer-wrap \{[^}]*rgba\(17,7,40,0\)[^}]*box-shadow: none;[^}]*backdrop-filter: none;/s);
+  assert.match(cssSource, /\.workspace-panel-chat \.workspace-panel-header \{[^}]*rgba\(255,255,255,\.58\)[^}]*backdrop-filter: blur\(16px\);/s);
+  assert.match(cssSource, /\.copilot-toolbar \{[^}]*rgba\(255,255,255,\.5\)[^}]*backdrop-filter: blur\(16px\);/s);
+  assert.match(cssSource, /\.copilot-composer-wrap \{[^}]*rgba\(255,255,255,0\)[^}]*box-shadow: none;[^}]*backdrop-filter: none;/s);
   assert.match(cssSource, /\.copilot-composer \{[^}]*backdrop-filter: blur\(20px\);/s);
   assert.match(cssSource, /\.copilot-message-list \{[^}]*padding: 16px 11px 52px;[^}]*scrollbar-width: thin;/s);
   assert.match(cssSource, /\.copilot-message-list::\-webkit-scrollbar-thumb:hover/);
-  assert.match(cssSource, /\.copilot-empty-avatar \{[^}]*rgba\(168,85,247,\.24\)/s);
+  assert.match(cssSource, /\.copilot-empty-avatar \{[^}]*rgba\(255,255,255,\.85\)/s);
 });
 
 test("initial suggestions use a centred two-column grid only when the Zara panel is wide enough", () => {
@@ -139,7 +139,7 @@ test("initial suggestions use a centred two-column grid only when the Zara panel
   assert.match(cssSource, /\.copilot-empty-state \.suggested-question-section \{[^}]*width: min\(100%,1100px\);[^}]*margin-top: 11px;/s);
   assert.match(cssSource, /\.suggested-question-chips \{[^}]*grid-template-columns: minmax\(0,1fr\);/s);
   assert.match(cssSource, /@container zara-chat \(min-width: 640px\)[\s\S]*\.copilot-empty-state \.suggested-question-chips \{ grid-template-columns: repeat\(2,minmax\(0,1fr\)\); \}/);
-  assert.match(cssSource, /\.copilot-composer \{[^}]*border: 1px solid rgba\(228,213,255,\.34\);[^}]*0 0 14px rgba\(139,60,255,\.16\)/s);
+  assert.match(cssSource, /\.copilot-composer \{[^}]*border: 1px solid rgba\(255,255,255,\.95\);[^}]*0 0 14px rgba\(126,169,210,\.2\)/s);
 });
 
 test("follow-up suggestions appear after an assistant response", () => {
@@ -218,22 +218,22 @@ test("the ZARA name is set to stand out from the navigation around it", () => {
   );
 });
 
-test("the Zara panel is violet throughout, with no blue left behind", () => {
+test("the Zara panel is one light surface, with no dark theme left behind", () => {
   // Changing only the headline gradient leaves blue glows, scrollbars and
   // bubbles behind, which reads as a half-finished theme rather than a colour.
   const panel = cssSource.match(/\.workspace-panel-chat \{[^}]*\}/s)[0];
-  assert.match(panel, /linear-gradient\(155deg, #1a0b3d 0%, #6d28d9 54%, #17092e 100%\)/);
+  assert.match(panel, /linear-gradient\(155deg, #e3eef9 0%, #a7c7e7 46%, #7ea9d2 100%\)/);
 
   // The animated layer is the gradient people actually see; the CSS behind it
   // is only the reduced-motion fallback, and the two must agree.
-  assert.match(grainientSource, /color2: "#6D28D9"/);
+  assert.match(grainientSource, /color2: "#A7C7E7"/);
   assert.match(
     cssSource,
-    /prefers-reduced-motion: reduce[\s\S]*?\.zara-grainient-background \{ background: linear-gradient\(155deg,#1a0b3d/,
+    /prefers-reduced-motion: reduce[\s\S]*?\.zara-grainient-background \{ background: linear-gradient\(155deg,#e3eef9/,
   );
 
   // No rule scoped to the chat panel may still carry the old blues.
-  const retired = ["8,124,255", "24,196,255", "8,91,244", "92,158,232", "8,70,200", "9,48,119"];
+  const retired = ["168,85,247", "139,60,255", "109,40,217", "160,116,224", "124,45,214", "74,29,148"];
   for (const rule of cssSource.match(/\.(?:workspace-panel-chat|copilot|echo-copilot)[^{]*\{[^}]*\}/gs) || []) {
     for (const blue of retired) {
       assert.ok(!rule.includes(blue), `retired blue rgba(${blue}) left in: ${rule.slice(0, 80)}`);

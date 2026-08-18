@@ -151,18 +151,22 @@ export const ZARA_GRAINIENT_THEME = Object.freeze({
   grainAmount: 0.04,
   grainScale: 1.8,
   grainAnimated: false,
-  contrast: 1.48,
-  gamma: 0.86,
+  contrast: 1.06,
+  gamma: 1.0,
   saturation: 1.18,
   centerX: 0,
   centerY: 0,
   zoom: 0.88,
-  // Violet rather than blue, so the assistant panel reads as its own surface
-  // instead of a darker continuation of the dashboard beside it. The lightest
-  // stop stays well short of pastel: white body text sits on this directly.
-  color1: "#A855F7",
-  color2: "#6D28D9",
-  color3: "#1A0B3D",
+  // #A7C7E7 at the centre, with a lift above and a deeper tint below so the
+  // surface still reads as a gradient rather than a flat wash.
+  //
+  // A pastel needs different tone handling from the dark palette this was
+  // tuned for: contrast 1.48 with gamma 0.86 was pulling dark stops apart,
+  // and applied to light colours it muddies them into grey. Flatter values
+  // keep the pastel clean.
+  color1: "#E3EEF9",
+  color2: "#A7C7E7",
+  color3: "#7EA9D2",
 });
 
 export default function Grainient({
