@@ -59,9 +59,9 @@ test("Grainient is an isolated responsive background for the Zara panel", () => 
   assert.match(grainientSource, /ZARA_GRAINIENT_SPEED = 0\.32/);
   assert.match(grainientSource, /timeSpeed: ZARA_GRAINIENT_SPEED/);
   assert.match(grainientSource, /saturation: 1\.18/);
-  assert.match(grainientSource, /color1: "#E3EEF9"/);
-  assert.match(grainientSource, /color2: "#A7C7E7"/);
-  assert.match(grainientSource, /color3: "#7EA9D2"/);
+  assert.match(grainientSource, /color1: "#A9CDEC"/);
+  assert.match(grainientSource, /color2: "#6FA9D8"/);
+  assert.match(grainientSource, /color3: "#4A8FCE"/);
   assert.match(cssSource, /\.zara-grainient-background \{ position: absolute; z-index: 0; inset: 0;/);
   assert.match(cssSource, /pointer-events: none/);
   assert.match(cssSource, /\.workspace-panel-chat > \.workspace-panel-content[\s\S]*z-index: 1/);
@@ -116,7 +116,7 @@ test("assistant identity uses one shared circular Zara portrait", () => {
 });
 
 test("the Zara surface keeps a premium high-contrast visual hierarchy", () => {
-  assert.match(cssSource, /\.copilot-empty-state h2 \{[^}]*color: #0e2c4d;/s);
+  assert.match(cssSource, /\.copilot-empty-state h2 \{[^}]*color: #08192b;/s);
   assert.match(cssSource, /\.suggested-question-chips button \{[^}]*color: #09245f;[^}]*background: rgba\(255,255,255,\.94\);/s);
   assert.match(cssSource, /\.copilot-message\.user \.copilot-message-body \{[^}]*rgba\(29,78,216,\.97\)[^}]*border-radius: 19px/s);
   assert.match(cssSource, /\.copilot-message-body \{[^}]*background: rgba\(255,255,255,\.96\);[^}]*border-radius: 6px 18px 18px 18px;/s);
@@ -139,7 +139,7 @@ test("initial suggestions use a centred two-column grid only when the Zara panel
   assert.match(cssSource, /\.copilot-empty-state \.suggested-question-section \{[^}]*width: min\(100%,1100px\);[^}]*margin-top: 11px;/s);
   assert.match(cssSource, /\.suggested-question-chips \{[^}]*grid-template-columns: minmax\(0,1fr\);/s);
   assert.match(cssSource, /@container zara-chat \(min-width: 640px\)[\s\S]*\.copilot-empty-state \.suggested-question-chips \{ grid-template-columns: repeat\(2,minmax\(0,1fr\)\); \}/);
-  assert.match(cssSource, /\.copilot-composer \{[^}]*border: 1px solid rgba\(255,255,255,\.95\);[^}]*0 0 14px rgba\(126,169,210,\.2\)/s);
+  assert.match(cssSource, /\.copilot-composer \{[^}]*border: 1px solid rgba\(255,255,255,\.95\);[^}]*0 0 14px rgba\(74,143,206,\.24\)/s);
 });
 
 test("follow-up suggestions appear after an assistant response", () => {
@@ -222,14 +222,14 @@ test("the Zara panel is one light surface, with no dark theme left behind", () =
   // Changing only the headline gradient leaves blue glows, scrollbars and
   // bubbles behind, which reads as a half-finished theme rather than a colour.
   const panel = cssSource.match(/\.workspace-panel-chat \{[^}]*\}/s)[0];
-  assert.match(panel, /linear-gradient\(155deg, #e3eef9 0%, #a7c7e7 46%, #7ea9d2 100%\)/);
+  assert.match(panel, /linear-gradient\(155deg, #a9cdec 0%, #6fa9d8 46%, #4a8fce 100%\)/);
 
   // The animated layer is the gradient people actually see; the CSS behind it
   // is only the reduced-motion fallback, and the two must agree.
-  assert.match(grainientSource, /color2: "#A7C7E7"/);
+  assert.match(grainientSource, /color2: "#6FA9D8"/);
   assert.match(
     cssSource,
-    /prefers-reduced-motion: reduce[\s\S]*?\.zara-grainient-background \{ background: linear-gradient\(155deg,#e3eef9/,
+    /prefers-reduced-motion: reduce[\s\S]*?\.zara-grainient-background \{ background: linear-gradient\(155deg,#a9cdec/,
   );
 
   // No rule scoped to the chat panel may still carry the old blues.

@@ -157,16 +157,17 @@ export const ZARA_GRAINIENT_THEME = Object.freeze({
   centerX: 0,
   centerY: 0,
   zoom: 0.88,
-  // #A7C7E7 at the centre, with a lift above and a deeper tint below so the
-  // surface still reads as a gradient rather than a flat wash.
+  // A deeper take on the requested #A7C7E7: same family, more saturation, so
+  // the panel carries against the white dashboard instead of receding. A lift
+  // above and a deeper tint below keep it reading as a gradient.
   //
-  // A pastel needs different tone handling from the dark palette this was
-  // tuned for: contrast 1.48 with gamma 0.86 was pulling dark stops apart,
-  // and applied to light colours it muddies them into grey. Flatter values
-  // keep the pastel clean.
-  color1: "#E3EEF9",
-  color2: "#A7C7E7",
-  color3: "#7EA9D2",
+  // Light colours need a different tone curve from the dark palette this was
+  // originally tuned for: contrast 1.48 with gamma 0.86 pulls dark stops
+  // apart, and the same curve applied here muddies the blues toward grey.
+  // Flatter values keep them clean.
+  color1: "#A9CDEC",
+  color2: "#6FA9D8",
+  color3: "#4A8FCE",
 });
 
 export default function Grainient({
