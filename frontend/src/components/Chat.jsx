@@ -382,7 +382,7 @@ export default function Chat({
     <div className="echo-copilot-panel">
       <div className="copilot-toolbar">
         <div className="copilot-context"><Sparkles aria-hidden="true" /><span>Context</span><b>{dashboard.selectedSquad || "All Squads"}</b><b>{dashboard.selectedSprint || "All Sprints"}</b><b>{dashboard.selectedProject || project || "DCPM"}</b></div>
-        <div><span className={`copilot-data-status ${databaseConnected ? "connected" : "offline"}`}><i aria-hidden="true" />{databaseConnected ? "DoraDB read-only" : "Data service offline"}</span><button type="button" onClick={clearConversation}><RotateCcw aria-hidden="true" /> Clear</button></div>
+        <div><span className={`copilot-data-status ${databaseConnected == null ? "connecting" : databaseConnected ? "connected" : "offline"}`}><i aria-hidden="true" />{databaseConnected == null ? "Connecting to data service" : databaseConnected ? "DoraDB read-only" : "Data service offline"}</span><button type="button" onClick={clearConversation}><RotateCcw aria-hidden="true" /> Clear</button></div>
       </div>
 
       <div className="copilot-message-list" aria-live="polite">

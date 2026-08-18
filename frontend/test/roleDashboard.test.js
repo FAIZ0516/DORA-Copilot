@@ -29,6 +29,15 @@ test("the unified entry opens All Squads without a role or squad selection scree
   assert.match(chatSource, /openConversation\(savedId, \{ restoreDashboardScope: false \}\)/);
 });
 
+test("startup uses the database-only readiness probe instead of blocking on full provider health", () => {
+  assert.match(appSource, /\/api\/readiness/);
+  assert.doesNotMatch(appSource, /\/api\/health/);
+  assert.doesNotMatch(appSource, /Promise\.all/);
+  assert.match(appSource, /databaseConnected: null/);
+  assert.match(dashboardSource, /Connecting to DoraDB/);
+  assert.match(chatSource, /Connecting to data service/);
+});
+
 test("All Squads drills into a selected squad and can return to the portfolio", () => {
   assert.equal(defaultDashboardView("head_of_department"), "portfolio");
   assert.match(dashboardSource, /function viewSquad/);

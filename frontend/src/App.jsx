@@ -12,39 +12,28 @@ const ReportStudio = lazy(() => import("./features/report-studio/ReportStudio"))
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const fallbackProjects = [{ key: "DCPM", label: "DCPM", detail: "DoraDB" }];
 function LegacyDoraCopilot() {
-  const [projects, setProjects] = useState(fallbackProjects);
+  const projects = fallbackProjects;
   const [system, setSystem] = useState({
     dataSource: "connecting",
     database: "Checking data source",
-    databaseConnected: false,
+    databaseConnected: null,
     llm: "AI provider",
   });
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      fetch(`${API_BASE}/api/health`).then((response) => {
-        if (!response.ok) throw new Error("Health check failed");
+    fetch(`${API_BASE}/api/readiness`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Readiness check failed");
         return response.json();
-      }),
-      fetch(`${API_BASE}/api/projects`).then((response) => {
-        if (!response.ok) throw new Error("Project lookup failed");
-        return response.json();
-      }),
-    ])
-      .then(([health, projectPayload]) => {
+      })
+      .then((health) => {
         if (!active) return;
-        const mapped = (projectPayload.projects || []).map((project) => ({
-          key: project.key,
-          label: project.name || project.key,
-          detail: "Read-only DoraDB",
-        }));
-        if (mapped.length) setProjects(mapped);
         setSystem({
           dataSource: health.data_source,
           database: health.database,
           databaseConnected: health.database_connected,
-          llm: health.llm_provider,
+          llm: "AI provider",
         });
       })
       .catch(() => {

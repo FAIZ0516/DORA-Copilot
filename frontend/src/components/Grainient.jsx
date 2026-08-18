@@ -157,9 +157,12 @@ export const ZARA_GRAINIENT_THEME = Object.freeze({
   centerX: 0,
   centerY: 0,
   zoom: 0.88,
-  color1: "#18C4FF",
-  color2: "#064FC8",
-  color3: "#031A4A",
+  // Violet rather than blue, so the assistant panel reads as its own surface
+  // instead of a darker continuation of the dashboard beside it. The lightest
+  // stop stays well short of pastel: white body text sits on this directly.
+  color1: "#A855F7",
+  color2: "#6D28D9",
+  color3: "#1A0B3D",
 });
 
 export default function Grainient({
