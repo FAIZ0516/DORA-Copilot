@@ -127,6 +127,7 @@ export class VoiceTransport {
     this.stream = null;
     this.context = null;
     this.node = null;
+    this.silence = null;
     this.source = null;
     this.stopped = false;
     // Assistant playback: a strictly ordered queue so segments never overlap
@@ -201,7 +202,18 @@ export class VoiceTransport {
       }
     };
     this.source.connect(this.node);
-    // Not connected to the destination: capture must never be audible.
+    // A worklet with no path to the destination is never pulled by the
+    // rendering graph, so process() simply never runs and not one frame is
+    // captured. Leaving it unconnected to keep capture silent is what made the
+    // microphone appear dead while the socket sat happily open.
+    //
+    // Routing through a muted gain node gives the graph its path without
+    // making anything audible, which is what feeding the mic back to the
+    // speakers would do.
+    this.silence = this.context.createGain();
+    this.silence.gain.value = 0;
+    this.node.connect(this.silence);
+    this.silence.connect(this.context.destination);
 
     // Starting a session involves two awaits before this point — minting the
     // token and the microphone permission — and the click that authorised it
@@ -335,6 +347,7 @@ export class VoiceTransport {
     try {
       this.node?.port?.close?.();
       this.node?.disconnect();
+      this.silence?.disconnect();
       this.source?.disconnect();
     } catch {
       /* already torn down */

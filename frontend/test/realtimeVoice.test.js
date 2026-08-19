@@ -219,3 +219,29 @@ test("segments already in flight are dropped once the turn is cut off", () => {
   assert.match(source, /cancelledTurns/);
   assert.match(source, /if \(this\.cancelledTurns\.has\(payload\.turn_id\)\) return;/);
 });
+
+test("the capture worklet has a silent path to the destination", () => {
+  // A worklet with no route to the destination is never pulled by the
+  // rendering graph, so process() never runs and not a single frame is
+  // captured. Leaving it unconnected to keep capture inaudible is what made
+  // the microphone look dead while the socket sat open -- the failure the
+  // "No audio is reaching the server" warning was reporting.
+  //
+  // A muted gain node gives the graph its path without routing the microphone
+  // to the speakers.
+  const source = readFileSync(
+    new URL("../src/services/realtimeVoice.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /this\.silence\.gain\.value = 0;/);
+  assert.match(source, /this\.node\.connect\(this\.silence\);/);
+  assert.match(source, /this\.silence\.connect\(this\.context\.destination\);/);
+
+  // The source still feeds the worklet, and the worklet is still the only
+  // thing that reaches the socket.
+  assert.match(source, /this\.source\.connect\(this\.node\);/);
+  assert.doesNotMatch(source, /this\.source\.connect\(this\.context\.destination\)/);
+
+  // And the extra node is torn down with the rest of the graph.
+  assert.match(source, /this\.silence\?\.disconnect\(\);/);
+});
