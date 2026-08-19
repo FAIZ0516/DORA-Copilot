@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import threading
 import os
 import io
 import ssl
@@ -57,6 +58,10 @@ class VoiceModelUnavailable(RuntimeError):
 
 _vad_session = None
 _vad_load_error: str | None = None
+# Serialises the first load. Two sockets opening together both reach for
+# the model at once, and importing onnxruntime and numpy concurrently is
+# what produced a bare "import numpy failed" in production.
+_vad_lock = threading.Lock()
 
 # Silero conditions each frame on the last 64 samples of the previous one, so
 # the tensor it actually scores is 576 wide. Omitting this does not fail -- it
@@ -105,27 +110,44 @@ def load_vad():
         return _vad_session
     if _vad_load_error is not None:
         raise VoiceModelUnavailable(_vad_load_error)
-    try:
-        import onnxruntime
 
-        options = onnxruntime.SessionOptions()
-        # One thread each: frames are tiny and arrive continuously, so thread
-        # pool coordination costs more than the inference it parallelises.
-        options.inter_op_num_threads = 1
-        options.intra_op_num_threads = 1
-        _vad_session = onnxruntime.InferenceSession(
-            str(_vad_model_path()),
-            providers=["CPUExecutionProvider"],
-            sess_options=options,
-        )
-        return _vad_session
-    except Exception as exc:  # noqa: BLE001 - surfaced as a health error
-        _vad_load_error = (
-            "Silero VAD could not be loaded. Install the 'silero-vad' package "
-            f"to enable voice mode ({exc.__class__.__name__})."
-        )
-        logger.warning("Silero VAD unavailable: %s", exc)
-        raise VoiceModelUnavailable(_vad_load_error) from exc
+    with _vad_lock:
+        # Another caller may have finished while this one waited.
+        if _vad_session is not None:
+            return _vad_session
+        try:
+            import onnxruntime
+
+            options = onnxruntime.SessionOptions()
+            # One thread each: frames are tiny and arrive continuously, so
+            # thread pool coordination costs more than the inference it
+            # parallelises.
+            options.inter_op_num_threads = 1
+            options.intra_op_num_threads = 1
+            _vad_session = onnxruntime.InferenceSession(
+                str(_vad_model_path()),
+                providers=["CPUExecutionProvider"],
+                sess_options=options,
+            )
+            return _vad_session
+        except Exception as exc:  # noqa: BLE001 - surfaced as a health error
+            message = (
+                "Silero VAD could not be loaded. Install the 'silero-vad' "
+                f"package to enable voice mode ({exc.__class__.__name__})."
+            )
+            # Only a missing package is permanent. Anything else -- an import
+            # race, a transient file lock -- may succeed next time, and
+            # remembering it disabled voice for the life of the process. That
+            # is exactly what happened: one "import numpy failed" during
+            # start-up left the capability endpoint reporting no voice
+            # detection until the server was restarted.
+            if importlib.util.find_spec("silero_vad") is None:
+                _vad_load_error = message
+            else:
+                logger.warning(
+                    "Silero VAD load failed and will be retried: %s", exc
+                )
+            raise VoiceModelUnavailable(message) from exc
 
 
 def vad_available() -> bool:

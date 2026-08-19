@@ -1,3 +1,8 @@
+"""Voice-activity detection: Silero without PyTorch, loaded once and safely."""
+
+import pytest
+
+
 
 
 # --------------------------------------------------------------------------- #
@@ -114,3 +119,76 @@ def test_each_frame_is_scored_with_the_previous_frames_context():
     detector.probabilities(_frames(3))
 
     assert seen == [(1, VAD_FRAME_SAMPLES + VAD_CONTEXT_SAMPLES)] * 3
+
+
+def test_a_transient_load_failure_is_retried_rather_than_remembered():
+    """One bad import must not disable voice for the life of the process.
+
+    A single "import numpy failed" while two sockets opened together left the
+    capability endpoint reporting no voice detection until the server was
+    restarted -- the UI said "Voice mode needs local voice detection" on a
+    machine where it loads perfectly.
+    """
+
+    import backend.services.voice_audio as voice_audio
+
+    session, error = voice_audio._vad_session, voice_audio._vad_load_error
+    try:
+        voice_audio._vad_session = None
+        voice_audio._vad_load_error = None
+        attempts = []
+
+        def _flaky():
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise ImportError("import numpy failed")
+            return "session"
+
+        original = voice_audio._vad_model_path
+        voice_audio._vad_model_path = _flaky
+        try:
+            with pytest.raises(voice_audio.VoiceModelUnavailable):
+                voice_audio.load_vad()
+            # The package is installed, so the failure is treated as transient.
+            assert voice_audio._vad_load_error is None
+            assert voice_audio.vad_available() is True
+        finally:
+            voice_audio._vad_model_path = original
+    finally:
+        voice_audio._vad_session, voice_audio._vad_load_error = session, error
+
+
+def test_a_genuinely_missing_package_is_remembered():
+    """Retrying an absent package on every frame would be pure waste."""
+
+    import backend.services.voice_audio as voice_audio
+
+    session, error = voice_audio._vad_session, voice_audio._vad_load_error
+    find_spec = voice_audio.importlib.util.find_spec
+    try:
+        voice_audio._vad_session = None
+        voice_audio._vad_load_error = None
+        voice_audio.importlib.util.find_spec = lambda name: None
+
+        with pytest.raises(voice_audio.VoiceModelUnavailable):
+            voice_audio.load_vad()
+        assert voice_audio._vad_load_error is not None
+        assert voice_audio.vad_available() is False
+    finally:
+        voice_audio.importlib.util.find_spec = find_spec
+        voice_audio._vad_session, voice_audio._vad_load_error = session, error
+
+
+def test_the_first_load_is_serialised():
+    """Two sockets opening together must not import onnxruntime concurrently."""
+
+    import inspect
+
+    import backend.services.voice_audio as voice_audio
+
+    assert isinstance(voice_audio._vad_lock, type(__import__("threading").Lock()))
+    body = inspect.getsource(voice_audio.load_vad)
+    assert "with _vad_lock:" in body
+    # And the double-check inside the lock, so the second caller reuses the
+    # session rather than building another.
+    assert body.index("with _vad_lock:") < body.index("import onnxruntime")
