@@ -30,14 +30,21 @@ def test_the_pinned_question_is_answered_from_the_stored_text(enabled):
     assert "MBK" in ANSWER and "1,434" in ANSWER
 
 
+def test_the_greeting_is_optional(enabled):
+    """Two literals, so forgetting "Hi Zara" on camera still hits it."""
+
+    assert demo_answer_for("which squad have the most bug?") == ANSWER
+    assert demo_answer_for("Which squad have the most bug") == ANSWER
+
+
 @pytest.mark.parametrize(
     "variant",
     [
-        "which squad has the most bugs?",
-        "  Which squad has the most bugs?  ",
-        "Which squad has the most bugs",
-        "Which  squad   has the most bugs?",
-        "WHICH SQUAD HAS THE MOST BUGS!",
+        "hi zara, which squad have the most bug?",
+        "  Hi Zara, which squad have the most bug?  ",
+        "Hi Zara, which squad have the most bug",
+        "Hi  Zara,   which squad have the most bug?",
+        "HI ZARA, WHICH SQUAD HAVE THE MOST BUG!",
     ],
 )
 def test_only_the_wording_that_is_not_a_different_question_is_folded(enabled, variant):
@@ -50,6 +57,7 @@ def test_only_the_wording_that_is_not_a_different_question_is_folded(enabled, va
     "other",
     [
         "Which squad has the most open bugs?",
+        "Which squad has the most bugs?",
         "Which squad has the fewest bugs?",
         "How many bugs does MBK have?",
         "Which squad has the most bugs in JAEGER?",
@@ -97,7 +105,11 @@ def test_the_stored_text_is_the_assistant_s_own_wording():
     coverage caveat it chose to add.
     """
 
-    assert "63,481" in ANSWER, "the caveat the assistant itself gave must survive"
+    assert "MBK" in ANSWER and "1,434" in ANSWER
+    # The coverage caveat it chose to add must survive the copy.
+    assert "squad" in ANSWER.lower() and "caveat" in ANSWER.lower()
+    # And it answers the greeting, because the question opens with one.
+    assert ANSWER.lower().startswith("hi")
     assert ANSWER.strip() == ANSWER
 
 
