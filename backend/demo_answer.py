@@ -8,7 +8,9 @@ things:
 
 * It is off unless ``DEMO_ANSWER_ENABLED`` is set, so it cannot fire in normal
   use or on a deployed instance.
-* It matches one question exactly. No fuzzy matching, no "close enough" -- a
+* It matches one question. Greeting, case, spacing and singular/plural are
+  folded, because none of those changes what is being asked; every other
+  word must match exactly. No similarity score and no "close enough", so a
   different question always reaches the real agent.
 * The text below is not written by hand. The assistant was asked this exact
   question several times and one of its own replies was copied verbatim --
@@ -31,14 +33,6 @@ logger = logging.getLogger(__name__)
 
 QUESTION = "Hi Zara, which squad have the most bug?"
 
-# Accepted verbatim, both with and without the greeting. Two literals, not
-# a fuzzy match: dropping "Hi Zara," leaves the same question, and on
-# camera the greeting is easy to forget.
-ACCEPTED = (
-    QUESTION,
-    "which squad have the most bug?",
-)
-
 ANSWER = (
     "Hi! Based on the DCPM data as of the current snapshot, **MBK** is the squad with the most bugs \u2014 1,434, more than any other squad.\n"
     "\n"
@@ -55,15 +49,28 @@ ANSWER = (
 ANSWER_SOURCE = "demo-template"
 
 
-def _normalise(message: str) -> str:
-    """Fold the differences that are not the user asking something else.
+# An opening greeting, which is address rather than question.
+_GREETING = re.compile(r"^(?:hi|hey|hello)\b[\s,]*(?:zara\b[\s,]*)?", re.I)
 
-    Case, spacing and a trailing question mark. Nothing more: matching loosely
-    is how a pinned answer would start appearing on questions it does not
-    actually answer.
+# Grammar that differs without the question differing. Singular and plural of
+# the same nouns, and the verb that agrees with them: "which squads have the
+# most bugs" asks precisely what "which squad has the most bug" asks.
+_GRAMMAR = {"squads": "squad", "bugs": "bug", "teams": "team", "has": "have", "is": "are"}
+
+
+def _normalise(message: str) -> str:
+    """Fold what is phrasing, and nothing that is meaning.
+
+    Case, spacing, a trailing question mark, an opening greeting, and
+    singular/plural agreement. Deliberately not a similarity score: every
+    remaining word must still match exactly, so "which squad has the most
+    *open* bugs" keeps its extra word and stays a different question -- which
+    it is, being a different number.
     """
 
-    return re.sub(r"\s+", " ", (message or "").strip().lower()).rstrip("?.! ")
+    text = re.sub(r"\s+", " ", (message or "").strip().lower()).rstrip("?.! ")
+    text = _GREETING.sub("", text).strip()
+    return " ".join(_GRAMMAR.get(word, word) for word in text.split())
 
 
 def demo_answer_for(message: str) -> str | None:
@@ -71,7 +78,7 @@ def demo_answer_for(message: str) -> str | None:
 
     if not settings.demo_answer_enabled:
         return None
-    if _normalise(message) not in {_normalise(q) for q in ACCEPTED}:
+    if _normalise(message) != _normalise(QUESTION):
         return None
     logger.info("Serving the pinned demo answer for %r", QUESTION)
     return ANSWER
@@ -98,7 +105,6 @@ def demo_result(message: str) -> dict[str, object]:
 
 
 __all__ = [
-    "ACCEPTED",
     "ANSWER",
     "ANSWER_SOURCE",
     "QUESTION",

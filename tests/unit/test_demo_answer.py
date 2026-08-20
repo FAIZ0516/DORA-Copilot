@@ -31,20 +31,48 @@ def test_the_pinned_question_is_answered_from_the_stored_text(enabled):
 
 
 def test_the_greeting_is_optional(enabled):
-    """Two literals, so forgetting "Hi Zara" on camera still hits it."""
+    """Forgetting "Hi Zara" on camera must still hit it."""
 
     assert demo_answer_for("which squad have the most bug?") == ANSWER
     assert demo_answer_for("Which squad have the most bug") == ANSWER
 
 
+def test_an_added_qualifier_is_a_different_question(enabled):
+    """The folding is grammar only -- every other word must still match.
+
+    "most open bugs" is a different number from "most bugs", so it has to
+    reach the real agent no matter how close the sentence looks.
+    """
+
+    for question in [
+        "Hi Zara, which squads have the most open bugs?",
+        "Hi Zara, which squads have the most bugs in JAEGER?",
+        "Hi Zara, which squads have the fewest bugs?",
+    ]:
+        assert demo_answer_for(question) is None, question
+
+
 @pytest.mark.parametrize(
     "variant",
     [
+        # As pinned.
+        "Hi Zara, which squad have the most bug?",
+        # Case, spacing, end punctuation.
         "hi zara, which squad have the most bug?",
         "  Hi Zara, which squad have the most bug?  ",
         "Hi Zara, which squad have the most bug",
         "Hi  Zara,   which squad have the most bug?",
         "HI ZARA, WHICH SQUAD HAVE THE MOST BUG!",
+        # Singular or plural, and the verb that agrees with it. Asking about
+        # "squads" and "bugs" is the same question, and this is the phrasing
+        # that reads most naturally out loud.
+        "Hi Zara, which squads have the most bugs?",
+        "Which squad has the most bugs?",
+        "which squads have the most bugs?",
+        # The greeting is address, not question.
+        "Hello Zara, which squads have the most bugs",
+        "hi, which squad has the most bugs?",
+        "Hey Zara which squads have the most bugs?",
     ],
 )
 def test_only_the_wording_that_is_not_a_different_question_is_folded(enabled, variant):
@@ -57,7 +85,9 @@ def test_only_the_wording_that_is_not_a_different_question_is_folded(enabled, va
     "other",
     [
         "Which squad has the most open bugs?",
-        "Which squad has the most bugs?",
+        "Hi Zara, which squad has the most open bugs?",
+        "Which squad has the most bugs this month?",
+        "Which release has the most bugs?",
         "Which squad has the fewest bugs?",
         "How many bugs does MBK have?",
         "Which squad has the most bugs in JAEGER?",
