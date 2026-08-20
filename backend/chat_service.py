@@ -14,6 +14,7 @@ update. The route keeps the HTTP concerns -- status codes and dependencies.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 from uuid import UUID
 
@@ -24,6 +25,7 @@ from .conversation_context import persistent_context, recent_history, update_per
 from .conversation_repository import ConversationRepository
 from .database.db import Conversation
 from .database.doradb import doradb_session
+from .demo_answer import demo_answer_for, demo_result
 from .doradb_agent import DoraDbAgent
 
 logger = logging.getLogger(__name__)
@@ -132,7 +134,13 @@ def run_chat_turn(
     )
     agent_context = seed_agent_context(conversation, dashboard_context, project_scope)
 
-    if settings.doradb_configured:
+    # One pinned question, for recording a demonstration. Checked before any
+    # planning so nothing else in the turn is touched, and disabled unless the
+    # flag is set -- see demo_answer.py for why it is fenced this tightly.
+    if demo_answer_for(message) is not None:
+        time.sleep(settings.demo_answer_delay_seconds)
+        result = demo_result(message)
+    elif settings.doradb_configured:
         with doradb_session() as real_session:
             result = DoraDbAgent(real_session).chat(
                 message,

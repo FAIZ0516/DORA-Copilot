@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     ollama_planner_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
     ollama_response_temperature: float = Field(default=0.3, ge=0.0, le=1.0)
 
+    # One question may be answered from a stored response, for recording a
+    # demonstration without waiting on a live answer. Off by default: it must
+    # never fire in normal use or on a deployed instance. See demo_answer.py.
+    demo_answer_enabled: bool = False
+    # Held before replying, so the pinned answer still looks like thinking
+    # rather than appearing instantly.
+    demo_answer_delay_seconds: float = Field(default=5.0, ge=0.0, le=30.0)
+
     elevenlabs_api_key: str = ""
     # Alice: British, clear, professional, tagged by ElevenLabs for
     # informative/educational use -- which is the job Zara actually does.
