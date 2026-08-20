@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     demo_answer_enabled: bool = False
     # Held before replying, so the pinned answer still looks like thinking
     # rather than appearing instantly.
-    demo_answer_delay_seconds: float = Field(default=5.0, ge=0.0, le=30.0)
+    demo_answer_delay_seconds: float = Field(default=4.0, ge=0.0, le=30.0)
 
     elevenlabs_api_key: str = ""
     # Alice: British, clear, professional, tagged by ElevenLabs for

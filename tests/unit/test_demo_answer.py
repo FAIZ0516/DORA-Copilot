@@ -128,6 +128,6 @@ def test_the_turn_short_circuits_before_any_planning(enabled):
 
 
 def test_the_delay_is_configurable_and_bounded():
-    assert settings.demo_answer_delay_seconds == 5.0
+    assert settings.demo_answer_delay_seconds == 4.0
     field = type(settings).model_fields["demo_answer_delay_seconds"]
     assert any(getattr(m, "le", None) == 30 for m in field.metadata)
