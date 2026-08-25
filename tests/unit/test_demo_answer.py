@@ -10,7 +10,7 @@ import pytest
 
 from backend import demo_answer
 from backend.config import settings
-from backend.demo_answer import ANSWER, QUESTION, demo_answer_for, demo_result
+from backend.demo_answer import ANSWER, PINNED, QUESTION, demo_answer_for, demo_result
 
 
 @pytest.fixture
@@ -161,3 +161,75 @@ def test_the_delay_is_configurable_and_bounded():
     assert settings.demo_answer_delay_seconds == 4.0
     field = type(settings).model_fields["demo_answer_delay_seconds"]
     assert any(getattr(m, "le", None) == 30 for m in field.metadata)
+
+
+# --------------------------------------------------------------------------- #
+# The second pinned answer: last year's releases                              #
+# --------------------------------------------------------------------------- #
+
+RELEASES = PINNED[1]
+
+
+def test_a_second_question_can_be_pinned_without_disturbing_the_first(enabled):
+    assert len(PINNED) == 2
+    assert demo_answer_for(PINNED[0].question) == PINNED[0].answer
+    assert demo_answer_for(RELEASES.question) == RELEASES.answer
+    assert PINNED[0].answer != RELEASES.answer
+
+
+@pytest.mark.parametrize(
+    "variant",
+    [
+        "Hi Zara, how many releases did we ship last year?",
+        "how many releases did we ship last year?",
+        "Hi Zara, how many release did we ship last year",
+        "HOW MANY RELEASES DID WE SHIP LAST YEAR!",
+        "Hello Zara,  how many releases did we ship last year?",
+    ],
+)
+def test_the_release_question_is_matched_however_it_is_said(enabled, variant):
+    assert demo_answer_for(variant) == RELEASES.answer
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        # A named year is a different year's number.
+        "Hi Zara, how many releases did we ship in 2024?",
+        "Hi Zara, how many releases did we ship this year?",
+        # A squad scope is a different count.
+        "Hi Zara, how many releases did MBK ship last year?",
+        # A different noun entirely.
+        "Hi Zara, how many bugs did we ship last year?",
+    ],
+)
+def test_a_narrower_release_question_still_reaches_the_agent(enabled, other):
+    assert demo_answer_for(other) is None
+
+
+def test_the_release_answer_is_detailed_but_not_long(enabled):
+    """The point of pinning this one was a fuller answer, not just a faster one.
+
+    It has to stay readable on screen, so length is bounded as well as
+    floored -- a wall of text is as bad on camera as a bare number.
+    """
+
+    words = len(RELEASES.answer.split())
+    assert 70 <= words <= 140, f"{words} words"
+    # Structured rather than a paragraph blob.
+    assert RELEASES.answer.count('\n- ') >= 3
+    # And it answers the greeting, since the question opens with one.
+    assert RELEASES.answer.lower().startswith("hi")
+
+
+def test_every_figure_in_the_release_answer_is_one_the_data_supports():
+    """Verified against dora_metrics_by_year for 2025 when it was captured.
+
+    A pinned answer states numbers nobody re-derives at demo time, so the
+    numbers have to be the database's own. These are the 2025 row: five
+    releases, 2.29 months apart, no recorded failures, a one-month lead time,
+    5.28 months of cycle time, over 1,201 stories and 182 feature references.
+    """
+
+    for figure in ("5 releases", "2.29", "0%", "1.0 month", "5.28", "1,201", "182"):
+        assert figure in RELEASES.answer, figure
