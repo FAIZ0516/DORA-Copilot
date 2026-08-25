@@ -440,3 +440,77 @@ def test_the_fallback_voice_matches_the_one_it_replaces() -> None:
     # The refused voice is passed in so its labels can be matched.
     caller = inspect.getsource(tts.create_audio_stream)
     assert "_premade_voice_id(voice_id)" in caller
+
+
+# --------------------------------------------------------------------------- #
+# Deployed origins                                                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_a_deployed_origin_is_allowed_without_being_listed(monkeypatch):
+    """A frontend's URL is not known when the defaults are written.
+
+    Deployed, that showed up as a bare "Failed to fetch" with nothing to act
+    on: the browser's wording for a blocked preflight.
+    """
+
+    from backend.config import settings
+    from backend.voice_session import origin_allowed
+
+    monkeypatch.setattr(settings, "cors_origin_regex", r"https://[A-Za-z0-9-]+\.onrender\.com")
+    assert origin_allowed("https://zara-frontend.onrender.com") is True
+    assert origin_allowed("https://zara-frontend.onrender.com/") is True
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://zara-frontend.onrender.com",   # not https
+        "https://evil.com",
+        "https://onrender.com.evil.com",
+        "https://a.b.onrender.com",            # only one label is matched
+        "",
+    ],
+)
+def test_the_pattern_does_not_open_the_socket_to_anything_else(monkeypatch, origin):
+    """The socket check is the only thing stopping another site using a token."""
+
+    from backend.config import settings
+    from backend.voice_session import origin_allowed
+
+    monkeypatch.setattr(settings, "cors_origin_regex", r"https://[A-Za-z0-9-]+\.onrender\.com")
+    assert origin_allowed(origin) is False
+
+
+def test_the_socket_and_the_http_api_agree_on_origins():
+    """They must use the same rule, or the failure only moves.
+
+    Widening CORS alone would let the session be minted and then have the
+    socket refuse the very origin the API had just accepted -- "cannot start"
+    becoming "connection lost" rather than going away.
+    """
+
+    import inspect
+
+    from backend import voice_session
+
+    body = inspect.getsource(voice_session.origin_allowed)
+    assert "settings.cors_origin_pattern" in body
+    assert "settings.cors_origin_list" in body
+
+
+def test_the_platform_default_applies_only_on_the_platform(monkeypatch):
+    """Locally there is no pattern at all; the explicit list still rules."""
+
+    from backend.config import Settings
+
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.delenv("CORS_ORIGIN_REGEX", raising=False)
+    assert Settings().cors_origin_pattern is None
+
+    monkeypatch.setenv("RENDER", "true")
+    assert "onrender" in (Settings().cors_origin_pattern or "")
+
+    # An explicit setting always wins over the platform guess.
+    monkeypatch.setenv("CORS_ORIGIN_REGEX", r"https://mine\.example\.com")
+    assert Settings().cors_origin_pattern == r"https://mine\.example\.com"

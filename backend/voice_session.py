@@ -14,6 +14,7 @@ for opening a session do live in ``schemas.py``.
 
 from __future__ import annotations
 
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -284,7 +285,15 @@ def origin_allowed(origin: str | None) -> bool:
     allowed = {value.strip().rstrip("/") for value in settings.cors_origin_list if value.strip()}
     if "*" in allowed:
         return True
-    return origin.strip().rstrip("/") in allowed
+    candidate = origin.strip().rstrip("/")
+    if candidate in allowed:
+        return True
+    # The same pattern the CORS middleware uses. Without this the socket would
+    # reject exactly the deployed origins the HTTP API had just accepted, and
+    # the failure would move from "cannot start" to "connection lost" rather
+    # than going away.
+    pattern = settings.cors_origin_pattern
+    return bool(pattern and re.fullmatch(pattern, candidate))
 
 
 __all__ = [

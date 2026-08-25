@@ -29,18 +29,46 @@ export async function fetchVoiceCapabilities() {
   return response.json();
 }
 
-/** Mint a short-lived socket token over the authenticated HTTP API. */
+/** Mint a short-lived socket token over the authenticated HTTP API.
+ *
+ * Retried once. A deployed API that has idled out takes a few seconds to wake,
+ * and the first request through hits a closed door -- indistinguishable, from
+ * the browser, from the service being broken.
+ */
 export async function openVoiceSession(payload) {
-  const response = await fetch(`${API_BASE}/api/voice/session`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify(payload || {}),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || "Voice mode could not be started.");
+  let networkFailure = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(`${API_BASE}/api/voice/session`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify(payload || {}),
+      });
+    } catch (failure) {
+      // fetch() rejects without a status for a refused connection, a blocked
+      // CORS preflight, or a service that is still starting. The browser's own
+      // wording for all three is "Failed to fetch", which tells nobody
+      // anything, so say what it actually means and where to look.
+      networkFailure = failure;
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        continue;
+      }
+      throw new Error(
+        "Could not reach the voice service. The server may still be starting, "
+        + "or this page's address may not be allowed to call the API. Check "
+        + "the browser console for a CORS message, and the server log for a "
+        + "restart.",
+      );
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || `Voice mode could not be started (HTTP ${response.status}).`);
+    }
+    return response.json();
   }
-  return response.json();
+  throw networkFailure || new Error("Voice mode could not be started.");
 }
 
 export async function closeVoiceSession(token) {

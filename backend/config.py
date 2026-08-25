@@ -1,5 +1,7 @@
 """Typed application configuration loaded from the repository-level .env file."""
 
+import os
+
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -20,6 +22,13 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    # Origins matched by pattern rather than listed one by one. A deployed
+    # frontend's URL is not known when this default is written, and getting it
+    # wrong presents to the user as a bare "Failed to fetch" with nothing to
+    # act on. Set CORS_ORIGIN_REGEX to pin it down; left empty on Render, the
+    # platform's own domain is allowed so a fresh deploy works before anyone
+    # has configured anything.
+    cors_origin_regex: str = ""
 
     database_url: str = f"sqlite:///{(ROOT_DIR / 'backend' / 'dora_runtime.db').as_posix()}"
     assistant_database_schema: str = "ai_assistant"
@@ -159,6 +168,27 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def cors_origin_pattern(self) -> str | None:
+        """A regex of additionally allowed origins, or ``None`` for the list only.
+
+        An explicit setting always wins. Otherwise, when running on Render --
+        which sets ``RENDER`` in every service -- the platform's own https
+        domain is allowed, because a frontend and an API deployed there sit on
+        different origins and neither knows the other's URL at build time.
+
+        This is deliberately narrow: https only, and one label under
+        onrender.com. It is still a widening, so an installation that wants to
+        name its frontend exactly should set CORS_ORIGIN_REGEX or list it in
+        CORS_ORIGINS.
+        """
+
+        if self.cors_origin_regex:
+            return self.cors_origin_regex
+        if os.getenv("RENDER"):
+            return r"https://[A-Za-z0-9-]+\.onrender\.com"
+        return None
 
     @property
     def doradb_configured(self) -> bool:
