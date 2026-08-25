@@ -215,7 +215,7 @@ def test_the_release_answer_is_detailed_but_not_long(enabled):
     """
 
     words = len(RELEASES.answer.split())
-    assert 70 <= words <= 140, f"{words} words"
+    assert 55 <= words <= 120, f"{words} words"
     # Structured rather than a paragraph blob.
     assert RELEASES.answer.count('\n- ') >= 3
     # And it answers the greeting, since the question opens with one.
@@ -227,12 +227,24 @@ def test_every_figure_in_the_release_answer_is_one_the_data_supports():
 
     A pinned answer states numbers nobody re-derives at demo time, so the
     numbers have to be the database's own. These are the 2025 row: five
-    releases, 2.29 months apart, no recorded failures, a one-month lead time,
-    5.28 months of cycle time, over 1,201 stories and 182 feature references.
+    releases, 2.29 months apart, no recorded failures, a one-month lead time
+    and 5.28 months of cycle time.
     """
 
-    for figure in ("5 releases", "2.29", "0%", "1.0 month", "5.28", "1,201", "182"):
+    for figure in ("5 releases", "2.29", "0%", "1.0 month", "5.28"):
         assert figure in RELEASES.answer, figure
+
+
+def test_the_release_answer_ends_on_the_metrics():
+    """The story-volume line and the snapshot date were cut at the owner's ask.
+
+    The date in particular would have aged: it named the day it was captured,
+    so a recording made later would show a stale one for no benefit.
+    """
+
+    assert "1,201" not in RELEASES.answer
+    assert "snapshot" not in RELEASES.answer
+    assert RELEASES.answer.rstrip().endswith("through release")
 
 
 # --------------------------------------------------------------------------- #

@@ -65,11 +65,7 @@ PINNED: tuple[PinnedAnswer, ...] = (
             "- **Release frequency:** average 2.29 months between releases\n"
             "- **Change failure rate:** 0%\n"
             "- **Lead time for change:** 1.0 month average\n"
-            "- **Delivery cycle time:** 5.28 months average from development start through release\n"
-            "\n"
-            "Those releases were tied to 1,201 user stories and 182 feature references, so the cadence supported a substantial amount of delivery volume.\n"
-            "\n"
-            "This reflects DCPM data in the 2026-08-25 snapshot, covering the 2025 release year."
+            "- **Delivery cycle time:** 5.28 months average from development start through release"
         ),
     ),
 )
