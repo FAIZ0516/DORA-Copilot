@@ -94,24 +94,39 @@ _GRAMMAR = {
     "bugs": "bug",
     "teams": "team",
     "releases": "release",
+    "shipped": "ship",
     "has": "have",
     "is": "are",
 }
+
+# Words that join a question together without saying anything about what is
+# being asked. Speech recognition swaps between them freely -- a spoken "how
+# many releases did we ship last year" came back as "how many release that we
+# ship last year", which is the same question and matched nothing.
+#
+# Only auxiliaries and relativisers belong here. They can never carry the
+# subject or the scope, so dropping them cannot turn one question into
+# another: "did MBK ship" still keeps MBK, and "in 2024" still keeps the year.
+_FILLER = frozenset({"did", "do", "does", "that"})
 
 
 def _normalise(message: str) -> str:
     """Fold what is phrasing, and nothing that is meaning.
 
-    Case, spacing, a trailing question mark, an opening greeting, and
-    singular/plural agreement. Deliberately not a similarity score: every
-    remaining word must still match exactly, so "which squad has the most
-    *open* bugs" keeps its extra word and stays a different question -- which
-    it is, being a different number.
+    Case, spacing, a trailing question mark, an opening greeting,
+    singular/plural agreement, and the auxiliaries that hold a question
+    together without saying anything.
+
+    Deliberately not a similarity score: every remaining word must still
+    match exactly, so "which squad has the most *open* bugs" keeps its extra
+    word and stays a different question -- which it is, being a different
+    number. Same for a named year and a named squad.
     """
 
     text = re.sub(r"\s+", " ", (message or "").strip().lower()).rstrip("?.! ")
     text = _GREETING.sub("", text).strip()
-    return " ".join(_GRAMMAR.get(word, word) for word in text.split())
+    words = (_GRAMMAR.get(word, word) for word in text.split())
+    return " ".join(word for word in words if word not in _FILLER)
 
 
 def demo_answer_for(message: str) -> str | None:

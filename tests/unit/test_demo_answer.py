@@ -233,3 +233,51 @@ def test_every_figure_in_the_release_answer_is_one_the_data_supports():
 
     for figure in ("5 releases", "2.29", "0%", "1.0 month", "5.28", "1,201", "182"):
         assert figure in RELEASES.answer, figure
+
+
+# --------------------------------------------------------------------------- #
+# What speech recognition does to a question                                  #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "spoken",
+    [
+        # Observed live: the transcript said "that we ship", not "did we ship",
+        # so the pinned answer missed and the demo took the long way round.
+        "How many release that we ship last year?",
+        "how many releases that we shipped last year",
+        "Hi Zara, how many release do we ship last year?",
+        "which squad that have the most bug?",
+    ],
+)
+def test_a_transcript_that_swaps_an_auxiliary_still_matches(enabled, spoken):
+    """Whisper varies the joining words between takes.
+
+    Those words hold a question together without saying anything about what is
+    asked, so a swap between them is not a different question -- but it was
+    enough to miss an exact match, on the one path where the wording is not
+    typed and cannot be corrected.
+    """
+
+    assert demo_answer_for(spoken) is not None
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        # Dropping auxiliaries must not drop the subject ...
+        "Hi Zara, how many releases did MBK ship last year?",
+        # ... the period ...
+        "Hi Zara, how many releases did we ship in 2024?",
+        "Hi Zara, how many releases did we ship this year?",
+        # ... or the thing being counted.
+        "Hi Zara, how many bugs did we ship last year?",
+        "Hi Zara, which release have the most bugs?",
+        "Hi Zara, which squads have the most open bugs?",
+    ],
+)
+def test_folding_the_joining_words_cannot_turn_one_question_into_another(enabled, other):
+    """Only auxiliaries and relativisers are dropped, never a noun."""
+
+    assert demo_answer_for(other) is None
