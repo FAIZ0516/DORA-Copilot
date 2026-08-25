@@ -108,8 +108,8 @@ class Settings(BaseSettings):
     elevenlabs_max_chars_per_request: int = Field(default=2000, ge=1, le=5000)
     elevenlabs_monthly_char_limit: int = Field(default=10_000, ge=1, le=1_000_000)
 
-    # Realtime voice conversation. Speech recognition and voice-activity
-    # detection run locally; DeepSeek remains the only LLM, and every question
+    # Realtime voice conversation. Detection is local and tiny; transcription
+    # is hosted by default. DeepSeek remains the only LLM, and every question
     # still goes through the governed agent.
     voice_mode_enabled: bool = True
     # "groq" sends the utterance to Groq's hosted Whisper and loads no model
@@ -117,7 +117,14 @@ class Settings(BaseSettings):
     # instance. "faster-whisper" keeps everything on the machine.
     voice_stt_provider: Literal["faster-whisper", "groq"] = "faster-whisper"
     voice_tts_provider: Literal["elevenlabs"] = "elevenlabs"
-    voice_vad_provider: Literal["silero"] = "silero"
+    # WebRTC rather than a neural detector. Silero ran on onnxruntime, whose
+    # arenas took a 512 MB instance past its limit the moment a voice socket
+    # opened -- Render killed the process with exit status 137 every time.
+    voice_vad_provider: Literal["webrtc"] = "webrtc"
+    # 0 is permissive, 3 discards the most non-speech. 2 is conservative
+    # enough to keep quiet speech while rejecting room noise; the utterance
+    # state machine absorbs the rest.
+    voice_vad_aggressiveness: int = Field(default=2, ge=0, le=3)
     # Silence that ends an utterance. Too short cuts people off mid-sentence;
     # too long makes the assistant feel unresponsive.
     voice_end_silence_ms: int = Field(default=700, ge=200, le=5_000)
@@ -127,8 +134,8 @@ class Settings(BaseSettings):
     # own voice can reach the microphone, and a syllable of that must not be
     # mistaken for the user cutting in.
     voice_barge_in_ms: int = Field(default=600, ge=200, le=3_000)
-    # Audio kept from just before speech is detected. Silero needs to hear a
-    # little speech before it will say so, and without this that run-up is
+    # Audio kept from just before speech is detected. A detector needs to hear
+    # some speech before it will say so, and without this that run-up is
     # discarded -- "Give me a full breakdown" was reaching the agent as "me a
     # full breakdown". Whisper is unbothered by the leading silence.
     voice_preroll_ms: int = Field(default=800, ge=0, le=3_000)

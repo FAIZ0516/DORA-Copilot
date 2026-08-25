@@ -5,8 +5,9 @@ rest of the API and mints a short-lived opaque token bound to the caller and
 their conversation. ``WS /api/voice/session/{token}`` carries only that token,
 because browsers cannot attach the development-session header to a socket.
 
-The socket streams microphone PCM in, runs Silero to find utterance boundaries,
-transcribes with local Whisper, and then runs the transcript through
+The socket streams microphone PCM in, reframes it for WebRTC's voice-activity
+detector to find utterance boundaries, transcribes the result, and then runs
+the transcript through
 ``chat_service.run_chat_turn`` -- the same governed workflow as POST /api/chat,
 with the same approved queries, guardrails, evidence validation and
 persistence. Nothing here talks to DeepSeek directly and nothing bypasses the
@@ -47,7 +48,7 @@ from ..schemas import (
 from ..services.voice_audio import (
     VAD_FRAME_BYTES,
     VAD_FRAME_SAMPLES,
-    SileroVad,
+    WebRtcVad,
     UtteranceDetector,
     VoiceModelUnavailable,
     stt_available,
@@ -109,10 +110,17 @@ def capabilities() -> VoiceCapabilityResponse:
                 "Hosted speech recognition is selected but GROQ_API_KEY is not "
                 "configured on the server."
             )
+        elif not vad:
+            detail = (
+                "Voice detection is unavailable: the 'webrtcvad-wheels' package "
+                "is not installed. Run "
+                "'pip install -r backend/requirements.txt' on the server."
+            )
         else:
             detail = (
-                f"Voice mode needs local {' and '.join(missing)}, which could not be "
-                "loaded. Install the voice dependencies from backend/requirements.txt."
+                "Local speech recognition could not be loaded. Either install "
+                "backend/requirements-voice-local.txt, or set "
+                "VOICE_STT_PROVIDER=groq to use hosted transcription."
             )
     return VoiceCapabilityResponse(
         enabled=True, stt_available=stt, vad_available=vad,
@@ -417,9 +425,10 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
     await socket.accept()
     sender = _Sender(socket)
     try:
-        # Its own detector. Silero is recurrent, and a shared one would let two
-        # simultaneous conversations interleave their audio through one state.
-        vad = SileroVad()
+        # Its own detector. WebRTC's carries an adaptive noise estimate, and a
+        # shared one would let two simultaneous conversations interleave their
+        # audio through a single state.
+        vad = WebRtcVad()
     except VoiceModelUnavailable as exc:
         await _send(sender, ServerEvent(type="error", detail=str(exc), recoverable=False))
         await socket.close(code=CLOSE_UNAUTHORISED, reason="Voice models unavailable.")
@@ -549,10 +558,15 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
 
             pending.extend(chunk)
 
-            # Silero needs exact frames; anything left over waits for more
-            # audio. The whole message is scored in one worker call rather than
-            # one hop per frame -- the hop overhead was larger than the
-            # inference and showed up as lag before the assistant reacted.
+            # Reframe the byte stream. The browser emits 512-sample chunks and
+            # WebRTC accepts only 480, so message boundaries and frame
+            # boundaries never line up: `pending` carries the remainder into
+            # the next message, which is what stops samples being dropped,
+            # duplicated or reordered at the seam.
+            #
+            # The whole message is scored in one worker call rather than one
+            # hop per frame -- the hop overhead was larger than the detection
+            # and showed up as lag before the assistant reacted.
             frames: list[bytes] = []
             while len(pending) >= VAD_FRAME_BYTES:
                 frames.append(bytes(pending[:VAD_FRAME_BYTES]))
@@ -625,9 +639,10 @@ async def voice_socket(socket: WebSocket, token: str) -> None:
                 event = detector.feed(probability)
                 if event == "start":
                     # Start the utterance with the audio from just before it was
-                    # detected. Silero has to hear speech before it can report
-                    # it, so by the time it does, the first syllable is already
-                    # behind us -- that is where the missing first words went.
+                    # detected. A detector has to hear speech before it can
+                    # report it, so by the time it does, the first syllable is
+                    # already behind us -- that is where the missing first
+                    # words went.
                     buffer = bytearray(b"".join(recent))
                     buffer.extend(frame)
                     recent.clear()

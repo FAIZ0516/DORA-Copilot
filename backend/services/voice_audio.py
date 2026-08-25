@@ -1,18 +1,22 @@
 """Voice-activity detection and speech-to-text for the realtime voice session.
 
-Both models run locally and are lazy-loaded once per process: importing them at
-module scope would make every backend start pay for a model load even when
-nobody uses voice, and would break the app entirely when the optional
-dependencies are absent.
+Neither of these is a language model. One decides whether a frame contains
+speech, the other turns speech into text; DeepSeek remains the only LLM, and
+every transcript still goes through the governed agent.
 
-Neither of these is a language model. Whisper transcribes audio and Silero
-detects speech; DeepSeek remains the only LLM, and every transcript still goes
-through the governed agent.
+Detection uses WebRTC's voice-activity detector: a few kilobytes of signal
+processing, no model file, no tensor runtime. It replaced Silero-on-onnxruntime
+because a 512 MB instance was being killed with exit status 137 the moment a
+voice socket opened and the model initialised. WebRTC is less discerning --
+it separates speech from silence rather than speech from other sound -- and the
+utterance state machine above it absorbs that, holding the same start, end,
+minimum-duration and barge-in behaviour.
 
-Silero runs on onnxruntime directly rather than through its PyTorch wrapper.
-The wrapper only ever used torch to carry arrays into onnxruntime and back, so
-this is the same arithmetic without loading the largest dependency in the
-project to act as a container.
+Transcription is hosted by default, which is the other half of the same
+problem: ``VOICE_STT_PROVIDER=groq`` uploads the utterance and loads nothing
+locally. The local faster-whisper path is still supported and still lazy, so a
+machine with the optional dependencies installed can run entirely offline while
+a small instance never imports them.
 """
 
 from __future__ import annotations
@@ -37,11 +41,20 @@ logger = logging.getLogger(__name__)
 # 16-bit mono PCM at the configured rate is what the browser worklet sends and
 # what both models expect.
 BYTES_PER_SAMPLE = 2
-# Silero operates on fixed 512-sample frames at 16 kHz.
-VAD_FRAME_SAMPLES = 512
+# WebRTC's detector accepts 10, 20 or 30 ms of audio and nothing else. 30 ms is
+# the longest, so it costs the fewest calls per second and gives the detector
+# the most context per decision -- 480 samples at 16 kHz.
+#
+# The browser sends 512-sample chunks, which is deliberately *not* this number.
+# The socket reframes the byte stream rather than trusting message boundaries;
+# see the reframing loop in api/voice.py.
+VAD_FRAME_MS = 30
+VAD_FRAME_SAMPLES = 480
 VAD_FRAME_BYTES = VAD_FRAME_SAMPLES * BYTES_PER_SAMPLE
-# Above this the frame is speech. Silero is well behaved around 0.5; lower
-# values start treating keyboard noise as speech.
+# WebRTC answers yes or no rather than a probability, so the detector reports
+# 1.0 or 0.0 and this threshold simply separates them. It is kept because
+# UtteranceDetector is written against probabilities and is worth leaving that
+# way: it stays testable without a detector at all.
 VAD_SPEECH_THRESHOLD = 0.5
 # An utterance shorter than this is a cough, a click or a door -- never a
 # question. Dropping it here is what stops empty turns reaching the agent.
@@ -56,176 +69,128 @@ class VoiceModelUnavailable(RuntimeError):
 # Voice activity detection                                                    #
 # --------------------------------------------------------------------------- #
 
-_vad_session = None
 _vad_load_error: str | None = None
-# Serialises the first load. Two sockets opening together both reach for
-# the model at once, and importing onnxruntime and numpy concurrently is
-# what produced a bare "import numpy failed" in production.
+# Serialises the first import. Two sockets opening together both reach for the
+# detector at once, and importing a native extension concurrently is what
+# produced a bare "import numpy failed" in production under the previous
+# detector. The lock costs nothing and removes the class of failure.
 _vad_lock = threading.Lock()
-
-# Silero conditions each frame on the last 64 samples of the previous one, so
-# the tensor it actually scores is 576 wide. Omitting this does not fail -- it
-# quietly returns different, worse probabilities.
-VAD_CONTEXT_SAMPLES = 64
-# Shape of Silero's recurrent state: (2, batch, 128).
-VAD_STATE_SHAPE = (2, 1, 128)
-
-
-def _vad_model_path():
-    """Locate the ONNX model inside the installed silero-vad package.
-
-    ``find_spec`` reads the package's location without executing it, which is
-    the point: importing ``silero_vad`` pulls in PyTorch, and PyTorch is the
-    single largest thing this process would ever load.
-    """
-
-    from pathlib import Path
-
-    spec = importlib.util.find_spec("silero_vad")
-    if spec is None or not spec.submodule_search_locations:
-        raise FileNotFoundError("the silero-vad package is not installed")
-    root = Path(list(spec.submodule_search_locations)[0])
-    # The 'half' variant is fp16 and not what the reference wrapper uses.
-    models = sorted(p for p in root.rglob("*.onnx") if "half" not in p.name)
-    if not models:
-        raise FileNotFoundError(f"no ONNX model found under {root}")
-    return models[0]
 
 
 def load_vad():
-    """Open the shared ONNX session once per process.
+    """Return the webrtcvad module, importing it once per process.
 
-    Silero ships as an ONNX graph, and the library's own wrapper runs it
-    through onnxruntime -- it uses PyTorch only to hold arrays on the way in
-    and out, calling ``.numpy()`` before every inference. Going straight to
-    onnxruntime with numpy is the same arithmetic (verified bit-identical)
-    without a ~200 MB dependency loaded to act as a container.
-
-    The session is shared because it is stateless. The recurrent state that is
-    *not* stateless lives in ``SileroVad``, one per conversation.
+    There is no model to load. WebRTC's detector is a few kilobytes of signal
+    processing compiled into the extension, so this is an import and nothing
+    more -- which is the whole point of the change: the previous detector
+    pulled in onnxruntime and its memory arenas, and a 512 MB instance was
+    killed with status 137 the moment a voice socket opened.
     """
 
-    global _vad_session, _vad_load_error
-    if _vad_session is not None:
-        return _vad_session
+    global _vad_load_error
     if _vad_load_error is not None:
         raise VoiceModelUnavailable(_vad_load_error)
 
     with _vad_lock:
-        # Another caller may have finished while this one waited.
-        if _vad_session is not None:
-            return _vad_session
         try:
-            import onnxruntime
+            import webrtcvad
 
-            options = onnxruntime.SessionOptions()
-            # One thread each: frames are tiny and arrive continuously, so
-            # thread pool coordination costs more than the inference it
-            # parallelises.
-            options.inter_op_num_threads = 1
-            options.intra_op_num_threads = 1
-            _vad_session = onnxruntime.InferenceSession(
-                str(_vad_model_path()),
-                providers=["CPUExecutionProvider"],
-                sess_options=options,
-            )
-            return _vad_session
+            return webrtcvad
         except Exception as exc:  # noqa: BLE001 - surfaced as a health error
             message = (
-                "Silero VAD could not be loaded. Install the 'silero-vad' "
-                f"package to enable voice mode ({exc.__class__.__name__})."
+                "Voice activity detection is unavailable. Install "
+                "'webrtcvad-wheels' (in backend/requirements.txt) to enable "
+                f"voice mode ({exc.__class__.__name__})."
             )
-            # Only a missing package is permanent. Anything else -- an import
+            # Only an absent package is permanent. Anything else -- an import
             # race, a transient file lock -- may succeed next time, and
-            # remembering it disabled voice for the life of the process. That
-            # is exactly what happened: one "import numpy failed" during
-            # start-up left the capability endpoint reporting no voice
-            # detection until the server was restarted.
-            if importlib.util.find_spec("silero_vad") is None:
+            # remembering it disabled voice for the life of the process.
+            if importlib.util.find_spec("webrtcvad") is None:
                 _vad_load_error = message
             else:
-                logger.warning(
-                    "Silero VAD load failed and will be retried: %s", exc
-                )
+                logger.warning("WebRTC VAD load failed and will be retried: %s", exc)
             raise VoiceModelUnavailable(message) from exc
 
 
 def vad_available() -> bool:
-    """Whether Silero can be loaded, without paying to load it here."""
+    """Whether the detector can be created, without importing it here.
 
-    if _vad_session is not None:
-        return True
-    if _vad_load_error is not None:
-        return False
-    return importlib.util.find_spec("silero_vad") is not None
-
-
-class SileroVad:
-    """One conversation's voice-activity detector.
-
-    Silero is recurrent: each frame's score depends on the state left by the
-    frames before it. That state was previously held on the single shared model
-    object, so two simultaneous voice sessions would have interleaved their
-    audio through one detector and corrupted each other's utterance
-    boundaries. It belongs to the session, so it lives here.
+    ``find_spec`` answers from the filesystem, so the capability endpoint stays
+    cheap: no extension loaded, no memory allocated, nothing to unload.
     """
 
-    def __init__(self, session=None) -> None:
-        self._session = session or load_vad()
-        self.reset()
+    if _vad_load_error is not None:
+        return False
+    return importlib.util.find_spec("webrtcvad") is not None
+
+
+class WebRtcVad:
+    """One conversation's voice-activity detector.
+
+    WebRTC's detector carries internal state across frames, so each
+    conversation gets its own instance -- two simultaneous sessions sharing one
+    would interleave their audio through a single detector and corrupt each
+    other's utterance boundaries.
+
+    It answers a yes/no question rather than returning a probability. The
+    orchestration above is written against probabilities, so the answer is
+    reported as 1.0 or 0.0 and everything downstream is unchanged.
+    """
+
+    def __init__(self, aggressiveness: int | None = None, *, detector=None) -> None:
+        if detector is not None:
+            self._vad = detector
+        else:
+            module = load_vad()
+            level = (
+                settings.voice_vad_aggressiveness
+                if aggressiveness is None
+                else aggressiveness
+            )
+            self._vad = module.Vad(int(level))
 
     def reset(self) -> None:
-        """Forget the conversation so far. Used between utterances."""
+        """Nothing to forget between utterances.
 
-        import numpy as np
+        WebRTC's detector keeps only a short adaptive noise estimate, and
+        discarding it at every turn boundary would make it re-learn the room
+        each time. Kept so callers do not have to know which detector they hold.
+        """
 
-        self._state = np.zeros(VAD_STATE_SHAPE, dtype=np.float32)
-        self._context = np.zeros((1, VAD_CONTEXT_SAMPLES), dtype=np.float32)
+    def probability(self, frame: bytes) -> float:
+        """1.0 when this frame is speech, 0.0 when it is not.
+
+        A frame that is not exactly one WebRTC frame is padded or trimmed
+        rather than raising: the socket reframes the stream, so a wrong size
+        here means a caller bug, and dropping the audio would be worse than
+        scoring a padded frame.
+        """
+
+        if len(frame) != VAD_FRAME_BYTES:
+            frame = frame[:VAD_FRAME_BYTES].ljust(VAD_FRAME_BYTES, b"\x00")
+        return 1.0 if self._vad.is_speech(frame, settings.voice_sample_rate) else 0.0
 
     def probabilities(self, frames: list[bytes]) -> list[float]:
         """Score consecutive frames in one call.
 
-        The socket used to hand each 32 ms frame to a worker thread on its own
-        -- roughly thirty thread hops a second, whose scheduling overhead
-        dwarfed the inference. Scoring a whole socket message at once keeps the
-        audio path ahead of the speaker. The frames must stay in order: the
-        state carried between them is the whole point.
+        The socket used to hand each frame to a worker thread on its own --
+        roughly thirty thread hops a second, whose scheduling overhead dwarfed
+        the detection. Scoring a whole socket message at once keeps the audio
+        path ahead of the speaker.
         """
 
         return [self.probability(frame) for frame in frames]
 
-    def probability(self, frame: bytes) -> float:
-        """Probability that one 512-sample frame contains speech."""
 
-        import numpy as np
-
-        samples = np.frombuffer(frame, dtype=np.int16).astype(np.float32) / 32768.0
-        if samples.size != VAD_FRAME_SAMPLES:
-            padded = np.zeros(VAD_FRAME_SAMPLES, dtype=np.float32)
-            padded[: min(samples.size, VAD_FRAME_SAMPLES)] = samples[:VAD_FRAME_SAMPLES]
-            samples = padded
-
-        window = np.concatenate([self._context, samples.reshape(1, -1)], axis=1)
-        output, self._state = self._session.run(
-            None,
-            {
-                "input": window,
-                "state": self._state,
-                "sr": np.array(settings.voice_sample_rate, dtype=np.int64),
-            },
-        )
-        self._context = window[..., -VAD_CONTEXT_SAMPLES:]
-        return float(output[0][0])
-
-
-def speech_probabilities(frames: list[bytes], *, detector: SileroVad | None = None) -> list[float]:
+def speech_probabilities(frames: list[bytes], *, detector: "WebRtcVad | None" = None) -> list[float]:
     """Score frames with a throwaway detector.
 
-    Convenience for tests and one-shot scoring only. A live session must hold
-    its own :class:`SileroVad`, or every batch starts from a blank state.
+    Convenience for tests and one-shot scoring only. A live session holds its
+    own :class:`WebRtcVad`, so the adaptive noise estimate follows the
+    conversation rather than restarting on every batch.
     """
 
-    return (detector or SileroVad()).probabilities(frames)
+    return (detector or WebRtcVad()).probabilities(frames)
 
 
 @dataclass
@@ -247,7 +212,12 @@ class UtteranceDetector:
 
     # Speech has to persist briefly before it counts, so a single noisy frame
     # cannot interrupt the assistant.
-    start_speech_ms: float = 96.0
+    #
+    # 90 ms is exactly three 30 ms frames. It was 96 -- three of Silero's 32 ms
+    # frames -- and left at that it would have rounded up to four frames and
+    # 120 ms, making the assistant a fifth of a second slower to notice
+    # someone had started talking.
+    start_speech_ms: float = 90.0
 
     def frame_ms(self) -> float:
         return VAD_FRAME_SAMPLES / self.sample_rate * 1000.0
@@ -525,11 +495,11 @@ def transcribe_pcm(pcm: bytes, *, sample_rate: int | None = None, model=None) ->
 
 __all__ = [
     "MIN_UTTERANCE_MS",
-    "VAD_CONTEXT_SAMPLES",
     "VAD_FRAME_BYTES",
     "VAD_FRAME_SAMPLES",
     "VAD_SPEECH_THRESHOLD",
-    "SileroVad",
+    "VAD_FRAME_MS",
+    "WebRtcVad",
     "UtteranceDetector",
     "VoiceModelUnavailable",
     "load_vad",

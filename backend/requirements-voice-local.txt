@@ -1,0 +1,10 @@
+# Optional: run speech recognition on this machine instead of Groq.
+#
+# Install these only alongside VOICE_STT_PROVIDER=faster-whisper. They are
+# deliberately absent from requirements.txt so a small deployment using hosted
+# transcription never downloads or loads a local model -- which is what
+# exhausted memory on a 512 MB instance.
+#
+#   pip install -r backend/requirements.txt -r backend/requirements-voice-local.txt
+faster-whisper>=1.0,<2.0
+numpy>=1.26,<3.0

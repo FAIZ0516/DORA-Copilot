@@ -463,3 +463,97 @@ def test_a_browser_that_never_reports_playback_does_not_wedge_the_session():
     assert "session.playback_deadline" in body
     assert "never reported finishing playback" in body
     assert voice_module.PLAYBACK_GRACE_SECONDS > 0
+
+
+# --------------------------------------------------------------------------- #
+# Reframing 512-sample chunks into 480-sample WebRTC frames                   #
+# --------------------------------------------------------------------------- #
+
+
+def _reframe(messages):
+    """The socket's own reframing, exercised in isolation.
+
+    Mirrors the loop in voice_socket: bytes accumulate in `pending`, whole
+    frames are taken from the front, and the remainder waits for the next
+    message.
+    """
+
+    from backend.services.voice_audio import VAD_FRAME_BYTES
+
+    pending = bytearray()
+    frames = []
+    for message in messages:
+        pending.extend(message)
+        while len(pending) >= VAD_FRAME_BYTES:
+            frames.append(bytes(pending[:VAD_FRAME_BYTES]))
+            del pending[:VAD_FRAME_BYTES]
+    return frames, bytes(pending)
+
+
+def test_browser_chunks_are_reframed_without_losing_a_sample():
+    """The browser sends 512 samples; WebRTC takes 480. They never line up.
+
+    Every byte must appear once, in order, across the frames plus whatever is
+    still pending -- a seam that drops or repeats samples is audible as a
+    click and can split a word across an utterance boundary.
+    """
+
+    from backend.services.voice_audio import VAD_FRAME_BYTES
+
+    # 40 messages of 512 samples each, every byte uniquely identifiable.
+    stream = bytes(range(256)) * 160
+    chunk = 512 * 2
+    messages = [stream[i : i + chunk] for i in range(0, len(stream), chunk)]
+    assert all(len(m) == chunk for m in messages), "fixture must be whole chunks"
+
+    frames, pending = _reframe(messages)
+
+    assert all(len(f) == VAD_FRAME_BYTES for f in frames)
+    assert b"".join(frames) + pending == stream, "samples lost, duplicated or reordered"
+    assert len(pending) < VAD_FRAME_BYTES
+
+
+def test_an_incomplete_frame_waits_for_the_next_message():
+    """One WebSocket message is not one VAD frame, and never was."""
+
+    from backend.services.voice_audio import VAD_FRAME_BYTES
+
+    half = VAD_FRAME_BYTES // 2
+    frames, pending = _reframe([b"\x01" * half])
+    assert frames == [] and len(pending) == half
+
+    # The rest arrives; now exactly one frame is complete.
+    frames, pending = _reframe([b"\x01" * half, b"\x02" * half])
+    assert len(frames) == 1
+    assert pending == b""
+    assert frames[0] == b"\x01" * half + b"\x02" * half
+
+
+def test_ragged_message_sizes_still_reframe_cleanly():
+    """Nothing guarantees the browser's chunk size survives the network."""
+
+    from backend.services.voice_audio import VAD_FRAME_BYTES
+
+    stream = bytes(range(256)) * 40
+    sizes, at, messages = [1, 7, 960, 61, 1024, 3, 2048], 0, []
+    while at < len(stream):
+        size = sizes[len(messages) % len(sizes)]
+        messages.append(stream[at : at + size])
+        at += size
+
+    frames, pending = _reframe(messages)
+    assert all(len(f) == VAD_FRAME_BYTES for f in frames)
+    assert b"".join(frames) + pending == stream
+
+
+def test_the_socket_uses_that_same_reframing():
+    """The helper above must describe the real loop, not a parallel one."""
+
+    import inspect
+
+    import backend.api.voice as voice_module
+
+    body = inspect.getsource(voice_module.voice_socket)
+    assert "pending.extend(chunk)" in body
+    assert "while len(pending) >= VAD_FRAME_BYTES:" in body
+    assert "del pending[:VAD_FRAME_BYTES]" in body

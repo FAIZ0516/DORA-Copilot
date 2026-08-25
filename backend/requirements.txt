@@ -12,10 +12,10 @@ python-dotenv>=1.0,<2.0
 reportlab>=4.2,<5.0
 pypdf>=5.0,<7.0
 python-docx>=1.1,<2.0
-# Local speech recognition and voice-activity detection for voice mode.
-# Neither is a language model: DeepSeek remains the configured LLM.
-faster-whisper>=1.0,<2.0
-silero-vad>=5.1,<6.0
-numpy>=1.26,<3.0
+# Voice-activity detection. A few kilobytes of signal processing, no model
+# file and no tensor runtime -- see backend/services/voice_audio.py for why
+# the neural detector was removed. Speech recognition is hosted (Groq); the
+# optional local engine lives in requirements-voice-local.txt.
+webrtcvad-wheels>=2.0.14,<3.0
 pytest>=8.3,<9.0
 pytest-cov>=5.0,<7.0
