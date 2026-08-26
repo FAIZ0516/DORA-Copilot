@@ -400,6 +400,11 @@ def transcribe_with_groq(pcm: bytes, *, sample_rate: int | None = None) -> str:
             "Hosted speech recognition is selected but GROQ_API_KEY is not set."
         )
 
+    # Render preserves leading/trailing whitespace in environment values. A
+    # copied key with one trailing space makes h11 reject the Authorization
+    # header locally with LocalProtocolError, before any request reaches Groq.
+    # Normalise only the boundary whitespace; the secret is never logged.
+    api_key = settings.groq_api_key.strip()
     audio = pcm_to_wav_bytes(pcm, sample_rate=sample_rate)
     ssl_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     try:
@@ -408,7 +413,7 @@ def transcribe_with_groq(pcm: bytes, *, sample_rate: int | None = None) -> str:
         ) as client:
             response = client.post(
                 f"{settings.groq_base_url.rstrip('/')}/audio/transcriptions",
-                headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                headers={"Authorization": f"Bearer {api_key}"},
                 files={"file": ("utterance.wav", audio, "audio/wav")},
                 data={
                     "model": settings.groq_stt_model,

@@ -132,6 +132,16 @@ def test_the_key_travels_only_in_the_authorization_header(groq, monkeypatch):
     assert "test-key-not-real" not in str(seen.get("data"))
 
 
+def test_copy_paste_whitespace_is_removed_from_the_key(groq, monkeypatch):
+    seen: dict = {}
+    monkeypatch.setattr(settings, "groq_api_key", "\r\n test-key-not-real \t")
+    _intercept(monkeypatch, lambda url, **kw: (seen.update(kw), _response(200, {"text": "hi"}))[1])
+
+    transcribe_pcm(_pcm())
+
+    assert seen["headers"]["Authorization"] == "Bearer test-key-not-real"
+
+
 def test_a_short_utterance_never_leaves_the_machine(groq, monkeypatch):
     def _fail(*_a, **_k):
         raise AssertionError("a cough must not be uploaded")

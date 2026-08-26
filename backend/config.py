@@ -213,7 +213,11 @@ class Settings(BaseSettings):
 
     @property
     def groq_configured(self) -> bool:
-        return bool(self.groq_api_key and self.groq_base_url.strip() and self.groq_stt_model.strip())
+        return bool(
+            self.groq_api_key.strip()
+            and self.groq_base_url.strip()
+            and self.groq_stt_model.strip()
+        )
 
     @property
     def deepseek_configured(self) -> bool:
